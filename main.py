@@ -1,8 +1,10 @@
+import datetime
 import discord
 from discord.ext import commands
 from discord import app_commands
 import os
 import re
+import asyncio
 from dotenv import load_dotenv
 from websites import fix_link_async, get_site_name
 
@@ -18,6 +20,28 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # In-memory settings: {guild_id: include_original_message}
 settings = {}
 
+async def daily_booster_role_check():
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        now = datetime.datetime.utcnow()
+        # Run at midnight UTC
+        next_run = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        wait_seconds = (next_run - now).total_seconds()
+        await asyncio.sleep(wait_seconds)
+        for guild in bot.guilds:
+            booster_role = discord.utils.get(guild.roles, is_premium_subscriber=True)
+            if not booster_role:
+                continue
+            for member in guild.members:
+                # Find custom roles (only one member, not @everyone, not booster role)
+                personal_roles = [role for role in member.roles if role != booster_role and not role.is_default() and len(role.members) == 1]
+                if personal_roles and booster_role not in member.roles:
+                    for role in personal_roles:
+                        try:
+                            await role.delete(reason="Lost server booster status")
+                        except Exception:
+                            pass
+
 @bot.event
 async def on_ready():
     print(f'{bot.user} has logged in!')
@@ -27,6 +51,8 @@ async def on_ready():
         print(f"Synced {len(synced)} command(s)")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
+    # Start daily booster role check task
+    bot.loop.create_task(daily_booster_role_check())
 
 @bot.event
 async def on_message(message):
@@ -191,7 +217,7 @@ async def boostercolor(interaction: discord.Interaction, hex: str, style: str = 
                         return
                     else:
                         raise
-        import asyncio
+                    
         new_role = await guild.create_role(name=member.display_name, mentionable=False)
         await asyncio.sleep(1)  # Short delay to ensure Discord registers the new role
         bot_member = guild.me
@@ -251,7 +277,6 @@ async def boostername(interaction: discord.Interaction, name: str):
             await interaction.response.send_message(f"Renamed your highest personal role to '{name}'!", ephemeral=True)
             return
         # If no personal role, create a new role
-        import asyncio
         bot_member = guild.me
         bot_top_role = sorted(bot_member.roles, key=lambda r: r.position, reverse=True)[0]
         new_role = await guild.create_role(name=name, mentionable=False)
@@ -286,8 +311,7 @@ async def boostericon(interaction: discord.Interaction, icon_url: str):
     personal_roles = [role for role in member.roles if role != booster_role and not role.is_default() and len(role.members) == 1]
     if personal_roles:
         highest_role = sorted(personal_roles, key=lambda r: r.position, reverse=True)[0]
-    else:
-        import asyncio
+    else:    
         bot_member = guild.me
         bot_top_role = sorted(bot_member.roles, key=lambda r: r.position, reverse=True)[0]
         highest_role = await guild.create_role(name=member.display_name, mentionable=False)
@@ -321,8 +345,6 @@ async def boostericon(interaction: discord.Interaction, icon_url: str):
             await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
-
-# Use environment variable for token
 
 # Slash command to copy a custom emoji from a message into the server
 @bot.tree.command(name="copyemoji", description="Copy custom emoji(s) from a message into the server")
