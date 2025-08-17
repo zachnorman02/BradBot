@@ -99,49 +99,64 @@ class SimpleWebsiteLink(WebsiteLink):
 class TwitterLink(SimpleWebsiteLink):
     """Twitter/X link handler."""
     name = "Twitter"
-    patterns = [r'twitter\.com', r'x\.com']
+    patterns = [r'twitter\.com', r'x\.com', r'fxtwitter\.com']
     replacement = "fxtwitter.com"
 
 
 class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
-    patterns = [r'instagram\.com']
+    patterns = [r'instagram\.com', r'ddinstagram\.com']
     replacement = "ddinstagram.com"
 
 
 class TikTokLink(SimpleWebsiteLink):
     """TikTok link handler."""
     name = "TikTok"
-    patterns = [r'tiktok\.com']
+    patterns = [r'tiktok\.com', r'tnktok\.com']
     replacement = "tnktok.com"
 
 
 class RedditLink(SimpleWebsiteLink):
     """Reddit link handler."""
     name = "Reddit"
-    patterns = [r'reddit\.com']
+    patterns = [r'reddit\.com', r'vxreddit\.com']
     replacement = "vxreddit.com"
 
 
 class YouTubeLink(SimpleWebsiteLink):
     """YouTube link handler."""
     name = "YouTube"
-    patterns = [r'youtube\.com', r'youtu\.be']
+    patterns = [r'youtube\.com', r'youtu\.be', r'koutube\.com']
     replacement = "koutube.com"
+    
+    def _clean_tracking_params(self, url: str) -> str:
+        # Only keep 'v' and 't' query parameters, remove others
+        if '?' not in url:
+            return url
+        base, query = url.split('?', 1)
+        params = query.split('&')
+        keep = []
+        for param in params:
+            if param.startswith('v=') or param.startswith('t='):
+                keep.append(param)
+        if keep:
+            return base + '?' + '&'.join(keep)
+        else:
+            return base
 
 
 class ThreadsLink(SimpleWebsiteLink):
     """Threads link handler."""
     name = "Threads"
-    patterns = [r'threads\.net']
+    patterns = [r'threads\.net', r'fixthreads\.net']
     replacement = "fixthreads.net"
 
 
 class BlueskyLink(SimpleWebsiteLink):
     """Bluesky link handler."""
     name = "Bluesky"
-    patterns = [r'bsky\.app']
+    patterns = [r'bsky\.app', r'bskx\.app']
     replacement = "bskx.app"
 
 
@@ -155,35 +170,35 @@ class SnapchatLink(SimpleWebsiteLink):
 class FacebookLink(SimpleWebsiteLink):
     """Facebook link handler."""
     name = "Facebook"
-    patterns = [r'facebook\.com']
+    patterns = [r'facebook\.com', r'facebed\.com']
     replacement = "facebed.com"
 
 
 class PixivLink(SimpleWebsiteLink):
     """Pixiv link handler."""
     name = "Pixiv"
-    patterns = [r'pixiv\.net']
+    patterns = [r'pixiv\.net', r'phixiv\.net']
     replacement = "phixiv.net"
 
 
 class TwitchLink(SimpleWebsiteLink):
     """Twitch link handler."""
     name = "Twitch"
-    patterns = [r'twitch\.tv']
+    patterns = [r'twitch\.tv', r'fxtwitch\.seria\.moe']
     replacement = "fxtwitch.seria.moe"
 
 
 class SpotifyLink(SimpleWebsiteLink):
     """Spotify link handler."""
     name = "Spotify"
-    patterns = [r'spotify\.com']
+    patterns = [r'spotify\.com', r'fxspotify\.com']
     replacement = "fxspotify.com"
 
 
 class DeviantArtLink(SimpleWebsiteLink):
     """DeviantArt link handler."""
     name = "DeviantArt"
-    patterns = [r'deviantart\.com']
+    patterns = [r'deviantart\.com', r'fixdeviantart\.com']
     replacement = "fixdeviantart.com"
 
 
@@ -192,21 +207,21 @@ class MastodonLink(SimpleWebsiteLink):
     name = "Mastodon"
     patterns = [r'mastodon\.social', r'mstdn\.jp', r'mastodon\.cloud', r'mstdn\.social', 
                r'mastodon\.world', r'mastodon\.online', r'mas\.to', r'techhub\.social', 
-               r'mastodon\.uno', r'infosec\.exchange']
+               r'mastodon\.uno', r'infosec\.exchange', r'fx\.zillanlabs\.tech']
     replacement = "fx.zillanlabs.tech"
 
 
 class TumblrLink(SimpleWebsiteLink):
     """Tumblr link handler."""
     name = "Tumblr"
-    patterns = [r'tumblr\.com']
+    patterns = [r'tumblr\.com', r'tpmblr\.com']
     replacement = "tpmblr.com"
 
 
 class BiliBiliLink(SimpleWebsiteLink):
     """BiliBili link handler."""
     name = "BiliBili"
-    patterns = [r'bilibili\.com', r'b23\.tv', r'b22\.top']
+    patterns = [r'bilibili\.com', r'b23\.tv', r'b22\.top', r'vxbilibili\.com']
     replacement = "vxbilibili.com"
 
 
@@ -220,7 +235,7 @@ class IFunnyLink(SimpleWebsiteLink):
 class FurAffinityLink(SimpleWebsiteLink):
     """FurAffinity link handler."""
     name = "FurAffinity"
-    patterns = [r'furaffinity\.net']
+    patterns = [r'furaffinity\.net', r'xfuraffinity\.net']
     replacement = "xfuraffinity.net"
 
 

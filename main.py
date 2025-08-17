@@ -128,6 +128,7 @@ async def on_message(message):
     url_pattern = re.compile(r'(https?://[^\s|)]+)')
     new_content = fixed_content
     offset = 0
+    embez_links = []
     for match in url_pattern.finditer(fixed_content):
         url_start, url_end = match.start(1), match.end(1)
         if is_in_markdown_link(url_start, url_end):
@@ -135,14 +136,11 @@ async def on_message(message):
         url = match.group(1)
         site_name = get_site_name(url)
         # If site is supported by EmbedEZ, try to get EmbedEZ link
-        if site_name and site_name.lower() in EMBEDEZ_SITES:
+        if site_name or site_name.lower() in EMBEDEZ_SITES:
             embedez_link = await get_embedez_link(url)
-            if embedez_link:
-                replacement = f'[{site_name}]({embedez_link})'
-            else:
-                replacement = f'[{site_name}]({url})'
+            embez_links.append(embedez_link)
         # Only wrap in markdown if site_name is not the url itself
-        elif site_name and site_name != url:
+        if site_name and site_name != url:
             replacement = f'[{site_name}]({url})'
         else:
             replacement = url
@@ -150,12 +148,50 @@ async def on_message(message):
         new_content = new_content[:url_start+offset] + replacement + new_content[url_end+offset:]
         offset += len(replacement) - (url_end - url_start)
     fixed_content = new_content
-    
+
+    # Suppress embeds for all but the first link (including markdown links)
+    # Find all markdown and raw links
+    markdown_link_pattern = re.compile(r'(\[[^\]]+\])\((https?://[^\s)]+)\)')
+    raw_url_pattern = re.compile(r'(https?://[^\s|)]+)')
+    # Collect all link spans (start, end, is_markdown)
+    link_spans = []
+    for m in markdown_link_pattern.finditer(fixed_content):
+        link_spans.append((m.start(2), m.end(2), True))
+    for m in raw_url_pattern.finditer(fixed_content):
+        # Only add if not inside markdown
+        if not any(m.start(1) >= span_start and m.end(1) <= span_end for span_start, span_end, _ in link_spans):
+            link_spans.append((m.start(1), m.end(1), False))
+    # Sort by start position
+    link_spans.sort()
+    # Only keep the first link as-is, wrap others in <>
+    if link_spans:
+        first = True
+        offset = 0
+        content = fixed_content
+        for start, end, is_markdown in link_spans:
+            start += offset
+            end += offset
+            url = content[start:end]
+            if first:
+                first = False
+                continue
+            if is_markdown:
+                # Wrap URL part in angle brackets
+                replacement = f'<{url}>'
+            else:
+                # Wrap raw URL in angle brackets
+                replacement = f'<{url}>'
+            content = content[:start] + replacement + content[end:]
+            offset += len(replacement) - (end - start)
+        fixed_content = content
+
     # Send the fixed message if any links were replaced
     if any_links_fixed:
         # Create the response with user ping and fixed content
         response = f"{message.author.mention}: {fixed_content}"
-        
+        if embez_links:
+            embez_link_text = [f'[EmbedEZ]({link})' for link in embez_links]
+            response = f'EmbedEZ Links: {" ".join(embez_link_text)}\n{response}'
         # Send the fixed message
         await message.channel.send(response, silent=True)
         
