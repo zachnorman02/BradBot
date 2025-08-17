@@ -70,42 +70,46 @@ async def on_message(message):
     fixed_content = message.content
     any_links_fixed = False
     
-    # Skip any URLs that are already inside markdown links, including nested markdown
-    # Step 1: Fix URLs inside markdown links
-    markdown_link_pattern = re.compile(r'(\[[^\]]+\])\((https?://[^\s)]+)\)')
+    # Step 1: Replace all URLs with their fixed versions
+    url_pattern = r'(https?://[^\s|)]+)'
     fixed_content = message.content
     any_links_fixed = False
-    markdown_matches = list(markdown_link_pattern.finditer(fixed_content))
-    for match in markdown_matches:
-        link_text = match.group(1)
-        url = match.group(2)
+    # Find all URLs
+    url_matches = list(re.finditer(url_pattern, fixed_content))
+    replacements = {}
+    for match in url_matches:
+        url = match.group(1)
         fixed_url = await fix_link_async(url)
         if fixed_url and fixed_url != url:
-            fixed_content = fixed_content.replace(match.group(0), f"{link_text}({fixed_url})")
+            replacements[(match.start(1), match.end(1))] = fixed_url
             any_links_fixed = True
+    # Apply replacements from end to start
+    for (start, end), replacement in sorted(replacements.items(), reverse=True):
+        fixed_content = fixed_content[:start] + replacement + fixed_content[end:]
 
-    # Step 2: Fix plain and spoilered links not inside markdown links
-    spoiler_url_pattern = r'(\|\|)?(https?://[^\s|]+)(\|\|)?'
-    matches = list(re.finditer(spoiler_url_pattern, fixed_content))
-
-    # Get spans of all markdown links to skip
+    # Step 2: Wrap only plain URLs (not inside markdown) with markdown
+    # Find all markdown links and mark their spans
+    markdown_link_pattern = re.compile(r'(\[[^\]]+\])\((https?://[^\s)]+)\)')
     markdown_spans = [ (m.start(2), m.end(2)) for m in markdown_link_pattern.finditer(fixed_content) ]
+
     def is_in_markdown_link(start, end):
         return any(start >= span_start and end <= span_end for span_start, span_end in markdown_spans)
 
-    for match in matches:
-        url_start, url_end = match.start(2), match.end(2)
+    # Find all URLs and wrap only those not inside markdown
+    url_pattern = re.compile(r'(https?://[^\s|)]+)')
+    new_content = fixed_content
+    offset = 0
+    for match in url_pattern.finditer(fixed_content):
+        url_start, url_end = match.start(1), match.end(1)
         if is_in_markdown_link(url_start, url_end):
             continue
-        prefix = match.group(1) or ''
-        url = match.group(2)
-        suffix = match.group(3) or ''
-        fixed_url = await fix_link_async(url)
-        if fixed_url:
-            # Only wrap in markdown if not already inside markdown
-            replacement = f"{prefix}{fixed_url}{suffix}"
-            fixed_content = fixed_content.replace(match.group(0), replacement)
-            any_links_fixed = True
+        url = match.group(1)
+        site_name = get_site_name(url) or url
+        replacement = f'[{site_name}]({url})'
+        # Replace in new_content, adjusting for offset
+        new_content = new_content[:url_start+offset] + replacement + new_content[url_end+offset:]
+        offset += len(replacement) - (url_end - url_start)
+    fixed_content = new_content
     
     # Send the fixed message if any links were replaced
     if any_links_fixed:
