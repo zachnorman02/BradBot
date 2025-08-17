@@ -1,6 +1,3 @@
-[submodule "discord.py"]
-	path = discord.py
+[submodule "discordpy"]
+	path = discordpy
 	url = https://github.com/Rapptz/discord.py
-[submodule "FixTweetBot"]
-	path = FixTweetBot
-	url = https://github.com/Kyrela/FixTweetBot

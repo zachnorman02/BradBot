@@ -236,7 +236,15 @@ class WeiboLink(SimpleWebsiteLink):
     name = "Weibo"
     patterns = [r'weibo\.com', r'weibo\.cn']
     replacement = "weibo.com"  # No alternative available yet
-
+    
+class Rule34Link(SimpleWebsiteLink):
+    """Rule34 link handler."""
+    name="Rule34"
+    patterns = [r'rule34\.xxx', r'rule34\.paheal\.net']
+    replacement = "rule34.xxx" # No alternative available
+    
+    def _clean_tracking_params(self, url: str) -> str:
+        return url
 
 websites = [
     TwitterLink,
@@ -259,6 +267,7 @@ websites = [
     FurAffinityLink,
     ImgurLink,
     WeiboLink,
+    Rule34Link
 ]
 
 
@@ -305,10 +314,10 @@ def get_site_name(url: str) -> str:
     Get the name of the website from a URL.
     
     :param url: The URL to check
-    :return: Name of the website or "Unknown"
+    :return: Name of the website or the URL itself
     """
     for website_class in websites:
         website = website_class.if_valid(url)
         if website:
             return website.name
-    return "Unknown"
+    return url

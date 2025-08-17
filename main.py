@@ -1,3 +1,4 @@
+import aiohttp
 import datetime
 import discord
 from discord.ext import commands
@@ -53,6 +54,27 @@ async def on_ready():
         print(f"Failed to sync commands: {e}")
     # Start daily booster role check task
     bot.loop.create_task(daily_booster_role_check())
+    
+# List of sites that support EmbedEZ
+EMBEDEZ_SITES = {'instagram', 'snapchat', 'ifunny', 'imgur', 'weibo', 'rule34'}
+
+async def get_embedez_link(url: str) -> str | None:
+    """
+    Returns an EmbedEZ embed link for the given URL, or None if not available.
+    """
+    api_url = "https://embedez.com/api/v1/providers/combined"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url, params={'q': url}, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                if response.status != 200:
+                    return None
+                data = await response.json()
+                key = data.get('data', {}).get('key')
+                if key:
+                    return f"https://embedez.com/embed/{key}"
+    except Exception:
+        return None
+    return None
 
 @bot.event
 async def on_message(message):
@@ -79,9 +101,16 @@ async def on_message(message):
     replacements = {}
     for match in url_matches:
         url = match.group(1)
+        site_name = get_site_name(url)
         fixed_url = await fix_link_async(url)
-        if fixed_url and fixed_url != url:
-            replacements[(match.start(1), match.end(1))] = fixed_url
+        # If Rule34, do not remove query parameters
+        if site_name and site_name.lower() == 'rule34' and fixed_url:
+            replacements[(match.start(1), match.end(1))] = fixed_url  # Use as-is
+            any_links_fixed = True
+        elif fixed_url and fixed_url != url:
+            # Remove query parameters for other sites
+            clean_url = fixed_url.split('?')[0]
+            replacements[(match.start(1), match.end(1))] = clean_url
             any_links_fixed = True
     # Apply replacements from end to start
     for (start, end), replacement in sorted(replacements.items(), reverse=True):
@@ -104,8 +133,19 @@ async def on_message(message):
         if is_in_markdown_link(url_start, url_end):
             continue
         url = match.group(1)
-        site_name = get_site_name(url) or url
-        replacement = f'[{site_name}]({url})'
+        site_name = get_site_name(url)
+        # If site is supported by EmbedEZ, try to get EmbedEZ link
+        if site_name and site_name.lower() in EMBEDEZ_SITES:
+            embedez_link = await get_embedez_link(url)
+            if embedez_link:
+                replacement = f'[{site_name}]({embedez_link})'
+            else:
+                replacement = f'[{site_name}]({url})'
+        # Only wrap in markdown if site_name is not the url itself
+        elif site_name and site_name != url:
+            replacement = f'[{site_name}]({url})'
+        else:
+            replacement = url
         # Replace in new_content, adjusting for offset
         new_content = new_content[:url_start+offset] + replacement + new_content[url_end+offset:]
         offset += len(replacement) - (url_end - url_start)
