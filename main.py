@@ -323,4 +323,115 @@ async def boostericon(interaction: discord.Interaction, icon_url: str):
         await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
 
 # Use environment variable for token
+
+# Slash command to copy a custom emoji from a message into the server
+@bot.tree.command(name="copyemoji", description="Copy custom emoji(s) from a message into the server")
+@app_commands.describe(message_link="Link to the message containing the emoji", which="Optional: emoji number(s) to copy (e.g. 2 or 1,3)")
+async def copyemoji(interaction: discord.Interaction, message_link: str, which: str = None):
+    # Check bot and user permissions
+    if not interaction.guild.me.guild_permissions.manage_emojis_and_stickers:
+        await interaction.response.send_message("❌ I need the 'Manage Emojis and Stickers' permission to copy emojis.", ephemeral=True)
+        return
+    if not interaction.user.guild_permissions.manage_emojis_and_stickers:
+        await interaction.response.send_message("❌ You need the 'Manage Emojis and Stickers' permission to use this command.", ephemeral=True)
+        return
+    # Parse message link
+    import re
+    match = re.match(r"https://discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)", message_link)
+    if not match:
+        await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
+        return
+    guild_id, channel_id, message_id = map(int, match.groups())
+    if guild_id != interaction.guild.id:
+        await interaction.response.send_message("❌ The message must be from this server.", ephemeral=True)
+        return
+    channel = interaction.guild.get_channel(channel_id)
+    if not channel:
+        await interaction.response.send_message("❌ Could not find the channel.", ephemeral=True)
+        return
+    try:
+        msg = await channel.fetch_message(message_id)
+    except Exception:
+        await interaction.response.send_message("❌ Could not fetch the message.", ephemeral=True)
+        return
+    # Find all custom emojis in the message
+    emoji_pattern = r'<a?:([\w]+):([0-9]+)>'
+    emoji_matches = list(re.finditer(emoji_pattern, msg.content))
+    if not emoji_matches:
+        await interaction.response.send_message("❌ No custom emoji found in that message.", ephemeral=True)
+        return
+    # Parse which emojis to copy
+    indices = []
+    if which:
+        try:
+            indices = [int(i.strip())-1 for i in which.split(",") if i.strip().isdigit()]
+        except Exception:
+            await interaction.response.send_message("❌ Invalid emoji number(s) format. Use e.g. 2 or 1,3.", ephemeral=True)
+            return
+        indices = [i for i in indices if 0 <= i < len(emoji_matches)]
+        if not indices:
+            await interaction.response.send_message("❌ No valid emoji number(s) specified.", ephemeral=True)
+            return
+    else:
+        indices = [0]  # Default to first emoji
+    results = []
+    import aiohttp
+    for idx in indices:
+        emoji_match = emoji_matches[idx]
+        emoji_name, emoji_id = emoji_match.groups()
+        is_animated = msg.content[emoji_match.start()] == '<' and msg.content[emoji_match.start()+1] == 'a'
+        ext = 'gif' if is_animated else 'png'
+        url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
+        # Download emoji image
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    results.append(f"❌ Could not download emoji '{emoji_name}'.")
+                    continue
+                image_bytes = await resp.read()
+        # Try to add emoji to the server
+        try:
+            new_emoji = await interaction.guild.create_custom_emoji(name=emoji_name, image=image_bytes)
+            results.append(f"✅ Emoji '{new_emoji.name}' copied to the server!")
+        except discord.HTTPException as e:
+            if e.code == 30008:
+                results.append("❌ This server has reached its emoji limit.")
+                break
+            else:
+                results.append(f"❌ Discord error for '{emoji_name}': {e}")
+        except Exception as e:
+            results.append(f"❌ Unexpected error for '{emoji_name}': {e}")
+    await interaction.response.send_message("\n".join(results), ephemeral=True)
+
+# Slash command to upload a custom emoji from an image URL
+@bot.tree.command(name="uploademoji", description="Upload a custom emoji from an image URL")
+@app_commands.describe(name="Name for the new emoji", url="Image URL to upload as emoji")
+async def uploademoji(interaction: discord.Interaction, name: str, url: str):
+    # Check bot and user permissions
+    if not interaction.guild.me.guild_permissions.manage_emojis_and_stickers:
+        await interaction.response.send_message("❌ I need the 'Manage Emojis and Stickers' permission to upload emojis.", ephemeral=True)
+        return
+    if not interaction.user.guild_permissions.manage_emojis_and_stickers:
+        await interaction.response.send_message("❌ You need the 'Manage Emojis and Stickers' permission to use this command.", ephemeral=True)
+        return
+    import aiohttp
+    # Download image
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                await interaction.response.send_message("❌ Could not download the image. Please check the URL.", ephemeral=True)
+                return
+            image_bytes = await resp.read()
+    # Try to add emoji to the server
+    try:
+        new_emoji = await interaction.guild.create_custom_emoji(name=name, image=image_bytes)
+        await interaction.response.send_message(f"✅ Emoji '{new_emoji.name}' uploaded to the server!", ephemeral=True)
+    except discord.HTTPException as e:
+        if e.code == 30008:
+            await interaction.response.send_message("❌ This server has reached its emoji limit.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+
 bot.run(os.getenv("DISCORD_TOKEN"))
