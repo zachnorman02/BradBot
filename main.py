@@ -300,11 +300,19 @@ async def boostercolor(interaction: discord.Interaction, hex: str, style: str = 
                     
         new_role = await guild.create_role(name=member.display_name, mentionable=False)
         await asyncio.sleep(1)  # Short delay to ensure Discord registers the new role
-        bot_member = guild.me
-        bot_top_role = sorted(bot_member.roles, key=lambda r: r.position, reverse=True)[0]
+        # Place new role above the booster role
+        target_position = None
+        if booster_role:
+            # Place above user's highest role
+            personal_roles_sorted = sorted([role for role in member.roles if not role.is_default()], key=lambda r: r.position, reverse=True)
+            highest_role = personal_roles_sorted[0] if personal_roles_sorted else None
+            if highest_role:
+                target_position = highest_role.position + 1
+            else:
+                target_position = 1
         move_success = True
         try:
-            await new_role.edit(position=bot_top_role.position - 1)
+            await new_role.edit(position=target_position)
         except Exception:
             move_success = False
         await member.add_roles(new_role)
@@ -361,9 +369,16 @@ async def boostername(interaction: discord.Interaction, name: str):
         bot_top_role = sorted(bot_member.roles, key=lambda r: r.position, reverse=True)[0]
         new_role = await guild.create_role(name=name, mentionable=False)
         await asyncio.sleep(1)  # Short delay to ensure Discord registers the new role
+        # Determine target position for new role
+        personal_roles_sorted = sorted([role for role in member.roles if not role.is_default()], key=lambda r: r.position, reverse=True)
+        highest_role = personal_roles_sorted[0] if personal_roles_sorted else None
+        if highest_role:
+            target_position = highest_role.position + 1
+        else:
+            target_position = 1
         move_success = True
         try:
-            await new_role.edit(position=bot_top_role.position - 1)
+            await new_role.edit(position=target_position)
         except Exception:
             move_success = False
         await member.add_roles(new_role)
