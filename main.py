@@ -202,9 +202,11 @@ async def on_message(message):
         if [link for link in embez_links if link]:
             embez_link_text = [f'[EmbedEZ]({link})' for link in embez_links if link]
             response = f'EmbedEZ Links: {" ".join(embez_link_text)}\n{response}'
-        # Send the fixed message
-        await message.channel.send(response, silent=True)
-        
+        # If the message is a reply, reply to the same message
+        if message.reference and message.reference.resolved:
+            await message.channel.send(response, reference=message.reference, silent=True)
+        else:
+            await message.channel.send(response, silent=True)
         # Delete the original message
         try:
             await message.delete()
