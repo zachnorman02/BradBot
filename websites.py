@@ -121,6 +121,31 @@ class TwitterLink(SimpleWebsiteLink):
         return None
 
 
+
+# Handles Instagram profile URLs, strips tracking params but does not replace domain
+class InstagramProfileLink(SimpleWebsiteLink):
+    name = "Instagram"
+    routes = [
+        r"https?://(?:www\.)?instagram\.com/[\w.-]+/?(?:\?.*)?$"
+    ]
+    replacement = "instagram.com"
+
+    def is_valid(self) -> bool:
+        for route in self.routes:
+            if re.match(route, self.url, re.IGNORECASE):
+                return True
+        return False
+
+    async def render(self) -> Optional[str]:
+        if not self.is_valid():
+            return None
+        for route in self.routes:
+            if re.match(route, self.url, re.IGNORECASE):
+                fixed_url = re.sub(r'https?://[^/]+', f'https://{self.replacement}', self.url, flags=re.IGNORECASE)
+                clean_url = self._clean_tracking_params(fixed_url)
+                return clean_url
+        return None
+
 class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
@@ -355,6 +380,7 @@ class Rule34Link(SimpleWebsiteLink):
 
 websites = [
     TwitterLink,
+    InstagramProfileLink,
     InstagramLink,
     TikTokLink,
     RedditLink,
