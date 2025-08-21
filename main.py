@@ -1,3 +1,4 @@
+import enum
 import aiohttp
 import datetime
 import discord
@@ -87,66 +88,75 @@ async def on_message(message):
     
     # Match URLs, including those inside spoiler tags (||...||)
     spoiler_url_pattern = r'(\|\|)?(https?://[^\s|]+)(\|\|)?'
-    matches = re.finditer(spoiler_url_pattern, message.content)
     
     fixed_content = message.content
     any_links_fixed = False
     
-    # Step 1: Replace all URLs with their fixed versions
-    url_pattern = r'(https?://[^\s|)]+)'
-    fixed_content = message.content
+    # --- NEW LOGIC ---
+    content = message.content
     any_links_fixed = False
-    # Find all URLs
-    url_matches = list(re.finditer(url_pattern, fixed_content))
-    replacements = {}
-    for match in url_matches:
-        url = match.group(1)
+    embez_links = []
+
+    # 1. Replace URLs inside markdown links
+    markdown_link_pattern = re.compile(r'(\[[^\]]+\])\((https?://[^\s)]+)\)')
+    async def replace_markdown_url(match):
+        label = match.group(1)
+        url = match.group(2)
         site_name = get_site_name(url)
         fixed_url = await fix_link_async(url)
-        # If Rule34, do not remove query parameters
-        if site_name and site_name.lower() == 'rule34' and fixed_url:
-            replacements[(match.start(1), match.end(1))] = fixed_url  # Use as-is
+        if fixed_url and fixed_url != url:
+            nonlocal any_links_fixed
             any_links_fixed = True
-        elif fixed_url and fixed_url != url:
-            # Remove query parameters for other sites
-            clean_url = fixed_url.split('?')[0]
-            replacements[(match.start(1), match.end(1))] = clean_url
-            any_links_fixed = True
-    # Apply replacements from end to start
-    for (start, end), replacement in sorted(replacements.items(), reverse=True):
-        fixed_content = fixed_content[:start] + replacement + fixed_content[end:]
+            # Remove query params except for Rule34
+            if site_name and site_name.lower() == 'rule34':
+                new_url = fixed_url
+            else:
+                new_url = fixed_url.split('?')[0]
+            return f'{label}({new_url})'
+        return match.group(0)
 
-    # Step 2: Wrap only plain URLs (not inside markdown) with markdown
-    # Find all markdown links and mark their spans
-    markdown_link_pattern = re.compile(r'(\[[^\]]+\])\((https?://[^\s)]+)\)')
-    markdown_spans = [ (m.start(2), m.end(2)) for m in markdown_link_pattern.finditer(fixed_content) ]
-
-    def is_in_markdown_link(start, end):
-        return any(start >= span_start and end <= span_end for span_start, span_end in markdown_spans)
-
-    # Find all URLs and wrap only those not inside markdown
-    url_pattern = re.compile(r'(https?://[^\s|)]+)')
-    new_content = fixed_content
-    offset = 0
-    embez_links = []
-    for match in url_pattern.finditer(fixed_content):
-        url_start, url_end = match.start(1), match.end(1)
-        if is_in_markdown_link(url_start, url_end):
-            continue
-        url = match.group(1)
+    # 2. Replace plain URLs (not inside markdown) with markdown
+    spoiler_url_pattern = re.compile(r'(\|\|)?(https?://[^\s|]+)(\|\|)?')
+    async def replace_plain_url(match):
+        prefix = match.group(1) or ''
+        url = match.group(2)
+        suffix = match.group(3) or ''
+        # Skip if inside markdown (already handled)
+        if markdown_link_pattern.search(content[max(0, match.start()-50):match.end()+50]):
+            return match.group(0)
         site_name = get_site_name(url)
-        # If site is supported by EmbedEZ, try to get EmbedEZ link
-        if site_name or site_name.lower() in EMBEDEZ_SITES:
-            embedez_link = await get_embedez_link(url)
-            embez_links.append(embedez_link)
-        # Only wrap in markdown if site_name is not the url itself
-        if site_name and site_name != url:
-            replacement = f'[{site_name}]({url})'
+        fixed_url = await fix_link_async(url)
+        if fixed_url and fixed_url != url:
+            nonlocal any_links_fixed
+            any_links_fixed = True
+            if site_name and site_name.lower() == 'rule34':
+                new_url = fixed_url
+            else:
+                new_url = fixed_url.split('?')[0]
         else:
-            replacement = url
-        # Replace in new_content, adjusting for offset
-        new_content = new_content[:url_start+offset] + replacement + new_content[url_end+offset:]
-        offset += len(replacement) - (url_end - url_start)
+            new_url = url
+        if site_name and site_name != url:
+            return f'{prefix}[{site_name}]({new_url}){suffix}'
+        else:
+            return f'{prefix}{new_url}{suffix}'
+
+    # Apply async replacements
+    # Replace markdown links
+    matches = list(markdown_link_pattern.finditer(content))
+    new_content = content
+    for match in reversed(matches):
+        replacement = await replace_markdown_url(match)
+        start, end = match.span()
+        new_content = new_content[:start] + replacement + new_content[end:]
+    content = new_content
+
+    # Replace plain URLs
+    matches = list(spoiler_url_pattern.finditer(content))
+    new_content = content
+    for match in reversed(matches):
+        replacement = await replace_plain_url(match)
+        start, end = match.span()
+        new_content = new_content[:start] + replacement + new_content[end:]
     fixed_content = new_content
 
     # Suppress embeds for all but the first link (including markdown links)
@@ -189,8 +199,8 @@ async def on_message(message):
     if any_links_fixed:
         # Create the response with user ping and fixed content
         response = f"{message.author.mention}: {fixed_content}"
-        if embez_links:
-            embez_link_text = [f'[EmbedEZ]({link})' for link in embez_links]
+        if [link for link in embez_links if link]:
+            embez_link_text = [f'[EmbedEZ]({link})' for link in embez_links if link]
             response = f'EmbedEZ Links: {" ".join(embez_link_text)}\n{response}'
         # Send the fixed message
         await message.channel.send(response, silent=True)
@@ -233,11 +243,16 @@ async def clear(interaction: discord.Interaction):
         except Exception:
             pass
     await interaction.followup.send(f"Deleted {deleted} messages in this channel.", ephemeral=True)
+    
+class RoleColorType(str, enum.Enum):
+    SOLID = "solid"
+    GRADIENT = "gradient"
+    HOLOGRAPHIC = "holographic"
 
 # Slash command for server boosters to set their personal role color
 @bot.tree.command(name="boostercolor", description="Set your booster role color: solid, gradient, or holographic")
 @app_commands.describe(hex="Hex color code (e.g. #FF5733)", style="Color style: solid, gradient, or holographic", hex2="Second hex code for gradient (optional)")
-async def boostercolor(interaction: discord.Interaction, hex: str, style: str = "solid", hex2: str = None):
+async def boostercolor(interaction: discord.Interaction, style: RoleColorType = RoleColorType.SOLID, hex: str = None, hex2: str = None):
     guild = interaction.guild
     member = interaction.user if hasattr(interaction, 'user') else interaction.author
     booster_role = discord.utils.get(guild.roles, is_premium_subscriber=True)
@@ -247,26 +262,29 @@ async def boostercolor(interaction: discord.Interaction, hex: str, style: str = 
         await interaction.response.send_message("You must be a server booster or the bot owner to use this command.", ephemeral=True)
         return
     # Validate hex codes and style
-    if style == "solid":
+    if style == RoleColorType.HOLOGRAPHIC:
+        color = discord.Color(11127295)
+        secondary_color = discord.Color(16759788)
+        tertiary_color = discord.Color(16761760)
+    elif style == RoleColorType.SOLID:
+        if not hex:
+            await interaction.response.send_message("Hex color is required for solid style.", ephemeral=True)
+            return
         if not re.fullmatch(r'#?[0-9A-Fa-f]{6}', hex):
             await interaction.response.send_message("Invalid hex code. Please use format #RRGGBB.", ephemeral=True)
             return
         color_value = int(hex.lstrip('#'), 16)
         color = discord.Color(color_value)
         secondary_color = None
-        preset = None
-    elif style == "gradient":
-        if not (hex and hex2 and re.fullmatch(r'#?[0-9A-Fa-f]{6}', hex) and re.fullmatch(r'#?[0-9A-Fa-f]{6}', hex2)):
+    elif style == RoleColorType.GRADIENT:
+        if not hex or not hex2:
+            await interaction.response.send_message("Both hex and hex2 are required for gradient style.", ephemeral=True)
+            return
+        if not (re.fullmatch(r'#?[0-9A-Fa-f]{6}', hex) and re.fullmatch(r'#?[0-9A-Fa-f]{6}', hex2)):
             await interaction.response.send_message("For gradient, provide two hex codes in format #RRGGBB.", ephemeral=True)
             return
         color = discord.Color(int(hex.lstrip('#'), 16))
         secondary_color = discord.Color(int(hex2.lstrip('#'), 16))
-        preset = None
-    elif style == "holographic":
-        color = discord.Color(11127295)
-        secondary_color = discord.Color(16759788)
-        tertiary_color = discord.Color(16761760)
-        preset = None
     else:
         await interaction.response.send_message("Style must be 'solid', 'gradient', or 'holographic'.", ephemeral=True)
         return
@@ -550,5 +568,38 @@ async def uploademoji(interaction: discord.Interaction, name: str, url: str):
             await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+
+class ConversionType(str, enum.Enum):
+    CYPIONATE = "cypionate"
+    GEL = "gel"
+
+@bot.tree.command(name="tconvert", description="Convert between testosterone cypionate and gel")
+@app_commands.describe(
+    starting_type="Type of testosterone (cypionate or gel)",
+    dose="Dose amount (in mg or ml)",
+    frequency="Frequency of dose (in days)"
+)
+async def tconvert(
+    interaction: discord.Interaction,
+    starting_type: ConversionType,
+    dose: float,
+    frequency: int
+):
+    """
+    Converts between testosterone cypionate and gel doses.
+    """
+    daily_dose = dose / frequency
+    gel_absorption = 0.1
+    cyp_absorption = 0.95
+    if starting_type == ConversionType.GEL:
+        absorption = daily_dose * gel_absorption
+        weekly = absorption * 7
+        final = weekly / cyp_absorption
+        response = f"{dose}mg gel every {frequency} days is approximately {final:.2f}mg cypionate weekly."
+    if starting_type == ConversionType.CYPIONATE:
+        absorption = daily_dose * cyp_absorption
+        final = absorption / gel_absorption
+        response = f"{dose}mg cypionate every {frequency} days is approximately {final:.2f}mg gel daily."
+    await interaction.response.send_message(response)
 
 bot.run(os.getenv("DISCORD_TOKEN"))

@@ -56,16 +56,16 @@ class SimpleWebsiteLink(WebsiteLink):
     """
 
     name: str
-    patterns: list[str]
+    routes: list[str]
     replacement: str
 
     def __init__(self, url: str) -> None:
         super().__init__(url)
 
     def is_valid(self) -> bool:
-        """Check if URL matches any of our patterns."""
-        for pattern in self.patterns:
-            if re.search(pattern, self.url, re.IGNORECASE):
+        """Check if URL matches any of our routes."""
+        for route in self.routes:
+            if re.search(route, self.url, re.IGNORECASE):
                 return True
         return False
 
@@ -80,10 +80,9 @@ class SimpleWebsiteLink(WebsiteLink):
         """Return the fixed URL with tracking parameters removed."""
         if not self.is_valid():
             return None
-        
         # Simple replacement - change domain
-        for pattern in self.patterns:
-            if re.search(pattern, self.url, re.IGNORECASE):
+        for route in self.routes:
+            if re.search(route, self.url, re.IGNORECASE):
                 fixed_url = re.sub(
                     r'https?://[^/]+', 
                     f'https://{self.replacement}', 
@@ -99,35 +98,85 @@ class SimpleWebsiteLink(WebsiteLink):
 class TwitterLink(SimpleWebsiteLink):
     """Twitter/X link handler."""
     name = "Twitter"
-    patterns = [r'twitter\.com', r'x\.com', r'fxtwitter\.com']
+    routes = [
+        r"https?://(?:www\.|m\.|g\.|t\.|d\.)?(twitter\.com|x\.com|nitter\.net|xcancel\.com|nitter\.poast\.org|nitter\.privacyredirect\.com|lightbrd\.com|nitter\.space|nitter\.tiekoetter\.com)/([\w]+)/status/(\d+)",
+        r"https?://(?:www\.|m\.|g\.|t\.|d\.)?(twitter\.com|x\.com|nitter\.net|xcancel\.com|nitter\.poast\.org|nitter\.privacyredirect\.com|lightbrd\.com|nitter\.space|nitter\.tiekoetter\.com)/([\w]+)/status/(\d+)/(photo|video)/(\d+)"
+    ]
     replacement = "fxtwitter.com"
+
+    def is_valid(self) -> bool:
+        for route in self.routes:
+            if re.match(route, self.url, re.IGNORECASE):
+                return True
+        return False
+
+    async def render(self) -> Optional[str]:
+        if not self.is_valid():
+            return None
+        for route in self.routes:
+            if re.match(route, self.url, re.IGNORECASE):
+                fixed_url = re.sub(r'https?://[^/]+', f'https://{self.replacement}', self.url, flags=re.IGNORECASE)
+                clean_url = self._clean_tracking_params(fixed_url)
+                return clean_url
+        return None
 
 
 class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
-    patterns = [r'instagram\.com', r'ddinstagram\.com']
+    routes = [
+        r"https?://(?:www\.)?(instagram\.com|ddinstagram\.com)/(p|reels?|tv|share)/([\w-]+)",
+        r"https?://(?:www\.)?(instagram\.com|ddinstagram\.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
+    ]
     replacement = "ddinstagram.com"
+
+    def is_valid(self) -> bool:
+        for route in self.routes:
+            if re.match(route, self.url, re.IGNORECASE):
+                return True
+        return False
+
+    async def render(self) -> Optional[str]:
+        if not self.is_valid():
+            return None
+        for route in self.routes:
+            if re.match(route, self.url, re.IGNORECASE):
+                fixed_url = re.sub(r'https?://[^/]+', f'https://{self.replacement}', self.url, flags=re.IGNORECASE)
+                clean_url = self._clean_tracking_params(fixed_url)
+                return clean_url
+        return None
 
 
 class TikTokLink(SimpleWebsiteLink):
     """TikTok link handler."""
     name = "TikTok"
-    patterns = [r'tiktok\.com', r'tnktok\.com']
+    routes = [
+        r"https?://(?:www\.|a\.|d\.|vm\.)?(tiktok\.com)/@([\w-]+)/(video|photo)/([\w-]+)",
+        r"https?://(?:www\.|a\.|d\.|vm\.)?(tiktok\.com)/(t|embed)/([\w-]+)",
+        r"https?://(?:www\.|a\.|d\.|vm\.)?(tiktok\.com)/([\w-]+)"
+    ]
     replacement = "tnktok.com"
 
 
 class RedditLink(SimpleWebsiteLink):
     """Reddit link handler."""
     name = "Reddit"
-    patterns = [r'reddit\.com', r'vxreddit\.com']
+    routes = [
+        r"https?://(?:www\.)?(reddit\.com|redditmedia\.com)/(u|r|user)/([\w-]+)/(comments|s)/([\w-]+)(?:/([\w-]+))?",
+        r"https?://(?:www\.)?(reddit\.com|redditmedia\.com)/([\w-]+)"
+    ]
     replacement = "vxreddit.com"
 
 
 class YouTubeLink(SimpleWebsiteLink):
     """YouTube link handler."""
     name = "YouTube"
-    patterns = [r'youtube\.com', r'youtu\.be', r'koutube\.com']
+    routes = [
+        r"https?://(?:www\.)?(youtube\.com|youtu\.be)/watch\?v=([\w-]+)",
+        r"https?://(?:www\.)?(youtube\.com|youtu\.be)/playlist\?list=([\w-]+)",
+        r"https?://(?:www\.)?(youtube\.com|youtu\.be)/shorts/([\w-]+)",
+        r"https?://(?:www\.)?(youtube\.com|youtu\.be)/([\w-]+)"
+    ]
     replacement = "koutube.com"
     
     def _clean_tracking_params(self, url: str) -> str:
@@ -138,7 +187,11 @@ class YouTubeLink(SimpleWebsiteLink):
         params = query.split('&')
         keep = []
         for param in params:
-            if param.startswith('v=') or param.startswith('t='):
+            if (
+                param.startswith('v=') 
+                or param.startswith('t=')
+                or param.startswith('list=')
+            ):
                 keep.append(param)
         if keep:
             return base + '?' + '&'.join(keep)
@@ -149,113 +202,152 @@ class YouTubeLink(SimpleWebsiteLink):
 class ThreadsLink(SimpleWebsiteLink):
     """Threads link handler."""
     name = "Threads"
-    patterns = [r'threads\.net', r'fixthreads\.net']
+    routes = [
+        r"https?://(?:www\.)?(threads\.net|threads\.com)/@([\w-]+)/post/([\w-]+)"
+    ]
     replacement = "fixthreads.net"
 
 
 class BlueskyLink(SimpleWebsiteLink):
     """Bluesky link handler."""
     name = "Bluesky"
-    patterns = [r'bsky\.app', r'bskx\.app']
+    routes = [
+        r"https?://(?:www\.|r\.|g\.)?(bsky\.app)/profile/did:([\w-]+)/post/([\w-]+)",
+        r"https?://(?:www\.|r\.|g\.)?(bsky\.app)/profile/([\w-]+)/post/([\w-]+)"
+    ]
     replacement = "bskx.app"
 
 
 class SnapchatLink(SimpleWebsiteLink):
     """Snapchat link handler."""
     name = "Snapchat"
-    patterns = [r'snapchat\.com']
-    replacement = "snapchat.com"  # No alternative available yet
+    routes = [
+        r"https?://(?:www\.)?(snapchat\.com)/p/([\w-]+)/([\w-]+)(?:/([\w-]+))?",
+        r"https?://(?:www\.)?(snapchat\.com)/spotlight/([\w-]+)"
+    ]
+    replacement = "snapchat.com"
 
 
 class FacebookLink(SimpleWebsiteLink):
     """Facebook link handler."""
     name = "Facebook"
-    patterns = [r'facebook\.com', r'facebed\.com']
+    routes = [
+        r"https?://(?:www\.)?(facebook\.com)/([\w-]+)/posts/([\w-]+)",
+        r"https?://(?:www\.)?(facebook\.com)/share/(v|r)/([\w-]+)",
+        r"https?://(?:www\.)?(facebook\.com)/reel/([\w-]+)",
+        r"https?://(?:www\.)?(facebook\.com)/photo\?fbid=([\w-]+)",
+        r"https?://(?:www\.)?(facebook\.com)/watch\?v=([\w-]+)",
+        r"https?://(?:www\.)?(facebook\.com)/permalink.php\?story_fbid=([\w-]+)&id=([\w-]+)",
+        r"https?://(?:www\.)?(facebook\.com)/groups/([\w-]+)/(posts|permalink)/([\w-]+)"
+    ]
     replacement = "facebed.com"
 
 
 class PixivLink(SimpleWebsiteLink):
     """Pixiv link handler."""
     name = "Pixiv"
-    patterns = [r'pixiv\.net', r'phixiv\.net']
+    routes = [
+        r"https?://(?:www\.)?(pixiv\.net)/member_illust.php\?illust_id=([\w-]+)",
+        r"https?://(?:www\.)?(pixiv\.net)/([\w-]+)/artworks/([\w-]+)(?:/([\w-]+))?"
+    ]
     replacement = "phixiv.net"
 
 
 class TwitchLink(SimpleWebsiteLink):
     """Twitch link handler."""
     name = "Twitch"
-    patterns = [r'twitch\.tv', r'fxtwitch\.seria\.moe']
+    routes = [
+        r"https?://(?:www\.)?(twitch\.tv)/([\w-]+)/clip/([\w-]+)"
+    ]
     replacement = "fxtwitch.seria.moe"
 
 
 class SpotifyLink(SimpleWebsiteLink):
     """Spotify link handler."""
     name = "Spotify"
-    patterns = [r'spotify\.com', r'fxspotify\.com']
+    routes = [
+        r"https?://(?:www\.)?(spotify\.com)/([\w-]+)/track/([\w-]+)"
+    ]
     replacement = "fxspotify.com"
 
 
 class DeviantArtLink(SimpleWebsiteLink):
     """DeviantArt link handler."""
     name = "DeviantArt"
-    patterns = [r'deviantart\.com', r'fixdeviantart\.com']
+    routes = [
+        r"https?://(?:www\.)?(deviantart\.com)/([\w-]+)/(art|journal)/([\w-]+)"
+    ]
     replacement = "fixdeviantart.com"
 
 
 class MastodonLink(SimpleWebsiteLink):
     """Mastodon link handler."""
     name = "Mastodon"
-    patterns = [r'mastodon\.social', r'mstdn\.jp', r'mastodon\.cloud', r'mstdn\.social', 
-               r'mastodon\.world', r'mastodon\.online', r'mas\.to', r'techhub\.social', 
-               r'mastodon\.uno', r'infosec\.exchange', r'fx\.zillanlabs\.tech']
+    routes = [
+        r"https?://(?:www\.)?(mastodon\.social|mstdn\.jp|mastodon\.cloud|mstdn\.social|mastodon\.world|mastodon\.online|mas\.to|techhub\.social|mastodon\.uno|infosec\.exchange)/@([\w-]+)/([\w-]+)"
+    ]
     replacement = "fx.zillanlabs.tech"
 
 
 class TumblrLink(SimpleWebsiteLink):
     """Tumblr link handler."""
     name = "Tumblr"
-    patterns = [r'tumblr\.com', r'tpmblr\.com']
+    routes = [
+        r"https?://(?:www\.)?(tumblr\.com)/post/([\w-]+)(?:/([\w-]+))?",
+        r"https?://(?:www\.)?(tumblr\.com)/([\w-]+)/([\w-]+)(?:/([\w-]+))?"
+    ]
     replacement = "tpmblr.com"
 
 
 class BiliBiliLink(SimpleWebsiteLink):
     """BiliBili link handler."""
     name = "BiliBili"
-    patterns = [r'bilibili\.com', r'b23\.tv', r'b22\.top', r'vxbilibili\.com']
+    routes = [
+        r"https?://(?:www\.)?(bilibili\.com|b23\.tv|b22\.top)/video/([\w-]+)",
+        r"https?://(?:www\.)?(bilibili\.com|b23\.tv|b22\.top)/([\w-]+)",
+        r"https?://(?:www\.)?(bilibili\.com|b23\.tv|b22\.top)/bangumi/play/([\w-]+)",
+        r"https?://(?:www\.)?(bilibili\.com|b23\.tv|b22\.top)/bangumi/media/([\w-]+)",
+        r"https?://(?:www\.)?(bilibili\.com|b23\.tv|b22\.top)/bangumi/v2/media-index\?media_id=([\w-]+)",
+        r"https?://(?:www\.)?(bilibili\.com|b23\.tv|b22\.top)/opus/([\w-]+)",
+        r"https?://(?:www\.)?(bilibili\.com|b23\.tv|b22\.top)/dynamic/([\w-]+)",
+        r"https?://(?:www\.)?(bilibili\.com|b23\.tv|b22\.top)/space/([\w-]+)",
+        r"https?://(?:www\.)?(bilibili\.com|b23\.tv|b22\.top)/detail/([\w-]+)",
+        r"https?://(?:www\.)?(bilibili\.com|b23\.tv|b22\.top)/m/detail/([\w-]+)"
+    ]
     replacement = "vxbilibili.com"
 
 
 class IFunnyLink(SimpleWebsiteLink):
     """IFunny link handler."""
     name = "IFunny"
-    patterns = [r'ifunny\.co']
+    routes = [r'https?://(?:www\.)?ifunny\.co/[\w/-]+']
     replacement = "ifunny.co"  # No alternative available yet
 
 
 class FurAffinityLink(SimpleWebsiteLink):
     """FurAffinity link handler."""
     name = "FurAffinity"
-    patterns = [r'furaffinity\.net', r'xfuraffinity\.net']
+    routes = [r'https?://(?:www\.)?(furaffinity\.net|xfuraffinity\.net)/[\w/-]+']
     replacement = "xfuraffinity.net"
 
 
 class ImgurLink(SimpleWebsiteLink):
     """Imgur link handler."""
     name = "Imgur"
-    patterns = [r'imgur\.com']
+    routes = [r'https?://(?:www\.)?imgur\.com/[\w/-]+']
     replacement = "imgur.com"  # No alternative available yet
 
 
 class WeiboLink(SimpleWebsiteLink):
     """Weibo link handler."""
     name = "Weibo"
-    patterns = [r'weibo\.com', r'weibo\.cn']
+    routes = [r'https?://(?:www\.)?(weibo\.com|weibo\.cn)/[\w/-]+']
     replacement = "weibo.com"  # No alternative available yet
     
 class Rule34Link(SimpleWebsiteLink):
     """Rule34 link handler."""
-    name="Rule34"
-    patterns = [r'rule34\.xxx', r'rule34\.paheal\.net']
+    name = "Rule34"
+    routes = [r'https?://(?:www\.)?(rule34\.xxx|rule34\.paheal\.net)/[\w/-]+']
     replacement = "rule34.xxx" # No alternative available
     
     def _clean_tracking_params(self, url: str) -> str:
