@@ -95,7 +95,7 @@ async def on_message(message):
     # --- NEW LOGIC ---
     content = message.content
     any_links_fixed = False
-    embez_links = []
+    embez_link = None
 
     # 1. Replace URLs inside markdown links
     markdown_link_pattern = re.compile(r'(\[[^\]]+\])\((https?://[^\s)]+)\)')
@@ -178,18 +178,18 @@ async def on_message(message):
         first = True
         offset = 0
         content = fixed_content
-        for start, end, is_markdown in link_spans:
+        for start, end, _ in link_spans:
             start += offset
             end += offset
             url = content[start:end]
             if first:
+                # Check EmbedEZ for the first eligible link
+                site_name = get_site_name(url)
+                if site_name and site_name.lower() in EMBEDEZ_SITES:
+                    embez_link = await get_embedez_link(url)
+                    replacement = f'<{url}>'
                 first = False
-                continue
-            if is_markdown:
-                # Wrap URL part in angle brackets
-                replacement = f'<{url}>'
             else:
-                # Wrap raw URL in angle brackets
                 replacement = f'<{url}>'
             content = content[:start] + replacement + content[end:]
             offset += len(replacement) - (end - start)
@@ -199,9 +199,8 @@ async def on_message(message):
     if any_links_fixed:
         # Create the response with user ping and fixed content
         response = f"{message.author.mention}: {fixed_content}"
-        if [link for link in embez_links if link]:
-            embez_link_text = [f'[EmbedEZ]({link})' for link in embez_links if link]
-            response = f'EmbedEZ Links: {" ".join(embez_link_text)}\n{response}'
+        if embez_link:
+            response = f'{response}\n-# [EmbedEZ]({embez_link})'
         # If the message is a reply, reply to the same message
         if message.reference and message.reference.resolved:
             await message.channel.send(response, reference=message.reference, silent=True)
@@ -216,6 +215,35 @@ async def on_message(message):
         except discord.NotFound:
             # Message was already deleted
             pass
+        
+async def fix_amp_links(message):
+    content = message.content
+    amputator_api = 'https://www.amputatorbot.com/api/v1/convert?gac=true&md=3&q='
+    url_pattern = re.compile(r'https?://[^\s|]+')
+    amp_links = [m.group(0) for m in url_pattern.finditer(content) if 'amp' in m.group(0)]
+    replacements = {}
+    async with aiohttp.ClientSession() as session:
+        for link in amp_links:
+            api_url = amputator_api + link
+            try:
+                async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # If canonicals exist and is a list, use the first url
+                        if 'error_message' in data:
+                            raise ValueError(data['error_message'])
+                        else:
+                            canonical_url = data[0].get('canonical', {}).get('url', link)
+                            replacements[link] = canonical_url
+                    else:
+                        replacements[link] = link
+            except Exception:
+                replacements[link] = link
+    # Replace amp links in the message content
+    new_content = content
+    for amp_link, canonical_url in replacements.items():
+        new_content = new_content.replace(amp_link, canonical_url)
+    return new_content
 
 # Manual sync command (useful for testing) - keep as text command
 @bot.command()

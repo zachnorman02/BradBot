@@ -1,0 +1,2 @@
+./discordpy/discord.py
+mysql-connector-python
