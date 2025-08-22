@@ -77,6 +77,35 @@ async def get_embedez_link(url: str) -> str | None:
         return None
     return None
 
+async def fix_amp_links(content):
+    amputator_api = 'https://www.amputatorbot.com/api/v1/convert?gac=true&md=3&q='
+    # Find all URLs
+    url_pattern = re.compile(r'https?://[^\s)]+')
+    amp_links = set()
+    for m in url_pattern.finditer(content):
+        url = m.group(0)
+        if 'amp' in url:
+            amp_links.add(url)
+    # Get canonical replacements
+    replacements = {}
+    async with aiohttp.ClientSession() as session:
+        for link in amp_links:
+            api_url = amputator_api + link
+            try:
+                async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if 'error_message' in data:
+                            continue
+                        canonical_url = data[0].get('canonical', {}).get('url', link)
+                        replacements[link] = canonical_url
+            except Exception:
+                continue
+    new_content = content
+    for replacement in replacements:
+        new_content = new_content.replace(replacement, replacements[replacement])
+    return new_content
+
 @bot.event
 async def on_message(message):
     # Don't respond to bot messages
@@ -88,13 +117,9 @@ async def on_message(message):
     
     # Match URLs, including those inside spoiler tags (||...||)
     spoiler_url_pattern = r'(\|\|)?(https?://[^\s|]+)(\|\|)?'
-    
-    fixed_content = message.content
-    any_links_fixed = False
-    
-    # --- NEW LOGIC ---
-    content = message.content
-    any_links_fixed = False
+    content = await fix_amp_links(message.content)
+    fixed_content = content
+    any_links_fixed = message.content != content
     embez_link = None
 
     # 1. Replace URLs inside markdown links
@@ -120,6 +145,8 @@ async def on_message(message):
     async def replace_plain_url(match):
         prefix = match.group(1) or ''
         url = match.group(2)
+        if url[-1] == ')':
+            url = url[:-1]
         suffix = match.group(3) or ''
         # Skip if inside markdown (already handled)
         if markdown_link_pattern.search(content[max(0, match.start()-50):match.end()+50]):
@@ -192,6 +219,8 @@ async def on_message(message):
             else:
                 replacement = f'<{url}>'
             content = content[:start] + replacement + content[end:]
+            if content[-2:] == '))':
+                content = content[:-1]
             offset += len(replacement) - (end - start)
         fixed_content = content
 
@@ -215,35 +244,6 @@ async def on_message(message):
         except discord.NotFound:
             # Message was already deleted
             pass
-        
-async def fix_amp_links(message):
-    content = message.content
-    amputator_api = 'https://www.amputatorbot.com/api/v1/convert?gac=true&md=3&q='
-    url_pattern = re.compile(r'https?://[^\s|]+')
-    amp_links = [m.group(0) for m in url_pattern.finditer(content) if 'amp' in m.group(0)]
-    replacements = {}
-    async with aiohttp.ClientSession() as session:
-        for link in amp_links:
-            api_url = amputator_api + link
-            try:
-                async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        # If canonicals exist and is a list, use the first url
-                        if 'error_message' in data:
-                            raise ValueError(data['error_message'])
-                        else:
-                            canonical_url = data[0].get('canonical', {}).get('url', link)
-                            replacements[link] = canonical_url
-                    else:
-                        replacements[link] = link
-            except Exception:
-                replacements[link] = link
-    # Replace amp links in the message content
-    new_content = content
-    for amp_link, canonical_url in replacements.items():
-        new_content = new_content.replace(amp_link, canonical_url)
-    return new_content
 
 # Manual sync command (useful for testing) - keep as text command
 @bot.command()
