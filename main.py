@@ -8,7 +8,7 @@ import os
 import re
 import asyncio
 from dotenv import load_dotenv
-from websites import fix_link_async, get_site_name
+from websites import websites, fix_link_async, get_site_name
 
 # Load environment variables from .env file
 load_dotenv()
@@ -108,141 +108,95 @@ async def fix_amp_links(content):
 
 @bot.event
 async def on_message(message):
-    # Don't respond to bot messages
     if message.author.bot:
         return
-    
-    # Process commands first
     await bot.process_commands(message)
+    url_pattern = re.compile(r'https?://[^\s<>()]+')
+    urls = url_pattern.findall(message.content)
+    if not urls:
+        return
     
-    # Match URLs, including those inside spoiler tags (||...||)
-    spoiler_url_pattern = r'(\|\|)?(https?://[^\s|]+)(\|\|)?'
-    content = await fix_amp_links(message.content)
-    fixed_content = content
-    any_links_fixed = message.content != content
-    embez_link = None
+    new_content = message.content
+    content_changed = False
+    fixed_urls = {}
+    embedez_url = None
+    
+    # Process all URLs for fixes
+    for url in urls:
+        for website_class in websites:
+            website = website_class.if_valid(url)
+            if website:
+                fixed_url = await website.render()
+                if fixed_url and fixed_url != url:
+                    fixed_urls[url] = fixed_url
+                break
+    
+    # Apply website fixes
+    if fixed_urls:
+        for original_url, fixed_url in fixed_urls.items():
+            new_content = new_content.replace(original_url, fixed_url)
+        content_changed = True
+    
+    amp_fixed_content = await fix_amp_links(new_content)
+    if amp_fixed_content != new_content:
+        new_content = amp_fixed_content
+        content_changed = True
+    
+    # Get updated URLs after fixes
+    updated_urls = url_pattern.findall(new_content)
+    
+    # Check first URL for EmbedEZ compatibility
+    if updated_urls:
+        first_url = updated_urls[0]
+        for site in EMBEDEZ_SITES:
+            if site.lower() in get_site_name(first_url).lower():
+                embedez_url = await get_embedez_link(first_url)
+                break
+    
+    # Format URLs as markdown links if they're not already formatted
+    markdown_link_pattern = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
+    existing_markdown_urls = {match.group(2) for match in markdown_link_pattern.finditer(new_content)}
+    
+    for i, url in enumerate(updated_urls):
+        # Skip if URL is already in a markdown link
+        if url in existing_markdown_urls:
+            continue
+            
+        # Get site name from original URL if it was fixed, otherwise use current URL
+        original_url = None
+        for orig, fixed in fixed_urls.items():
+            if fixed == url:
+                original_url = orig
+                break
+        site_name = get_site_name(original_url or url)
+        
+        # Skip markdown formatting if site name is the same as the URL (no site recognized)
+        if site_name == url or site_name == (original_url or url):
+            continue
+        
+        if i == 0 and not embedez_url:
+            # First URL gets normal markdown link (will show embed)
+            new_content = new_content.replace(url, f'[{site_name}]({url})')
+            content_changed = True
+        elif i > 0 or embedez_url:
+            # Other URLs get suppressed embeds
+            new_content = new_content.replace(url, f'[{site_name}](<{url}>)')
+            content_changed = True
+    
+    if content_changed:
+        new_content = f'{message.author.mention}: {new_content}'
+        if embedez_url:
+            new_content += f"\n-# [EmbedEZ]({embedez_url})"
 
-    # 1. Replace URLs inside markdown links
-    markdown_link_pattern = re.compile(r'(\[[^\]]+\])\((https?://[^\s)]+)\)')
-    async def replace_markdown_url(match):
-        label = match.group(1)
-        url = match.group(2)
-        site_name = get_site_name(url)
-        fixed_url = await fix_link_async(url)
-        if fixed_url and fixed_url != url:
-            nonlocal any_links_fixed
-            any_links_fixed = True
-            # Remove query params except for Rule34
-            if site_name and site_name.lower() == 'rule34':
-                new_url = fixed_url
-            else:
-                new_url = fixed_url.split('?')[0]
-            return f'{label}({new_url})'
-        return match.group(0)
-
-    # 2. Replace plain URLs (not inside markdown) with markdown
-    spoiler_url_pattern = re.compile(r'(\|\|)?(https?://[^\s|]+)(\|\|)?')
-    async def replace_plain_url(match):
-        prefix = match.group(1) or ''
-        url = match.group(2)
-        if url[-1] == ')':
-            url = url[:-1]
-        suffix = match.group(3) or ''
-        # Skip if inside markdown (already handled)
-        if markdown_link_pattern.search(content[max(0, match.start()-50):match.end()+50]):
-            return match.group(0)
-        site_name = get_site_name(url)
-        fixed_url = await fix_link_async(url)
-        if fixed_url and fixed_url != url:
-            nonlocal any_links_fixed
-            any_links_fixed = True
-            if site_name and site_name.lower() == 'rule34':
-                new_url = fixed_url
-            else:
-                new_url = fixed_url.split('?')[0]
-        else:
-            new_url = url
-        if site_name and site_name != url:
-            return f'{prefix}[{site_name}]({new_url}){suffix}'
-        else:
-            return f'{prefix}{new_url}{suffix}'
-
-    # Apply async replacements
-    # Replace markdown links
-    matches = list(markdown_link_pattern.finditer(content))
-    new_content = content
-    for match in reversed(matches):
-        replacement = await replace_markdown_url(match)
-        start, end = match.span()
-        new_content = new_content[:start] + replacement + new_content[end:]
-    content = new_content
-
-    # Replace plain URLs
-    matches = list(spoiler_url_pattern.finditer(content))
-    new_content = content
-    for match in reversed(matches):
-        replacement = await replace_plain_url(match)
-        start, end = match.span()
-        new_content = new_content[:start] + replacement + new_content[end:]
-    fixed_content = new_content
-
-    # Suppress embeds for all but the first link (including markdown links)
-    # Find all markdown and raw links
-    markdown_link_pattern = re.compile(r'(\[[^\]]+\])\((https?://[^\s)]+)\)')
-    raw_url_pattern = re.compile(r'(https?://[^\s|)]+)')
-    # Collect all link spans (start, end, is_markdown)
-    link_spans = []
-    for m in markdown_link_pattern.finditer(fixed_content):
-        link_spans.append((m.start(2), m.end(2), True))
-    for m in raw_url_pattern.finditer(fixed_content):
-        # Only add if not inside markdown
-        if not any(m.start(1) >= span_start and m.end(1) <= span_end for span_start, span_end, _ in link_spans):
-            link_spans.append((m.start(1), m.end(1), False))
-    # Sort by start position
-    link_spans.sort()
-    # Only keep the first link as-is, wrap others in <>
-    if link_spans:
-        first = True
-        offset = 0
-        content = fixed_content
-        for start, end, _ in link_spans:
-            start += offset
-            end += offset
-            url = content[start:end]
-            if first:
-                # Check EmbedEZ for the first eligible link
-                site_name = get_site_name(url)
-                if site_name and site_name.lower() in EMBEDEZ_SITES:
-                    embez_link = await get_embedez_link(url)
-                    replacement = f'<{url}>'
-                first = False
-            else:
-                replacement = f'<{url}>'
-            content = content[:start] + replacement + content[end:]
-            if content[-2:] == '))':
-                content = content[:-1]
-            offset += len(replacement) - (end - start)
-        fixed_content = content
-
-    # Send the fixed message if any links were replaced
-    if any_links_fixed:
-        # Create the response with user ping and fixed content
-        response = f"{message.author.mention}: {fixed_content}"
-        if embez_link:
-            response = f'{response}\n-# [EmbedEZ]({embez_link})'
-        # If the message is a reply, reply to the same message
-        if message.reference and message.reference.resolved:
-            await message.channel.send(response, reference=message.reference, silent=True)
-        else:
-            await message.channel.send(response, silent=True)
-        # Delete the original message
+    if content_changed:
+        # If original message was a reply, make the new message a reply too
+        reference = message.reference
+        await message.channel.send(new_content, reference=reference)
         try:
             await message.delete()
         except discord.Forbidden:
-            # Bot doesn't have permission to delete messages
-            await message.channel.send("*Note: I don't have permission to delete the original message*")
+            await message.channel.send('I don\'t have permission to delete your message.')
         except discord.NotFound:
-            # Message was already deleted
             pass
 
 # Manual sync command (useful for testing) - keep as text command

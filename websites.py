@@ -65,7 +65,7 @@ class SimpleWebsiteLink(WebsiteLink):
     def is_valid(self) -> bool:
         """Check if URL matches any of our routes."""
         for route in self.routes:
-            if re.search(route, self.url, re.IGNORECASE):
+            if re.match(route, self.url, re.IGNORECASE):
                 return True
         return False
 
@@ -82,7 +82,7 @@ class SimpleWebsiteLink(WebsiteLink):
             return None
         # Simple replacement - change domain
         for route in self.routes:
-            if re.search(route, self.url, re.IGNORECASE):
+            if re.match(route, self.url, re.IGNORECASE):
                 fixed_url = re.sub(
                     r'https?://[^/]+', 
                     f'https://{self.replacement}', 
@@ -104,22 +104,6 @@ class TwitterLink(SimpleWebsiteLink):
     ]
     replacement = "fxtwitter.com"
 
-    def is_valid(self) -> bool:
-        for route in self.routes:
-            if re.match(route, self.url, re.IGNORECASE):
-                return True
-        return False
-
-    async def render(self) -> Optional[str]:
-        if not self.is_valid():
-            return None
-        for route in self.routes:
-            if re.match(route, self.url, re.IGNORECASE):
-                fixed_url = re.sub(r'https?://[^/]+', f'https://{self.replacement}', self.url, flags=re.IGNORECASE)
-                clean_url = self._clean_tracking_params(fixed_url)
-                return clean_url
-        return None
-
 
 
 # Handles Instagram profile URLs, strips tracking params but does not replace domain
@@ -130,22 +114,6 @@ class InstagramProfileLink(SimpleWebsiteLink):
     ]
     replacement = "instagram.com"
 
-    def is_valid(self) -> bool:
-        for route in self.routes:
-            if re.match(route, self.url, re.IGNORECASE):
-                return True
-        return False
-
-    async def render(self) -> Optional[str]:
-        if not self.is_valid():
-            return None
-        for route in self.routes:
-            if re.match(route, self.url, re.IGNORECASE):
-                fixed_url = re.sub(r'https?://[^/]+', f'https://{self.replacement}', self.url, flags=re.IGNORECASE)
-                clean_url = self._clean_tracking_params(fixed_url)
-                return clean_url
-        return None
-
 class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
@@ -154,22 +122,6 @@ class InstagramLink(SimpleWebsiteLink):
         r"https?://(?:www\.)?(instagram\.com|ddinstagram\.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
     ]
     replacement = "ddinstagram.com"
-
-    def is_valid(self) -> bool:
-        for route in self.routes:
-            if re.match(route, self.url, re.IGNORECASE):
-                return True
-        return False
-
-    async def render(self) -> Optional[str]:
-        if not self.is_valid():
-            return None
-        for route in self.routes:
-            if re.match(route, self.url, re.IGNORECASE):
-                fixed_url = re.sub(r'https?://[^/]+', f'https://{self.replacement}', self.url, flags=re.IGNORECASE)
-                clean_url = self._clean_tracking_params(fixed_url)
-                return clean_url
-        return None
 
 
 class TikTokLink(SimpleWebsiteLink):
