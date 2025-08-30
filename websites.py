@@ -132,7 +132,7 @@ class TikTokLink(SimpleWebsiteLink):
         r"https?://(?:www\.|a\.|d\.|vm\.)?(tiktok\.com)/(t|embed)/([\w-]+)",
         r"https?://(?:www\.|a\.|d\.|vm\.)?(tiktok\.com)/([\w-]+)"
     ]
-    replacement = "tnktok.com"
+    replacement = "a.tnktok.com"
 
 
 class RedditLink(SimpleWebsiteLink):

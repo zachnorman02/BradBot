@@ -586,4 +586,127 @@ async def tconvert(
         response = f"{dose}mg cypionate every {frequency} days is approximately {final:.2f}mg gel daily."
     await interaction.response.send_message(response)
 
+class TimestampStyle(str, enum.Enum):
+    SHORT_TIME = "t"          # 16:20
+    LONG_TIME = "T"           # 16:20:30
+    SHORT_DATE = "d"          # 20/04/2021
+    LONG_DATE = "D"           # 20 April 2021
+    SHORT_DATETIME = "f"      # 20 April 2021 16:20
+    LONG_DATETIME = "F"       # Tuesday, 20 April 2021 16:20
+    RELATIVE = "R"            # 2 months ago
+
+@bot.tree.command(name="timestamp", description="Generate a Discord timestamp")
+@app_commands.describe(
+    date="Date in YYYY-MM-DD format (optional, defaults to today)",
+    time="Time in 24hr (13:00) or 12hr (1 PM, 1:00 PM) format (optional, defaults to current time)",
+    style="Display style for the timestamp",
+    timezone_offset="Timezone offset from UTC (e.g. -5 for EST, +1 for CET)"
+)
+async def timestamp(
+    interaction: discord.Interaction,
+    date: str = None,
+    time: str = None,
+    style: TimestampStyle = TimestampStyle.RELATIVE,
+    timezone_offset: int = 0
+):
+    """
+    Creates a Discord timestamp that shows relative time and adapts to user's timezone.
+    """
+    import datetime as dt
+    
+    try:
+        now = dt.datetime.now()
+        
+        # Parse date (use today if not provided)
+        if date:
+            try:
+                parsed_date = dt.datetime.strptime(date, "%Y-%m-%d").date()
+            except ValueError:
+                await interaction.response.send_message("❌ Invalid date format. Use 'YYYY-MM-DD'", ephemeral=True)
+                return
+        else:
+            parsed_date = now.date()
+        
+        # Parse time (use current time if not provided)
+        if time:
+            try:
+                # Clean up the input - remove extra spaces and make case-insensitive
+                time_clean = time.strip().upper()
+                
+                # Try different time formats
+                parsed_time = None
+                time_formats = [
+                    "%H:%M:%S",      # 13:00:30 (24-hour with seconds)
+                    "%H:%M",         # 13:00 (24-hour)
+                    "%I:%M:%S %p",   # 1:00:30 PM (12-hour with seconds)
+                    "%I:%M %p",      # 1:00 PM (12-hour)
+                    "%I %p",         # 1 PM (12-hour, no minutes)
+                ]
+                
+                for fmt in time_formats:
+                    try:
+                        parsed_time = dt.datetime.strptime(time_clean, fmt).time()
+                        break
+                    except ValueError:
+                        continue
+                
+                if parsed_time is None:
+                    await interaction.response.send_message(
+                        "❌ Invalid time format. Supported formats:\n"
+                        "• 24-hour: `13:00`, `13:00:30`\n"
+                        "• 12-hour: `1 PM`, `1:00 PM`, `1:00:30 PM`", 
+                        ephemeral=True
+                    )
+                    return
+                    
+            except ValueError:
+                await interaction.response.send_message(
+                    "❌ Invalid time format. Supported formats:\n"
+                    "• 24-hour: `13:00`, `13:00:30`\n"
+                    "• 12-hour: `1 PM`, `1:00 PM`, `1:00:30 PM`", 
+                    ephemeral=True
+                )
+                return
+        else:
+            parsed_time = now.time()
+        
+        # Combine date and time
+        combined_datetime = dt.datetime.combine(parsed_date, parsed_time)
+        
+        # Apply timezone offset
+        combined_datetime = combined_datetime - dt.timedelta(hours=timezone_offset)
+        
+        # Convert to Unix timestamp
+        unix_timestamp = int(combined_datetime.timestamp())
+        
+        # Generate Discord timestamp
+        discord_timestamp = f"<t:{unix_timestamp}:{style.value}>"
+        
+        # Create response with examples of all formats
+        all_formats = [
+            f"**Short Time (t):** <t:{unix_timestamp}:t>",
+            f"**Long Time (T):** <t:{unix_timestamp}:T>", 
+            f"**Short Date (d):** <t:{unix_timestamp}:d>",
+            f"**Long Date (D):** <t:{unix_timestamp}:D>",
+            f"**Short DateTime (f):** <t:{unix_timestamp}:f>",
+            f"**Long DateTime (F):** <t:{unix_timestamp}:F>",
+            f"**Relative (R):** <t:{unix_timestamp}:R>"
+        ]
+        
+        input_info = f"**Input:** {parsed_date} {parsed_time.strftime('%H:%M:%S')}"
+        if timezone_offset != 0:
+            input_info += f" (UTC{timezone_offset:+d})"
+        
+        response = f"{input_info}\n"
+        response += f"**Your timestamp:** `{discord_timestamp}`\n"
+        response += f"**Preview:** {discord_timestamp}\n\n"
+        response += "**All format examples:**\n" + "\n".join(all_formats)
+        
+        await interaction.response.send_message(response, ephemeral=True)
+        
+    except ValueError as e:
+        await interaction.response.send_message(f"❌ Error parsing input: {e}", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An error occurred: {e}", ephemeral=True)
+
 bot.run(os.getenv("DISCORD_TOKEN"))
