@@ -31,50 +31,65 @@ def check_emoji_permissions(interaction: discord.Interaction) -> str | None:
         return "❌ You need the 'Create Expressions' permission."
     return None
 
-async def parse_message_link(interaction: discord.Interaction, message_link: str):
-    """Parse message link and return the message object"""
+def parse_message_link(message_link: str):
+    """Parse message link and return guild_id, channel_id, message_id or None if invalid"""
     import re
     match = re.match(r"https://discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)", message_link)
     if not match:
-        await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
-        return None
+        return None, None, None
     
     guild_id, channel_id, message_id = map(int, match.groups())
-    if guild_id != interaction.guild.id:
-        await interaction.response.send_message("❌ The message must be from this server.", ephemeral=True)
-        return None
-    
-    channel = interaction.guild.get_channel(channel_id)
-    if not channel:
-        await interaction.response.send_message("❌ Could not find the channel.", ephemeral=True)
-        return None
-    
-    try:
-        return await channel.fetch_message(message_id)
-    except Exception:
-        await interaction.response.send_message("❌ Could not fetch the message.", ephemeral=True)
-        return None
+    return guild_id, channel_id, message_id
 
-async def create_emoji_with_overwrite(guild, name: str, image_bytes: bytes) -> tuple[bool, str]:
-    """Create emoji, overwriting if exists. Returns (success, message)"""
-    existing_emoji = discord.utils.get(guild.emojis, name=name)
-    if existing_emoji:
-        try:
-            await existing_emoji.delete(reason="Overwriting with new emoji")
-        except Exception:
-            pass
+async def create_emoji_or_sticker_with_overwrite(guild, name: str, image_bytes: bytes, source_name: str = "image", create_sticker: bool = False) -> str:
+    """Create emoji or sticker, overwriting if exists. Returns result message."""
+    import io
     
-    try:
-        new_emoji = await guild.create_custom_emoji(name=name, image=image_bytes)
-        action = "replaced" if existing_emoji else "created"
-        return True, f"✅ Emoji '{new_emoji.name}' {action}!"
-    except discord.HTTPException as e:
-        if e.code == 30008:
-            return False, "❌ This server has reached its emoji limit."
-        else:
-            return False, f"❌ Discord error: {e}"
-    except Exception as e:
-        return False, f"❌ An unexpected error occurred: {e}"
+    if create_sticker:
+        # Handle sticker creation
+        existing_sticker = discord.utils.get(guild.stickers, name=name)
+        if existing_sticker:
+            try:
+                await existing_sticker.delete(reason="Overwriting with new sticker")
+            except Exception:
+                pass
+        
+        try:
+            new_sticker = await guild.create_sticker(
+                name=name,
+                description=f"Sticker from {source_name}",
+                emoji="📷",
+                file=discord.File(io.BytesIO(image_bytes), filename=source_name)
+            )
+            action = "replaced" if existing_sticker else "created"
+            return f"✅ Sticker '{new_sticker.name}' {action}!"
+        except discord.HTTPException as e:
+            if e.code == 30008:
+                return "❌ This server has reached its sticker limit."
+            else:
+                return f"❌ Discord error: {e}"
+        except Exception as e:
+            return f"❌ An unexpected error occurred: {e}"
+    else:
+        # Handle emoji creation
+        existing_emoji = discord.utils.get(guild.emojis, name=name)
+        if existing_emoji:
+            try:
+                await existing_emoji.delete(reason="Overwriting with new emoji")
+            except Exception:
+                pass
+        
+        try:
+            new_emoji = await guild.create_custom_emoji(name=name, image=image_bytes)
+            action = "replaced" if existing_emoji else "created"
+            return f"✅ Emoji '{new_emoji.name}' {action}!"
+        except discord.HTTPException as e:
+            if e.code == 30008:
+                return "❌ This server has reached its emoji limit."
+            else:
+                return f"❌ Discord error: {e}"
+        except Exception as e:
+            return f"❌ An unexpected error occurred: {e}"
 
 async def daily_booster_role_check():
     await bot.wait_until_ready()
@@ -500,8 +515,12 @@ async def boostericon(interaction: discord.Interaction, icon_url: str):
 # Slash command to copy a custom emoji from a message into the server
 # Slash command to copy custom emoji(s) from a message into the server
 @bot.tree.command(name="copyemoji", description="Copy custom emoji(s) from a message into the server")
-@app_commands.describe(message_link="Link to the message containing the emoji", which="Optional: emoji number(s) to copy (e.g. 2 or 1,3)")
-async def copyemoji(interaction: discord.Interaction, message_link: str, which: str = None):
+@app_commands.describe(
+    message_link="Link to the message containing the emoji", 
+    which="Optional: emoji number(s) to copy (e.g. 2 or 1,3)",
+    create_sticker="Create as sticker instead of emoji (default: False)"
+)
+async def copyemoji(interaction: discord.Interaction, message_link: str, which: str = None, create_sticker: bool = False):
     # Check permissions
     permission_check = check_emoji_permissions(interaction)
     if permission_check:
@@ -510,7 +529,7 @@ async def copyemoji(interaction: discord.Interaction, message_link: str, which: 
     
     # Parse message link
     guild_id, channel_id, message_id = parse_message_link(message_link)
-    if not guild_id:
+    if guild_id is None:
         await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
         return
     
@@ -543,12 +562,12 @@ async def copyemoji(interaction: discord.Interaction, message_link: str, which: 
     if which:
         try:
             indices = [int(i.strip())-1 for i in which.split(",") if i.strip().isdigit()]
+            indices = [i for i in indices if 0 <= i < len(emoji_matches)]
+            if not indices:
+                await interaction.response.send_message("❌ No valid emoji number(s) specified.", ephemeral=True)
+                return
         except Exception:
             await interaction.response.send_message("❌ Invalid emoji number(s) format. Use e.g. 2 or 1,3.", ephemeral=True)
-            return
-        indices = [i for i in indices if 0 <= i < len(emoji_matches)]
-        if not indices:
-            await interaction.response.send_message("❌ No valid emoji number(s) specified.", ephemeral=True)
             return
     else:
         indices = [0]  # Default to first emoji
@@ -571,20 +590,26 @@ async def copyemoji(interaction: discord.Interaction, message_link: str, which: 
                     continue
                 image_bytes = await resp.read()
         
-        # Create emoji with overwrite
-        result = await create_emoji_with_overwrite(interaction, emoji_name, image_bytes, f"Copied emoji from message")
+        # Create emoji or sticker
+        result = await create_emoji_or_sticker_with_overwrite(
+            interaction.guild, emoji_name, image_bytes, f"emoji_{emoji_name}", create_sticker
+        )
         results.append(result)
         
-        # Stop if we hit emoji limit
-        if "reached its emoji limit" in result:
+        # Stop if we hit limit
+        if "reached its" in result:
             break
     
     await interaction.response.send_message("\n".join(results), ephemeral=True)
 
 # Slash command to upload a custom emoji from an image URL
 @bot.tree.command(name="uploademoji", description="Upload a custom emoji from an image URL")
-@app_commands.describe(name="Name for the new emoji", url="Image URL to upload as emoji")
-async def uploademoji(interaction: discord.Interaction, name: str, url: str):
+@app_commands.describe(
+    name="Name for the new emoji/sticker", 
+    url="Image URL to upload",
+    create_sticker="Create as sticker instead of emoji (default: False)"
+)
+async def uploademoji(interaction: discord.Interaction, name: str, url: str, create_sticker: bool = False):
     # Check permissions
     permission_check = check_emoji_permissions(interaction)
     if permission_check:
@@ -600,39 +625,59 @@ async def uploademoji(interaction: discord.Interaction, name: str, url: str):
                 return
             image_bytes = await resp.read()
     
-    # Create emoji with overwrite
-    result = await create_emoji_with_overwrite(interaction, name, image_bytes, f"Uploaded emoji from URL")
+    # Create emoji or sticker
+    result = await create_emoji_or_sticker_with_overwrite(
+        interaction.guild, name, image_bytes, url.split('/')[-1] or "uploaded_image", create_sticker
+    )
     await interaction.response.send_message(result, ephemeral=True)
 
-# Slash command to rename an existing emoji
-@bot.tree.command(name="renameemoji", description="Rename an existing emoji in the server")
+# Slash command to rename an existing emoji or sticker
+@bot.tree.command(name="renameemoji", description="Rename an existing emoji or sticker in the server")
 @app_commands.describe(
-    current_name="Current name of the emoji to rename",
-    new_name="New name for the emoji"
+    current_name="Current name of the emoji/sticker to rename",
+    new_name="New name for the emoji/sticker",
+    is_sticker="Whether to rename a sticker instead of emoji (default: False)"
 )
-async def renameemoji(interaction: discord.Interaction, current_name: str, new_name: str):
+async def renameemoji(interaction: discord.Interaction, current_name: str, new_name: str, is_sticker: bool = False):
     # Check permissions
     permission_check = check_emoji_permissions(interaction)
     if permission_check:
         await interaction.response.send_message(permission_check, ephemeral=True)
         return
     
-    # Find the emoji by name
-    existing_emoji = discord.utils.get(interaction.guild.emojis, name=current_name)
-    if not existing_emoji:
-        await interaction.response.send_message(f"❌ No emoji found with the name '{current_name}' in this server.", ephemeral=True)
-        return
-    
-    # Check if new name already exists
-    name_conflict = discord.utils.get(interaction.guild.emojis, name=new_name)
-    if name_conflict:
-        await interaction.response.send_message(f"❌ An emoji with the name '{new_name}' already exists in this server.", ephemeral=True)
-        return
+    if is_sticker:
+        # Find the sticker by name
+        existing_item = discord.utils.get(interaction.guild.stickers, name=current_name)
+        if not existing_item:
+            await interaction.response.send_message(f"❌ No sticker found with the name '{current_name}' in this server.", ephemeral=True)
+            return
+        
+        # Check if new name already exists
+        name_conflict = discord.utils.get(interaction.guild.stickers, name=new_name)
+        if name_conflict:
+            await interaction.response.send_message(f"❌ A sticker with the name '{new_name}' already exists in this server.", ephemeral=True)
+            return
+        
+        item_type = "sticker"
+    else:
+        # Find the emoji by name
+        existing_item = discord.utils.get(interaction.guild.emojis, name=current_name)
+        if not existing_item:
+            await interaction.response.send_message(f"❌ No emoji found with the name '{current_name}' in this server.", ephemeral=True)
+            return
+        
+        # Check if new name already exists
+        name_conflict = discord.utils.get(interaction.guild.emojis, name=new_name)
+        if name_conflict:
+            await interaction.response.send_message(f"❌ An emoji with the name '{new_name}' already exists in this server.", ephemeral=True)
+            return
+        
+        item_type = "emoji"
     
     try:
-        # Edit the emoji name
-        await existing_emoji.edit(name=new_name, reason=f"Renamed by {interaction.user}")
-        await interaction.response.send_message(f"✅ Emoji '{current_name}' has been renamed to '{new_name}'!", ephemeral=True)
+        # Edit the name
+        await existing_item.edit(name=new_name, reason=f"Renamed by {interaction.user}")
+        await interaction.response.send_message(f"✅ {item_type.capitalize()} '{current_name}' has been renamed to '{new_name}'!", ephemeral=True)
     except discord.HTTPException as e:
         await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
     except Exception as e:
@@ -655,7 +700,7 @@ async def msgtoemoji(interaction: discord.Interaction, message_link: str, name: 
     
     # Parse message link
     guild_id, channel_id, message_id = parse_message_link(message_link)
-    if not guild_id:
+    if guild_id is None:
         await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
         return
     
@@ -719,35 +764,12 @@ async def msgtoemoji(interaction: discord.Interaction, message_link: str, name: 
                     image_bytes = await resp.read()
                     source_name = "embed_image"
         
-        if create_sticker:
-            # Check if sticker exists and delete it
-            existing_sticker = discord.utils.get(interaction.guild.stickers, name=name)
-            if existing_sticker:
-                try:
-                    await existing_sticker.delete(reason="Overwriting with new sticker")
-                except Exception:
-                    pass
-            
-            import io
-            new_sticker = await interaction.guild.create_sticker(
-                name=name,
-                description=f"Sticker from {source_name}",
-                emoji="📷",
-                file=discord.File(io.BytesIO(image_bytes), filename=source_name)
-            )
-            action = "replaced" if existing_sticker else "created"
-            await interaction.response.send_message(f"✅ Sticker '{new_sticker.name}' {action} from '{source_name}'!", ephemeral=True)
-        else:
-            # Create emoji with overwrite
-            result = await create_emoji_with_overwrite(interaction, name, image_bytes, f"Created emoji from {source_name}")
-            await interaction.response.send_message(result, ephemeral=True)
+        # Create emoji or sticker
+        result = await create_emoji_or_sticker_with_overwrite(
+            interaction.guild, name, image_bytes, source_name, create_sticker
+        )
+        await interaction.response.send_message(result, ephemeral=True)
         
-    except discord.HTTPException as e:
-        if e.code == 30008:
-            limit_type = "sticker" if create_sticker else "emoji"
-            await interaction.response.send_message(f"❌ This server has reached its {limit_type} limit.", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
 
