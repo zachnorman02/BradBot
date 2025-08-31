@@ -22,10 +22,64 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # In-memory settings: {guild_id: include_original_message}
 settings = {}
 
+# Helper functions for emoji commands
+def check_emoji_permissions(interaction: discord.Interaction) -> str | None:
+    """Check if both bot and user have create expressions permission. Returns error message or None if OK."""
+    if not interaction.guild.me.guild_permissions.create_expressions:
+        return "❌ I need the 'Create Expressions' permission."
+    if not interaction.user.guild_permissions.create_expressions:
+        return "❌ You need the 'Create Expressions' permission."
+    return None
+
+async def parse_message_link(interaction: discord.Interaction, message_link: str):
+    """Parse message link and return the message object"""
+    import re
+    match = re.match(r"https://discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)", message_link)
+    if not match:
+        await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
+        return None
+    
+    guild_id, channel_id, message_id = map(int, match.groups())
+    if guild_id != interaction.guild.id:
+        await interaction.response.send_message("❌ The message must be from this server.", ephemeral=True)
+        return None
+    
+    channel = interaction.guild.get_channel(channel_id)
+    if not channel:
+        await interaction.response.send_message("❌ Could not find the channel.", ephemeral=True)
+        return None
+    
+    try:
+        return await channel.fetch_message(message_id)
+    except Exception:
+        await interaction.response.send_message("❌ Could not fetch the message.", ephemeral=True)
+        return None
+
+async def create_emoji_with_overwrite(guild, name: str, image_bytes: bytes) -> tuple[bool, str]:
+    """Create emoji, overwriting if exists. Returns (success, message)"""
+    existing_emoji = discord.utils.get(guild.emojis, name=name)
+    if existing_emoji:
+        try:
+            await existing_emoji.delete(reason="Overwriting with new emoji")
+        except Exception:
+            pass
+    
+    try:
+        new_emoji = await guild.create_custom_emoji(name=name, image=image_bytes)
+        action = "replaced" if existing_emoji else "created"
+        return True, f"✅ Emoji '{new_emoji.name}' {action}!"
+    except discord.HTTPException as e:
+        if e.code == 30008:
+            return False, "❌ This server has reached its emoji limit."
+        else:
+            return False, f"❌ Discord error: {e}"
+    except Exception as e:
+        return False, f"❌ An unexpected error occurred: {e}"
+
 async def daily_booster_role_check():
     await bot.wait_until_ready()
     while not bot.is_closed():
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         # Run at midnight UTC
         next_run = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         wait_seconds = (next_run - now).total_seconds()
@@ -444,41 +498,46 @@ async def boostericon(interaction: discord.Interaction, icon_url: str):
         await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
 
 # Slash command to copy a custom emoji from a message into the server
+# Slash command to copy custom emoji(s) from a message into the server
 @bot.tree.command(name="copyemoji", description="Copy custom emoji(s) from a message into the server")
 @app_commands.describe(message_link="Link to the message containing the emoji", which="Optional: emoji number(s) to copy (e.g. 2 or 1,3)")
 async def copyemoji(interaction: discord.Interaction, message_link: str, which: str = None):
-    # Check bot and user permissions
-    if not interaction.guild.me.guild_permissions.manage_emojis_and_stickers:
-        await interaction.response.send_message("❌ I need the 'Manage Emojis and Stickers' permission to copy emojis.", ephemeral=True)
+    # Check permissions
+    permission_check = check_emoji_permissions(interaction)
+    if permission_check:
+        await interaction.response.send_message(permission_check, ephemeral=True)
         return
-    if not interaction.user.guild_permissions.manage_emojis_and_stickers:
-        await interaction.response.send_message("❌ You need the 'Manage Emojis and Stickers' permission to use this command.", ephemeral=True)
-        return
+    
     # Parse message link
-    import re
-    match = re.match(r"https://discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)", message_link)
-    if not match:
+    guild_id, channel_id, message_id = parse_message_link(message_link)
+    if not guild_id:
         await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
         return
-    guild_id, channel_id, message_id = map(int, match.groups())
+    
     if guild_id != interaction.guild.id:
         await interaction.response.send_message("❌ The message must be from this server.", ephemeral=True)
         return
+    
     channel = interaction.guild.get_channel(channel_id)
     if not channel:
         await interaction.response.send_message("❌ Could not find the channel.", ephemeral=True)
         return
+    
     try:
         msg = await channel.fetch_message(message_id)
     except Exception:
         await interaction.response.send_message("❌ Could not fetch the message.", ephemeral=True)
         return
+    
     # Find all custom emojis in the message
+    import re
     emoji_pattern = r'<a?:([\w]+):([0-9]+)>'
     emoji_matches = list(re.finditer(emoji_pattern, msg.content))
+    
     if not emoji_matches:
         await interaction.response.send_message("❌ No custom emoji found in that message.", ephemeral=True)
         return
+    
     # Parse which emojis to copy
     indices = []
     if which:
@@ -493,14 +552,17 @@ async def copyemoji(interaction: discord.Interaction, message_link: str, which: 
             return
     else:
         indices = [0]  # Default to first emoji
+    
     results = []
     import aiohttp
+    
     for idx in indices:
         emoji_match = emoji_matches[idx]
         emoji_name, emoji_id = emoji_match.groups()
         is_animated = msg.content[emoji_match.start()] == '<' and msg.content[emoji_match.start()+1] == 'a'
         ext = 'gif' if is_animated else 'png'
         url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
+        
         # Download emoji image
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
@@ -508,31 +570,27 @@ async def copyemoji(interaction: discord.Interaction, message_link: str, which: 
                     results.append(f"❌ Could not download emoji '{emoji_name}'.")
                     continue
                 image_bytes = await resp.read()
-        # Try to add emoji to the server
-        try:
-            new_emoji = await interaction.guild.create_custom_emoji(name=emoji_name, image=image_bytes)
-            results.append(f"✅ Emoji '{new_emoji.name}' copied to the server!")
-        except discord.HTTPException as e:
-            if e.code == 30008:
-                results.append("❌ This server has reached its emoji limit.")
-                break
-            else:
-                results.append(f"❌ Discord error for '{emoji_name}': {e}")
-        except Exception as e:
-            results.append(f"❌ Unexpected error for '{emoji_name}': {e}")
+        
+        # Create emoji with overwrite
+        result = await create_emoji_with_overwrite(interaction, emoji_name, image_bytes, f"Copied emoji from message")
+        results.append(result)
+        
+        # Stop if we hit emoji limit
+        if "reached its emoji limit" in result:
+            break
+    
     await interaction.response.send_message("\n".join(results), ephemeral=True)
 
 # Slash command to upload a custom emoji from an image URL
 @bot.tree.command(name="uploademoji", description="Upload a custom emoji from an image URL")
 @app_commands.describe(name="Name for the new emoji", url="Image URL to upload as emoji")
 async def uploademoji(interaction: discord.Interaction, name: str, url: str):
-    # Check bot and user permissions
-    if not interaction.guild.me.guild_permissions.manage_emojis_and_stickers:
-        await interaction.response.send_message("❌ I need the 'Manage Emojis and Stickers' permission to upload emojis.", ephemeral=True)
+    # Check permissions
+    permission_check = check_emoji_permissions(interaction)
+    if permission_check:
+        await interaction.response.send_message(permission_check, ephemeral=True)
         return
-    if not interaction.user.guild_permissions.manage_emojis_and_stickers:
-        await interaction.response.send_message("❌ You need the 'Manage Emojis and Stickers' permission to use this command.", ephemeral=True)
-        return
+    
     import aiohttp
     # Download image
     async with aiohttp.ClientSession() as session:
@@ -541,13 +599,153 @@ async def uploademoji(interaction: discord.Interaction, name: str, url: str):
                 await interaction.response.send_message("❌ Could not download the image. Please check the URL.", ephemeral=True)
                 return
             image_bytes = await resp.read()
-    # Try to add emoji to the server
+    
+    # Create emoji with overwrite
+    result = await create_emoji_with_overwrite(interaction, name, image_bytes, f"Uploaded emoji from URL")
+    await interaction.response.send_message(result, ephemeral=True)
+
+# Slash command to rename an existing emoji
+@bot.tree.command(name="renameemoji", description="Rename an existing emoji in the server")
+@app_commands.describe(
+    current_name="Current name of the emoji to rename",
+    new_name="New name for the emoji"
+)
+async def renameemoji(interaction: discord.Interaction, current_name: str, new_name: str):
+    # Check permissions
+    permission_check = check_emoji_permissions(interaction)
+    if permission_check:
+        await interaction.response.send_message(permission_check, ephemeral=True)
+        return
+    
+    # Find the emoji by name
+    existing_emoji = discord.utils.get(interaction.guild.emojis, name=current_name)
+    if not existing_emoji:
+        await interaction.response.send_message(f"❌ No emoji found with the name '{current_name}' in this server.", ephemeral=True)
+        return
+    
+    # Check if new name already exists
+    name_conflict = discord.utils.get(interaction.guild.emojis, name=new_name)
+    if name_conflict:
+        await interaction.response.send_message(f"❌ An emoji with the name '{new_name}' already exists in this server.", ephemeral=True)
+        return
+    
     try:
-        new_emoji = await interaction.guild.create_custom_emoji(name=name, image=image_bytes)
-        await interaction.response.send_message(f"✅ Emoji '{new_emoji.name}' uploaded to the server!", ephemeral=True)
+        # Edit the emoji name
+        await existing_emoji.edit(name=new_name, reason=f"Renamed by {interaction.user}")
+        await interaction.response.send_message(f"✅ Emoji '{current_name}' has been renamed to '{new_name}'!", ephemeral=True)
+    except discord.HTTPException as e:
+        await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+
+# Slash command to copy an image from a message attachment as an emoji or sticker
+@bot.tree.command(name="msgtoemoji", description="Copy an image from a message attachment as an emoji or sticker")
+@app_commands.describe(
+    message_link="Link to the message containing the image",
+    name="Name for the new emoji/sticker",
+    which="Optional: image number to copy if there are multiple (e.g. 2)",
+    create_sticker="Create as a sticker instead of an emoji (default: False)"
+)
+async def msgtoemoji(interaction: discord.Interaction, message_link: str, name: str, which: int = 1, create_sticker: bool = False):
+    # Check permissions
+    permission_check = check_emoji_permissions(interaction)
+    if permission_check:
+        await interaction.response.send_message(permission_check, ephemeral=True)
+        return
+    
+    # Parse message link
+    guild_id, channel_id, message_id = parse_message_link(message_link)
+    if not guild_id:
+        await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
+        return
+    
+    if guild_id != interaction.guild.id:
+        await interaction.response.send_message("❌ The message must be from this server.", ephemeral=True)
+        return
+    
+    channel = interaction.guild.get_channel(channel_id)
+    if not channel:
+        await interaction.response.send_message("❌ Could not find the channel.", ephemeral=True)
+        return
+    
+    try:
+        msg = await channel.fetch_message(message_id)
+    except Exception:
+        await interaction.response.send_message("❌ Could not fetch the message.", ephemeral=True)
+        return
+    
+    # Find image attachments and embeds
+    image_attachments = [att for att in msg.attachments if any(att.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp'])]
+    image_embeds = [embed for embed in msg.embeds if embed.image or embed.thumbnail]
+    
+    all_images = []
+    for att in image_attachments:
+        all_images.append(('attachment', att))
+    for embed in image_embeds:
+        if embed.image:
+            all_images.append(('embed', embed.image.url))
+        elif embed.thumbnail:
+            all_images.append(('embed', embed.thumbnail.url))
+    
+    if not all_images:
+        await interaction.response.send_message("❌ No images found in that message.", ephemeral=True)
+        return
+    
+    if which < 1 or which > len(all_images):
+        await interaction.response.send_message(f"❌ Invalid image number. Found {len(all_images)} image(s) in the message.", ephemeral=True)
+        return
+    
+    # Get the specified image
+    image_type, image_source = all_images[which - 1]
+    
+    try:
+        if image_type == 'attachment':
+            # Check file size
+            size_limit = 512 * 1024 if create_sticker else 256 * 1024
+            if image_source.size > size_limit:
+                limit_name = "sticker" if create_sticker else "emoji"
+                await interaction.response.send_message(f"❌ Image is too large ({image_source.size/1024:.1f}KB). Discord {limit_name}s must be under {size_limit/1024}KB.", ephemeral=True)
+                return
+            
+            image_bytes = await image_source.read()
+            source_name = image_source.filename
+        else:  # embed image
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_source) as resp:
+                    if resp.status != 200:
+                        await interaction.response.send_message(f"❌ Could not download embed image.", ephemeral=True)
+                        return
+                    image_bytes = await resp.read()
+                    source_name = "embed_image"
+        
+        if create_sticker:
+            # Check if sticker exists and delete it
+            existing_sticker = discord.utils.get(interaction.guild.stickers, name=name)
+            if existing_sticker:
+                try:
+                    await existing_sticker.delete(reason="Overwriting with new sticker")
+                except Exception:
+                    pass
+            
+            import io
+            new_sticker = await interaction.guild.create_sticker(
+                name=name,
+                description=f"Sticker from {source_name}",
+                emoji="📷",
+                file=discord.File(io.BytesIO(image_bytes), filename=source_name)
+            )
+            action = "replaced" if existing_sticker else "created"
+            await interaction.response.send_message(f"✅ Sticker '{new_sticker.name}' {action} from '{source_name}'!", ephemeral=True)
+        else:
+            # Create emoji with overwrite
+            result = await create_emoji_with_overwrite(interaction, name, image_bytes, f"Created emoji from {source_name}")
+            await interaction.response.send_message(result, ephemeral=True)
+        
     except discord.HTTPException as e:
         if e.code == 30008:
-            await interaction.response.send_message("❌ This server has reached its emoji limit.", ephemeral=True)
+            limit_type = "sticker" if create_sticker else "emoji"
+            await interaction.response.send_message(f"❌ This server has reached its {limit_type} limit.", ephemeral=True)
         else:
             await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
     except Exception as e:
@@ -600,13 +798,13 @@ class TimestampStyle(str, enum.Enum):
     date="Date in YYYY-MM-DD format (optional, defaults to today)",
     time="Time in 24hr (13:00) or 12hr (1 PM, 1:00 PM) format (optional, defaults to current time)",
     style="Display style for the timestamp",
-    timezone_offset="Timezone offset from UTC (e.g. -5 for EST, +1 for CET)"
+    timezone_offset="Hours behind UTC for the input time (e.g. -6 for CST, -4 for EDT, 1 for CET)"
 )
 async def timestamp(
     interaction: discord.Interaction,
     date: str = None,
     time: str = None,
-    style: TimestampStyle = TimestampStyle.RELATIVE,
+    style: TimestampStyle = None,
     timezone_offset: int = 0
 ):
     """
@@ -673,36 +871,43 @@ async def timestamp(
         # Combine date and time
         combined_datetime = dt.datetime.combine(parsed_date, parsed_time)
         
-        # Apply timezone offset
-        combined_datetime = combined_datetime - dt.timedelta(hours=timezone_offset)
+        # Apply timezone offset to convert to UTC
+        # timezone_offset represents hours behind UTC, so we SUBTRACT it to get UTC time
+        # For example: 7 PM in UTC-6 becomes 7 PM - (-6) = 7 PM + 6 hours = 1 AM UTC (next day)
+        combined_datetime_utc = combined_datetime - dt.timedelta(hours=timezone_offset)
         
-        # Convert to Unix timestamp
-        unix_timestamp = int(combined_datetime.timestamp())
-        
-        # Generate Discord timestamp
-        discord_timestamp = f"<t:{unix_timestamp}:{style.value}>"
+        # Convert to Unix timestamp using UTC timezone explicitly
+        # This ensures Python treats our datetime as UTC, not local time
+        utc_with_timezone = combined_datetime_utc.replace(tzinfo=dt.timezone.utc)
+        unix_timestamp = int(utc_with_timezone.timestamp())
         
         # Create response with examples of all formats
         all_formats = [
-            f"**Short Time (t):** <t:{unix_timestamp}:t>",
-            f"**Long Time (T):** <t:{unix_timestamp}:T>", 
-            f"**Short Date (d):** <t:{unix_timestamp}:d>",
-            f"**Long Date (D):** <t:{unix_timestamp}:D>",
-            f"**Short DateTime (f):** <t:{unix_timestamp}:f>",
-            f"**Long DateTime (F):** <t:{unix_timestamp}:F>",
-            f"**Relative (R):** <t:{unix_timestamp}:R>"
+            f"**Short Time (t)**: `<t:{unix_timestamp}:t>` <t:{unix_timestamp}:t>",
+            f"**Long Time (T)**: `<t:{unix_timestamp}:T>` <t:{unix_timestamp}:T>",
+            f"**Short Date (d)**: `<t:{unix_timestamp}:d>` <t:{unix_timestamp}:d>",
+            f"**Long Date (D)**: `<t:{unix_timestamp}:D>` <t:{unix_timestamp}:D>",
+            f"**Short DateTime (f)**: `<t:{unix_timestamp}:f>` <t:{unix_timestamp}:f>",
+            f"**Long DateTime (F)**: `<t:{unix_timestamp}:F>` <t:{unix_timestamp}:F>",
+            f"**Relative (R)**: `<t:{unix_timestamp}:R>` <t:{unix_timestamp}:R>"
         ]
         
         input_info = f"**Input:** {parsed_date} {parsed_time.strftime('%H:%M:%S')}"
         if timezone_offset != 0:
             input_info += f" (UTC{timezone_offset:+d})"
+            input_info += f"\n**Converted to UTC:** {combined_datetime_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC"
         
         response = f"{input_info}\n"
-        response += f"**Your timestamp:** `{discord_timestamp}`\n"
-        response += f"**Preview:** {discord_timestamp}\n\n"
-        response += "**All format examples:**\n" + "\n".join(all_formats)
+        response += f"**Unix timestamp:** {unix_timestamp}\n"
+        if style is not None:
+            # Generate Discord timestamp
+            discord_timestamp = f"<t:{unix_timestamp}:{style.value}>"
+            response += f"**Your timestamp:** `{discord_timestamp}`\n"
+            response += f"**Preview:** {discord_timestamp}\n\n"
+        else:
+            response += "**All format examples:**\n" + "\n".join(all_formats)
         
-        await interaction.response.send_message(response, ephemeral=True)
+        await interaction.response.send_message(response)
         
     except ValueError as e:
         await interaction.response.send_message(f"❌ Error parsing input: {e}", ephemeral=True)
