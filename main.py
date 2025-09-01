@@ -8,6 +8,7 @@ import os
 import re
 import asyncio
 from dotenv import load_dotenv
+from typing import Literal
 from websites import websites, fix_link_async, get_site_name
 
 # Load environment variables from .env file
@@ -116,6 +117,11 @@ async def daily_booster_role_check():
 @bot.event
 async def on_ready():
     print(f'{bot.user} has logged in!')
+    
+    # Add command groups to the tree (testing new BoosterGroup)
+    bot.tree.add_command(EmojiGroup(name="emoji", description="Emoji and sticker management commands"))
+    bot.tree.add_command(BoosterGroup())
+    
     try:
         # Sync slash commands
         synced = await bot.tree.sync()
@@ -277,6 +283,519 @@ async def sync(ctx):
         await ctx.send(f"Synced {len(synced)} command(s)")
     except Exception as e:
         await ctx.send(f"Failed to sync: {e}")
+
+# ============================================================================
+# ENUMS AND TYPES
+# ============================================================================
+
+class RoleColorType(str, enum.Enum):
+    SOLID = "solid"
+    GRADIENT = "gradient"
+    HOLOGRAPHIC = "holographic"
+
+# ============================================================================
+# COMMAND GROUPS
+# ============================================================================
+
+class EmojiGroup(app_commands.Group):
+    """Emoji and sticker management commands"""
+    
+    @app_commands.command(name="copy", description="Copy custom emoji(s) from a message")
+    @app_commands.describe(
+        message_link="Link to the message containing the emoji", 
+        which="Optional: emoji number(s) to copy (e.g. 2 or 1,3)",
+        create_sticker="Create as sticker instead of emoji (default: False)"
+    )
+    async def copy(self, interaction: discord.Interaction, message_link: str, which: str = None, create_sticker: bool = False):
+        # Check permissions
+        permission_check = check_emoji_permissions(interaction)
+        if permission_check:
+            await interaction.response.send_message(permission_check, ephemeral=True)
+            return
+        
+        # Parse message link
+        guild_id, channel_id, message_id = parse_message_link(message_link)
+        if guild_id is None:
+            await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
+            return
+        
+        if guild_id != interaction.guild.id:
+            await interaction.response.send_message("❌ The message must be from this server.", ephemeral=True)
+            return
+        
+        channel = interaction.guild.get_channel(channel_id)
+        if not channel:
+            await interaction.response.send_message("❌ Could not find the channel.", ephemeral=True)
+            return
+        
+        try:
+            msg = await channel.fetch_message(message_id)
+        except Exception:
+            await interaction.response.send_message("❌ Could not fetch the message.", ephemeral=True)
+            return
+        
+        # Find all custom emojis in the message
+        import re
+        emoji_pattern = r'<a?:([\w]+):([0-9]+)>'
+        emoji_matches = list(re.finditer(emoji_pattern, msg.content))
+        
+        if not emoji_matches:
+            await interaction.response.send_message("❌ No custom emoji found in that message.", ephemeral=True)
+            return
+        
+        # Parse which emojis to copy
+        indices = []
+        if which:
+            try:
+                indices = [int(i.strip())-1 for i in which.split(",") if i.strip().isdigit()]
+                indices = [i for i in indices if 0 <= i < len(emoji_matches)]
+                if not indices:
+                    await interaction.response.send_message("❌ No valid emoji number(s) specified.", ephemeral=True)
+                    return
+            except Exception:
+                await interaction.response.send_message("❌ Invalid emoji number(s) format. Use e.g. 2 or 1,3.", ephemeral=True)
+                return
+        else:
+            indices = [0]  # Default to first emoji
+        
+        results = []
+        import aiohttp
+        
+        for idx in indices:
+            emoji_match = emoji_matches[idx]
+            emoji_name, emoji_id = emoji_match.groups()
+            is_animated = msg.content[emoji_match.start()] == '<' and msg.content[emoji_match.start()+1] == 'a'
+            ext = 'gif' if is_animated else 'png'
+            url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
+            
+            # Download emoji image
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        results.append(f"❌ Could not download emoji '{emoji_name}'.")
+                        continue
+                    image_bytes = await resp.read()
+            
+            # Create emoji or sticker
+            result = await create_emoji_or_sticker_with_overwrite(
+                interaction.guild, emoji_name, image_bytes, f"emoji_{emoji_name}", create_sticker
+            )
+            results.append(result)
+            
+            # Stop if we hit limit
+            if "reached its" in result:
+                break
+        
+        await interaction.response.send_message("\n".join(results), ephemeral=True)
+
+    @app_commands.command(name="upload", description="Upload a custom emoji from an image URL")
+    @app_commands.describe(
+        name="Name for the new emoji/sticker", 
+        url="Image URL to upload",
+        create_sticker="Create as sticker instead of emoji (default: False)"
+    )
+    async def upload(self, interaction: discord.Interaction, name: str, url: str, create_sticker: bool = False):
+        # Check permissions
+        permission_check = check_emoji_permissions(interaction)
+        if permission_check:
+            await interaction.response.send_message(permission_check, ephemeral=True)
+            return
+        
+        import aiohttp
+        # Download image
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    await interaction.response.send_message("❌ Could not download the image. Please check the URL.", ephemeral=True)
+                    return
+                image_bytes = await resp.read()
+        
+        # Create emoji or sticker
+        result = await create_emoji_or_sticker_with_overwrite(
+            interaction.guild, name, image_bytes, url.split('/')[-1] or "uploaded_image", create_sticker
+        )
+        await interaction.response.send_message(result, ephemeral=True)
+
+    @app_commands.command(name="rename", description="Rename an existing emoji or sticker")
+    @app_commands.describe(
+        current_name="Current name of the emoji/sticker to rename",
+        new_name="New name for the emoji/sticker",
+        is_sticker="Whether to rename a sticker instead of emoji (default: False)"
+    )
+    async def rename(self, interaction: discord.Interaction, current_name: str, new_name: str, is_sticker: bool = False):
+        # Check permissions
+        permission_check = check_emoji_permissions(interaction)
+        if permission_check:
+            await interaction.response.send_message(permission_check, ephemeral=True)
+            return
+        
+        if is_sticker:
+            # Find the sticker by name
+            existing_item = discord.utils.get(interaction.guild.stickers, name=current_name)
+            if not existing_item:
+                await interaction.response.send_message(f"❌ No sticker found with the name '{current_name}' in this server.", ephemeral=True)
+                return
+            
+            # Check if new name already exists
+            name_conflict = discord.utils.get(interaction.guild.stickers, name=new_name)
+            if name_conflict:
+                await interaction.response.send_message(f"❌ A sticker with the name '{new_name}' already exists in this server.", ephemeral=True)
+                return
+            
+            item_type = "sticker"
+        else:
+            # Find the emoji by name
+            existing_item = discord.utils.get(interaction.guild.emojis, name=current_name)
+            if not existing_item:
+                await interaction.response.send_message(f"❌ No emoji found with the name '{current_name}' in this server.", ephemeral=True)
+                return
+            
+            # Check if new name already exists
+            name_conflict = discord.utils.get(interaction.guild.emojis, name=new_name)
+            if name_conflict:
+                await interaction.response.send_message(f"❌ An emoji with the name '{new_name}' already exists in this server.", ephemeral=True)
+                return
+            
+            item_type = "emoji"
+        
+        try:
+            # Edit the name
+            await existing_item.edit(name=new_name, reason=f"Renamed by {interaction.user}")
+            await interaction.response.send_message(f"✅ {item_type.capitalize()} '{current_name}' has been renamed to '{new_name}'!", ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+
+    @app_commands.command(name="image", description="Copy an image from a message attachment as an emoji or sticker")
+    @app_commands.describe(
+        message_link="Link to the message containing the image",
+        name="Name for the new emoji/sticker",
+        which="Optional: image number to copy if there are multiple (e.g. 2)",
+        create_sticker="Create as a sticker instead of an emoji (default: False)"
+    )
+    async def from_message(self, interaction: discord.Interaction, message_link: str, name: str, which: int = 1, create_sticker: bool = False):
+        # Check permissions
+        permission_check = check_emoji_permissions(interaction)
+        if permission_check:
+            await interaction.response.send_message(permission_check, ephemeral=True)
+            return
+        
+        # Parse message link
+        guild_id, channel_id, message_id = parse_message_link(message_link)
+        if guild_id is None:
+            await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
+            return
+        
+        if guild_id != interaction.guild.id:
+            await interaction.response.send_message("❌ The message must be from this server.", ephemeral=True)
+            return
+        
+        channel = interaction.guild.get_channel(channel_id)
+        if not channel:
+            await interaction.response.send_message("❌ Could not find the channel.", ephemeral=True)
+            return
+        
+        try:
+            msg = await channel.fetch_message(message_id)
+        except Exception:
+            await interaction.response.send_message("❌ Could not fetch the message.", ephemeral=True)
+            return
+        
+        # Find image attachments and embeds
+        image_attachments = [att for att in msg.attachments if any(att.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp'])]
+        image_embeds = [embed for embed in msg.embeds if embed.image or embed.thumbnail]
+        
+        all_images = []
+        for att in image_attachments:
+            all_images.append(('attachment', att))
+        for embed in image_embeds:
+            if embed.image:
+                all_images.append(('embed', embed.image.url))
+            elif embed.thumbnail:
+                all_images.append(('embed', embed.thumbnail.url))
+        
+        if not all_images:
+            await interaction.response.send_message("❌ No images found in that message.", ephemeral=True)
+            return
+        
+        if which < 1 or which > len(all_images):
+            await interaction.response.send_message(f"❌ Invalid image number. Found {len(all_images)} image(s) in the message.", ephemeral=True)
+            return
+        
+        # Get the specified image
+        image_type, image_source = all_images[which - 1]
+        
+        try:
+            if image_type == 'attachment':
+                # Check file size
+                size_limit = 512 * 1024 if create_sticker else 256 * 1024
+                if image_source.size > size_limit:
+                    limit_name = "sticker" if create_sticker else "emoji"
+                    await interaction.response.send_message(f"❌ Image is too large ({image_source.size/1024:.1f}KB). Discord {limit_name}s must be under {size_limit/1024}KB.", ephemeral=True)
+                    return
+                
+                image_bytes = await image_source.read()
+                source_name = image_source.filename
+            else:  # embed image
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image_source) as resp:
+                        if resp.status != 200:
+                            await interaction.response.send_message(f"❌ Could not download embed image.", ephemeral=True)
+                            return
+                        image_bytes = await resp.read()
+                        source_name = "embed_image"
+            
+            # Create emoji or sticker
+            result = await create_emoji_or_sticker_with_overwrite(
+                interaction.guild, name, image_bytes, source_name, create_sticker
+            )
+            await interaction.response.send_message(result, ephemeral=True)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+
+
+class BoosterRoleGroup(app_commands.Group):
+    """Booster role customization commands"""
+    
+    @app_commands.command(name="color", description="Set your booster role color: solid, gradient, or holographic")
+    @app_commands.describe(
+        style="Color style type",
+        hex="Primary color (hex code like #FF0000)",
+        hex2="Secondary color for gradients (hex code like #00FF00)"
+    )
+    @app_commands.choices(style=[
+        app_commands.Choice(name="Solid", value="solid"),
+        app_commands.Choice(name="Gradient", value="gradient"),
+        app_commands.Choice(name="Holographic", value="holographic")
+    ])
+    async def color(self, interaction: discord.Interaction, style: str = "solid", hex: str = None, hex2: str = None):
+        # Check if user is a booster
+        if not any(role.is_premium_subscriber() for role in interaction.user.roles):
+            await interaction.response.send_message("❌ This command is only available to server boosters!", ephemeral=True)
+            return
+        
+        # Find or create their custom role
+        user_roles = [role for role in interaction.user.roles if not role.is_default()]
+        if user_roles:
+            highest_role = user_roles[0]
+            for role in user_roles[1:]:
+                if role.position > highest_role.position:
+                    highest_role = role
+        else:
+            highest_role = None
+        
+        # Check if this is their personal booster role (only they have it)
+        if highest_role is None or len(highest_role.members) > 1 or highest_role.is_default():
+            # Create a new personal role
+            try:
+                highest_role = await interaction.guild.create_role(
+                    name=f"{interaction.user.display_name}'s Role",
+                    reason="Booster role customization"
+                )
+                await interaction.user.add_roles(highest_role, reason="Booster role customization")
+            except discord.Forbidden:
+                await interaction.response.send_message("❌ I don't have permission to create roles.", ephemeral=True)
+                return
+            except Exception as e:
+                await interaction.response.send_message(f"❌ Error creating role: {e}", ephemeral=True)
+                return
+        
+        # Generate color based on style and hex values
+        color = None
+        description = ""
+        
+        if style == "solid":
+            if hex:
+                try:
+                    color = discord.Color(int(hex.replace('#', ''), 16))
+                    description = f"Solid color: {hex}"
+                except ValueError:
+                    await interaction.response.send_message("❌ Invalid hex color format. Use format like #FF0000", ephemeral=True)
+                    return
+            else:
+                color = discord.Color.random()
+                description = f"Random solid color: #{color.value:06X}"
+        
+        elif style == "gradient":
+            # For gradient, we'll use the primary color but mention it's a gradient
+            if hex:
+                try:
+                    color = discord.Color(int(hex.replace('#', ''), 16))
+                    description = f"Gradient color (primary): {hex}"
+                    if hex2:
+                        description += f" to {hex2}"
+                except ValueError:
+                    await interaction.response.send_message("❌ Invalid hex color format. Use format like #FF0000", ephemeral=True)
+                    return
+            else:
+                color = discord.Color.random()
+                description = f"Random gradient color: #{color.value:06X}"
+        
+        elif style == "holographic":
+            # For holographic, we'll use a bright/iridescent color
+            if hex:
+                try:
+                    color = discord.Color(int(hex.replace('#', ''), 16))
+                    description = f"Holographic color: {hex}"
+                except ValueError:
+                    await interaction.response.send_message("❌ Invalid hex color format. Use format like #FF0000", ephemeral=True)
+                    return
+            else:
+                # Use a bright, colorful default for holographic
+                color = discord.Color.from_rgb(255, 0, 255)  # Bright magenta
+                description = f"Holographic color: #{color.value:06X}"
+        
+        try:
+            await highest_role.edit(color=color)
+            
+            embed = discord.Embed(
+                title="✅ Role Color Updated!",
+                description=description,
+                color=color
+            )
+            embed.add_field(name="Style", value=style.title(), inline=True)
+            embed.add_field(name="Role", value=highest_role.mention, inline=True)
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I don't have permission to edit roles.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error updating role: {e}", ephemeral=True)
+
+    @app_commands.command(name="label", description="Set your booster role label/name")
+    @app_commands.describe(role_label="New label for your role")
+    async def label(self, interaction: discord.Interaction, role_label: str):
+        # Check if user is a booster
+        if not any(role.is_premium_subscriber() for role in interaction.user.roles):
+            await interaction.response.send_message("❌ This command is only available to server boosters!", ephemeral=True)
+            return
+        
+        # Validate name length and content
+        if len(role_title) > 100:
+            await interaction.response.send_message("❌ Role title must be 100 characters or less.", ephemeral=True)
+            return
+        
+        if not role_title.strip():
+            await interaction.response.send_message("❌ Role title cannot be empty.", ephemeral=True)
+            return
+        
+        # Find their highest role (should be their custom role)
+        user_roles = [role for role in interaction.user.roles if not role.is_default()]
+        if user_roles:
+            highest_role = user_roles[0]
+            for role in user_roles[1:]:
+                if role.position > highest_role.position:
+                    highest_role = role
+        else:
+            highest_role = None
+        
+        # Check if this is their personal booster role (only they have it)
+        if highest_role is None or len(highest_role.members) > 1 or highest_role.is_default():
+            # Create a new personal role
+            try:
+                highest_role = await interaction.guild.create_role(
+                    name=role_title,
+                    reason="Booster role customization"
+                )
+                await interaction.user.add_roles(highest_role, reason="Booster role customization")
+                await interaction.response.send_message(f"✅ Created and assigned new role: **{role_title}**", ephemeral=True)
+                return
+            except discord.Forbidden:
+                await interaction.response.send_message("❌ I don't have permission to create roles.", ephemeral=True)
+                return
+            except Exception as e:
+                await interaction.response.send_message(f"❌ Error creating role: {e}", ephemeral=True)
+                return
+        
+        # Update existing personal role
+        old_name = highest_role.name
+        try:
+            await highest_role.edit(name=role_title, reason=f"Booster role title change by {interaction.user}")
+            await interaction.response.send_message(f"✅ Role title updated from **{old_name}** to **{role_title}**!", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I don't have permission to edit roles.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error updating role title: {e}", ephemeral=True)
+
+    @app_commands.command(name="icon", description="Set your booster role icon")
+    @app_commands.describe(icon_url="Image URL or upload an image")
+    async def icon(self, interaction: discord.Interaction, icon_url: str):
+        # Check if user is a booster
+        if not any(role.is_premium_subscriber() for role in interaction.user.roles):
+            await interaction.response.send_message("❌ This command is only available to server boosters!", ephemeral=True)
+            return
+        
+        # Check if guild has role icons feature
+        if "ROLE_ICONS" not in interaction.guild.features:
+            await interaction.response.send_message("❌ This server doesn't support role icons.", ephemeral=True)
+            return
+        
+        # Find their highest role (should be their custom role)
+        user_roles = [role for role in interaction.user.roles if not role.is_default()]
+        if user_roles:
+            highest_role = user_roles[0]
+            for role in user_roles[1:]:
+                if role.position > highest_role.position:
+                    highest_role = role
+        else:
+            highest_role = None
+        
+        # Check if this is their personal booster role (only they have it)
+        if highest_role is None or len(highest_role.members) > 1 or highest_role.is_default():
+            # Create a new personal role
+            try:
+                highest_role = await interaction.guild.create_role(
+                    name=f"{interaction.user.display_name}'s Role",
+                    reason="Booster role customization"
+                )
+                await interaction.user.add_roles(highest_role, reason="Booster role customization")
+            except discord.Forbidden:
+                await interaction.response.send_message("❌ I don't have permission to create roles.", ephemeral=True)
+                return
+            except Exception as e:
+                await interaction.response.send_message(f"❌ Error creating role: {e}", ephemeral=True)
+                return
+        
+        try:
+            # If icon_url is an attachment, use its URL
+            if hasattr(interaction, 'attachments') and interaction.attachments:
+                icon_url = interaction.attachments[0].url
+            
+            # Download the image
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(icon_url) as resp:
+                    if resp.status != 200:
+                        await interaction.response.send_message("❌ Could not download the image. Please check the URL or upload a valid image.", ephemeral=True)
+                        return
+                    image_bytes = await resp.read()
+            await highest_role.edit(icon=image_bytes)
+            await interaction.response.send_message(f"✅ Role icon updated!", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I don't have permission to edit roles.", ephemeral=True)
+        except discord.HTTPException as e:
+            if e.code == 50035:
+                await interaction.response.send_message("❌ Invalid image format. Please use PNG, JPG, or GIF.", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+
+
+class BoosterGroup(app_commands.Group):
+    """Server booster commands"""
+    
+    def __init__(self):
+        super().__init__(name="booster", description="Server booster commands")
+        self.add_command(BoosterRoleGroup(name="role", description="Booster role customization"))
+
+# ============================================================================
+# INDIVIDUAL SLASH COMMANDS  
+# ============================================================================
         
 # Slash command to clear all messages in the current channel
 @bot.tree.command(name="clear", description="Delete all messages in this channel")
@@ -296,482 +815,7 @@ async def clear(interaction: discord.Interaction):
         except Exception:
             pass
     await interaction.followup.send(f"Deleted {deleted} messages in this channel.", ephemeral=True)
-    
-class RoleColorType(str, enum.Enum):
-    SOLID = "solid"
-    GRADIENT = "gradient"
-    HOLOGRAPHIC = "holographic"
 
-# Slash command for server boosters to set their personal role color
-@bot.tree.command(name="boostercolor", description="Set your booster role color: solid, gradient, or holographic")
-@app_commands.describe(hex="Hex color code (e.g. #FF5733)", style="Color style: solid, gradient, or holographic", hex2="Second hex code for gradient (optional)")
-async def boostercolor(interaction: discord.Interaction, style: RoleColorType = RoleColorType.SOLID, hex: str = None, hex2: str = None):
-    guild = interaction.guild
-    member = interaction.user if hasattr(interaction, 'user') else interaction.author
-    booster_role = discord.utils.get(guild.roles, is_premium_subscriber=True)
-    app_info = await interaction.client.application_info()
-    is_owner = interaction.user.id == app_info.owner.id
-    if not (booster_role and booster_role in member.roles) and not is_owner:
-        await interaction.response.send_message("You must be a server booster or the bot owner to use this command.", ephemeral=True)
-        return
-    # Validate hex codes and style
-    if style == RoleColorType.HOLOGRAPHIC:
-        color = discord.Color(11127295)
-        secondary_color = discord.Color(16759788)
-        tertiary_color = discord.Color(16761760)
-    elif style == RoleColorType.SOLID:
-        if not hex:
-            await interaction.response.send_message("Hex color is required for solid style.", ephemeral=True)
-            return
-        if not re.fullmatch(r'#?[0-9A-Fa-f]{6}', hex):
-            await interaction.response.send_message("Invalid hex code. Please use format #RRGGBB.", ephemeral=True)
-            return
-        color_value = int(hex.lstrip('#'), 16)
-        color = discord.Color(color_value)
-        secondary_color = None
-    elif style == RoleColorType.GRADIENT:
-        if not hex or not hex2:
-            await interaction.response.send_message("Both hex and hex2 are required for gradient style.", ephemeral=True)
-            return
-        if not (re.fullmatch(r'#?[0-9A-Fa-f]{6}', hex) and re.fullmatch(r'#?[0-9A-Fa-f]{6}', hex2)):
-            await interaction.response.send_message("For gradient, provide two hex codes in format #RRGGBB.", ephemeral=True)
-            return
-        color = discord.Color(int(hex.lstrip('#'), 16))
-        secondary_color = discord.Color(int(hex2.lstrip('#'), 16))
-    else:
-        await interaction.response.send_message("Style must be 'solid', 'gradient', or 'holographic'.", ephemeral=True)
-        return
-    # Find highest ranking role (excluding @everyone and booster role)
-    personal_roles = [role for role in member.roles if role != booster_role and not role.is_default()]
-    try:
-        if personal_roles:
-            highest_role = sorted(personal_roles, key=lambda r: r.position, reverse=True)[0]
-            if len(highest_role.members) == 1:
-                try:
-                    if style == "solid":
-                        await highest_role.edit(colour=color)
-                        await interaction.response.send_message(f"Updated your highest role '{highest_role.name}' color to {hex.upper()}!", ephemeral=True)
-                    elif style == "gradient":
-                        await highest_role.edit(colour=color, secondary_colour=secondary_color)
-                        await interaction.response.send_message(f"Updated your highest role '{highest_role.name}' to a gradient color from {hex.upper()} to {hex2.upper()}!", ephemeral=True)
-                    elif style == "holographic":
-                        await highest_role.edit(
-                            colour=color,
-                            secondary_colour=secondary_color,
-                            tertiary_colour=tertiary_color
-                        )
-                        await interaction.response.send_message(f"Updated your highest role '{highest_role.name}' to holographic!", ephemeral=True)
-                    return
-                except discord.HTTPException as e:
-                    if e.code == 30039:
-                        await interaction.response.send_message("❌ This server does not have enough boosts for gradient or holographic role colors.", ephemeral=True)
-                        return
-                    else:
-                        raise
-                    
-        new_role = await guild.create_role(name=member.display_name, mentionable=False)
-        await asyncio.sleep(1)  # Short delay to ensure Discord registers the new role
-        # Place new role above the booster role
-        target_position = None
-        if booster_role:
-            # Place above user's highest role
-            personal_roles_sorted = sorted([role for role in member.roles if not role.is_default()], key=lambda r: r.position, reverse=True)
-            highest_role = personal_roles_sorted[0] if personal_roles_sorted else None
-            if highest_role:
-                target_position = highest_role.position + 1
-            else:
-                target_position = 1
-        move_success = True
-        try:
-            await new_role.edit(position=target_position)
-        except Exception:
-            move_success = False
-        await member.add_roles(new_role)
-        try:
-            if style == "solid":
-                await new_role.edit(colour=color)
-                msg = f"Created a new personal role and set its color to {hex.upper()}! "
-            elif style == "gradient":
-                await new_role.edit(colour=color, secondary_colour=secondary_color)
-                msg = f"Created a new personal role and set its gradient color from {hex.upper()} to {hex2.upper()}! "
-            elif style == "holographic":
-                await new_role.edit(
-                    colour=color,
-                    secondary_colour=secondary_color,
-                    tertiary_colour=tertiary_color
-                )
-                msg = f"Created a new personal role and set its color to holographic! "
-            else:
-                msg = "Created a new personal role! "
-        except discord.HTTPException as e:
-            if e.code == 30039:
-                msg = "❌ This server does not have enough boosts for gradient or holographic role colors."
-            else:
-                raise
-        msg += "(Role moved as high as possible)" if move_success else "(Role could not be moved to the top; check bot permissions)"
-        await interaction.response.send_message(msg, ephemeral=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to manage roles or change role colors. Please check my permissions and role position.", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
-    
-# Slash command for server boosters to rename their personal role
-@bot.tree.command(name="boostername", description="Set your booster role name (custom role)")
-@app_commands.describe(name="New role name")
-async def boostername(interaction: discord.Interaction, name: str):
-    guild = interaction.guild
-    member = interaction.user if hasattr(interaction, 'user') else interaction.author
-    booster_role = discord.utils.get(guild.roles, is_premium_subscriber=True)
-    app_info = await interaction.client.application_info()
-    is_owner = interaction.user.id == app_info.owner.id
-    if not (booster_role and booster_role in member.roles) and not is_owner:
-        await interaction.response.send_message("You must be a server booster or the bot owner to use this command.", ephemeral=True)
-        return
-    # Find highest personal role (only assigned to this user)
-    personal_roles = [role for role in member.roles if role != booster_role and not role.is_default() and len(role.members) == 1]
-    try:
-        if personal_roles:
-            highest_role = sorted(personal_roles, key=lambda r: r.position, reverse=True)[0]
-            await highest_role.edit(name=name)
-            await interaction.response.send_message(f"Renamed your highest personal role to '{name}'!", ephemeral=True)
-            return
-        # If no personal role, create a new role
-        bot_member = guild.me
-        bot_top_role = sorted(bot_member.roles, key=lambda r: r.position, reverse=True)[0]
-        new_role = await guild.create_role(name=name, mentionable=False)
-        await asyncio.sleep(1)  # Short delay to ensure Discord registers the new role
-        # Determine target position for new role
-        personal_roles_sorted = sorted([role for role in member.roles if not role.is_default()], key=lambda r: r.position, reverse=True)
-        highest_role = personal_roles_sorted[0] if personal_roles_sorted else None
-        if highest_role:
-            target_position = highest_role.position + 1
-        else:
-            target_position = 1
-        move_success = True
-        try:
-            await new_role.edit(position=target_position)
-        except Exception:
-            move_success = False
-        await member.add_roles(new_role)
-        msg = f"Created a new personal role and set its name to '{name}'! "
-        msg += "(Role moved as high as possible)" if move_success else "(Role could not be moved to the top; check bot permissions)"
-        await interaction.response.send_message(msg, ephemeral=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to manage roles or rename roles. Please check my permissions and role position.", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
-
-# Slash command for server boosters to set their personal role icon
-@bot.tree.command(name="boostericon", description="Set your booster role icon (custom role icon)")
-@app_commands.describe(icon_url="Image URL or upload an image")
-async def boostericon(interaction: discord.Interaction, icon_url: str):
-    guild = interaction.guild
-    member = interaction.user if hasattr(interaction, 'user') else interaction.author
-    booster_role = discord.utils.get(guild.roles, premium_subscriber=True)
-    app_info = await interaction.client.application_info()
-    is_owner = interaction.user.id == app_info.owner.id
-    if not (booster_role and booster_role in member.roles) and not is_owner:
-        await interaction.response.send_message("You must be a server booster or the bot owner to use this command.", ephemeral=True)
-        return
-    # Find highest personal role (only assigned to this user)
-    personal_roles = [role for role in member.roles if role != booster_role and not role.is_default() and len(role.members) == 1]
-    if personal_roles:
-        highest_role = sorted(personal_roles, key=lambda r: r.position, reverse=True)[0]
-    else:    
-        bot_member = guild.me
-        bot_top_role = sorted(bot_member.roles, key=lambda r: r.position, reverse=True)[0]
-        highest_role = await guild.create_role(name=member.display_name, mentionable=False)
-        await asyncio.sleep(1)
-        try:
-            await highest_role.edit(position=bot_top_role.position - 1)
-        except Exception:
-            pass
-        await member.add_roles(highest_role)
-    # Try to set the role icon
-    try:
-        # If icon_url is an attachment, use its URL
-        if interaction.attachments:
-            icon_url = interaction.attachments[0].url
-        # Download the image
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.get(icon_url) as resp:
-                if resp.status != 200:
-                    await interaction.response.send_message("❌ Could not download the image. Please check the URL or upload a valid image.", ephemeral=True)
-                    return
-                image_bytes = await resp.read()
-        await highest_role.edit(icon=image_bytes)
-        await interaction.response.send_message(f"Role icon updated!", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to manage roles or set role icons. Please check my permissions and role position.", ephemeral=True)
-    except discord.HTTPException as e:
-        if e.code == 30039:  # Not enough boosts for role icons
-            await interaction.response.send_message("❌ This server does not have enough boosts to set a role icon.", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
-
-# Slash command to copy a custom emoji from a message into the server
-# Slash command to copy custom emoji(s) from a message into the server
-@bot.tree.command(name="copyemoji", description="Copy custom emoji(s) from a message into the server")
-@app_commands.describe(
-    message_link="Link to the message containing the emoji", 
-    which="Optional: emoji number(s) to copy (e.g. 2 or 1,3)",
-    create_sticker="Create as sticker instead of emoji (default: False)"
-)
-async def copyemoji(interaction: discord.Interaction, message_link: str, which: str = None, create_sticker: bool = False):
-    # Check permissions
-    permission_check = check_emoji_permissions(interaction)
-    if permission_check:
-        await interaction.response.send_message(permission_check, ephemeral=True)
-        return
-    
-    # Parse message link
-    guild_id, channel_id, message_id = parse_message_link(message_link)
-    if guild_id is None:
-        await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
-        return
-    
-    if guild_id != interaction.guild.id:
-        await interaction.response.send_message("❌ The message must be from this server.", ephemeral=True)
-        return
-    
-    channel = interaction.guild.get_channel(channel_id)
-    if not channel:
-        await interaction.response.send_message("❌ Could not find the channel.", ephemeral=True)
-        return
-    
-    try:
-        msg = await channel.fetch_message(message_id)
-    except Exception:
-        await interaction.response.send_message("❌ Could not fetch the message.", ephemeral=True)
-        return
-    
-    # Find all custom emojis in the message
-    import re
-    emoji_pattern = r'<a?:([\w]+):([0-9]+)>'
-    emoji_matches = list(re.finditer(emoji_pattern, msg.content))
-    
-    if not emoji_matches:
-        await interaction.response.send_message("❌ No custom emoji found in that message.", ephemeral=True)
-        return
-    
-    # Parse which emojis to copy
-    indices = []
-    if which:
-        try:
-            indices = [int(i.strip())-1 for i in which.split(",") if i.strip().isdigit()]
-            indices = [i for i in indices if 0 <= i < len(emoji_matches)]
-            if not indices:
-                await interaction.response.send_message("❌ No valid emoji number(s) specified.", ephemeral=True)
-                return
-        except Exception:
-            await interaction.response.send_message("❌ Invalid emoji number(s) format. Use e.g. 2 or 1,3.", ephemeral=True)
-            return
-    else:
-        indices = [0]  # Default to first emoji
-    
-    results = []
-    import aiohttp
-    
-    for idx in indices:
-        emoji_match = emoji_matches[idx]
-        emoji_name, emoji_id = emoji_match.groups()
-        is_animated = msg.content[emoji_match.start()] == '<' and msg.content[emoji_match.start()+1] == 'a'
-        ext = 'gif' if is_animated else 'png'
-        url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
-        
-        # Download emoji image
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    results.append(f"❌ Could not download emoji '{emoji_name}'.")
-                    continue
-                image_bytes = await resp.read()
-        
-        # Create emoji or sticker
-        result = await create_emoji_or_sticker_with_overwrite(
-            interaction.guild, emoji_name, image_bytes, f"emoji_{emoji_name}", create_sticker
-        )
-        results.append(result)
-        
-        # Stop if we hit limit
-        if "reached its" in result:
-            break
-    
-    await interaction.response.send_message("\n".join(results), ephemeral=True)
-
-# Slash command to upload a custom emoji from an image URL
-@bot.tree.command(name="uploademoji", description="Upload a custom emoji from an image URL")
-@app_commands.describe(
-    name="Name for the new emoji/sticker", 
-    url="Image URL to upload",
-    create_sticker="Create as sticker instead of emoji (default: False)"
-)
-async def uploademoji(interaction: discord.Interaction, name: str, url: str, create_sticker: bool = False):
-    # Check permissions
-    permission_check = check_emoji_permissions(interaction)
-    if permission_check:
-        await interaction.response.send_message(permission_check, ephemeral=True)
-        return
-    
-    import aiohttp
-    # Download image
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                await interaction.response.send_message("❌ Could not download the image. Please check the URL.", ephemeral=True)
-                return
-            image_bytes = await resp.read()
-    
-    # Create emoji or sticker
-    result = await create_emoji_or_sticker_with_overwrite(
-        interaction.guild, name, image_bytes, url.split('/')[-1] or "uploaded_image", create_sticker
-    )
-    await interaction.response.send_message(result, ephemeral=True)
-
-# Slash command to rename an existing emoji or sticker
-@bot.tree.command(name="renameemoji", description="Rename an existing emoji or sticker in the server")
-@app_commands.describe(
-    current_name="Current name of the emoji/sticker to rename",
-    new_name="New name for the emoji/sticker",
-    is_sticker="Whether to rename a sticker instead of emoji (default: False)"
-)
-async def renameemoji(interaction: discord.Interaction, current_name: str, new_name: str, is_sticker: bool = False):
-    # Check permissions
-    permission_check = check_emoji_permissions(interaction)
-    if permission_check:
-        await interaction.response.send_message(permission_check, ephemeral=True)
-        return
-    
-    if is_sticker:
-        # Find the sticker by name
-        existing_item = discord.utils.get(interaction.guild.stickers, name=current_name)
-        if not existing_item:
-            await interaction.response.send_message(f"❌ No sticker found with the name '{current_name}' in this server.", ephemeral=True)
-            return
-        
-        # Check if new name already exists
-        name_conflict = discord.utils.get(interaction.guild.stickers, name=new_name)
-        if name_conflict:
-            await interaction.response.send_message(f"❌ A sticker with the name '{new_name}' already exists in this server.", ephemeral=True)
-            return
-        
-        item_type = "sticker"
-    else:
-        # Find the emoji by name
-        existing_item = discord.utils.get(interaction.guild.emojis, name=current_name)
-        if not existing_item:
-            await interaction.response.send_message(f"❌ No emoji found with the name '{current_name}' in this server.", ephemeral=True)
-            return
-        
-        # Check if new name already exists
-        name_conflict = discord.utils.get(interaction.guild.emojis, name=new_name)
-        if name_conflict:
-            await interaction.response.send_message(f"❌ An emoji with the name '{new_name}' already exists in this server.", ephemeral=True)
-            return
-        
-        item_type = "emoji"
-    
-    try:
-        # Edit the name
-        await existing_item.edit(name=new_name, reason=f"Renamed by {interaction.user}")
-        await interaction.response.send_message(f"✅ {item_type.capitalize()} '{current_name}' has been renamed to '{new_name}'!", ephemeral=True)
-    except discord.HTTPException as e:
-        await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
-
-# Slash command to copy an image from a message attachment as an emoji or sticker
-@bot.tree.command(name="msgtoemoji", description="Copy an image from a message attachment as an emoji or sticker")
-@app_commands.describe(
-    message_link="Link to the message containing the image",
-    name="Name for the new emoji/sticker",
-    which="Optional: image number to copy if there are multiple (e.g. 2)",
-    create_sticker="Create as a sticker instead of an emoji (default: False)"
-)
-async def msgtoemoji(interaction: discord.Interaction, message_link: str, name: str, which: int = 1, create_sticker: bool = False):
-    # Check permissions
-    permission_check = check_emoji_permissions(interaction)
-    if permission_check:
-        await interaction.response.send_message(permission_check, ephemeral=True)
-        return
-    
-    # Parse message link
-    guild_id, channel_id, message_id = parse_message_link(message_link)
-    if guild_id is None:
-        await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
-        return
-    
-    if guild_id != interaction.guild.id:
-        await interaction.response.send_message("❌ The message must be from this server.", ephemeral=True)
-        return
-    
-    channel = interaction.guild.get_channel(channel_id)
-    if not channel:
-        await interaction.response.send_message("❌ Could not find the channel.", ephemeral=True)
-        return
-    
-    try:
-        msg = await channel.fetch_message(message_id)
-    except Exception:
-        await interaction.response.send_message("❌ Could not fetch the message.", ephemeral=True)
-        return
-    
-    # Find image attachments and embeds
-    image_attachments = [att for att in msg.attachments if any(att.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp'])]
-    image_embeds = [embed for embed in msg.embeds if embed.image or embed.thumbnail]
-    
-    all_images = []
-    for att in image_attachments:
-        all_images.append(('attachment', att))
-    for embed in image_embeds:
-        if embed.image:
-            all_images.append(('embed', embed.image.url))
-        elif embed.thumbnail:
-            all_images.append(('embed', embed.thumbnail.url))
-    
-    if not all_images:
-        await interaction.response.send_message("❌ No images found in that message.", ephemeral=True)
-        return
-    
-    if which < 1 or which > len(all_images):
-        await interaction.response.send_message(f"❌ Invalid image number. Found {len(all_images)} image(s) in the message.", ephemeral=True)
-        return
-    
-    # Get the specified image
-    image_type, image_source = all_images[which - 1]
-    
-    try:
-        if image_type == 'attachment':
-            # Check file size
-            size_limit = 512 * 1024 if create_sticker else 256 * 1024
-            if image_source.size > size_limit:
-                limit_name = "sticker" if create_sticker else "emoji"
-                await interaction.response.send_message(f"❌ Image is too large ({image_source.size/1024:.1f}KB). Discord {limit_name}s must be under {size_limit/1024}KB.", ephemeral=True)
-                return
-            
-            image_bytes = await image_source.read()
-            source_name = image_source.filename
-        else:  # embed image
-            import aiohttp
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_source) as resp:
-                    if resp.status != 200:
-                        await interaction.response.send_message(f"❌ Could not download embed image.", ephemeral=True)
-                        return
-                    image_bytes = await resp.read()
-                    source_name = "embed_image"
-        
-        # Create emoji or sticker
-        result = await create_emoji_or_sticker_with_overwrite(
-            interaction.guild, name, image_bytes, source_name, create_sticker
-        )
-        await interaction.response.send_message(result, ephemeral=True)
-        
-    except Exception as e:
-        await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
 
 class ConversionType(str, enum.Enum):
     CYPIONATE = "cypionate"
@@ -783,9 +827,13 @@ class ConversionType(str, enum.Enum):
     dose="Dose amount (in mg or ml)",
     frequency="Frequency of dose (in days)"
 )
+@app_commands.choices(starting_type=[
+    app_commands.Choice(name="Cypionate", value="cypionate"),
+    app_commands.Choice(name="Gel", value="gel")
+])
 async def tconvert(
     interaction: discord.Interaction,
-    starting_type: ConversionType,
+    starting_type: str,
     dose: float,
     frequency: int
 ):
@@ -795,15 +843,17 @@ async def tconvert(
     daily_dose = dose / frequency
     gel_absorption = 0.1
     cyp_absorption = 0.95
-    if starting_type == ConversionType.GEL:
+    if starting_type == "gel":
         absorption = daily_dose * gel_absorption
         weekly = absorption * 7
         final = weekly / cyp_absorption
         response = f"{dose}mg gel every {frequency} days is approximately {final:.2f}mg cypionate weekly."
-    if starting_type == ConversionType.CYPIONATE:
+    elif starting_type == "cypionate":
         absorption = daily_dose * cyp_absorption
         final = absorption / gel_absorption
         response = f"{dose}mg cypionate every {frequency} days is approximately {final:.2f}mg gel daily."
+    else:
+        response = "❌ Invalid conversion type."
     await interaction.response.send_message(response)
 
 class TimestampStyle(str, enum.Enum):
