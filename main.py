@@ -42,14 +42,23 @@ def parse_message_link(message_link: str):
     guild_id, channel_id, message_id = map(int, match.groups())
     return guild_id, channel_id, message_id
 
-async def create_emoji_or_sticker_with_overwrite(guild, name: str, image_bytes: bytes, source_name: str = "image", create_sticker: bool = False) -> str:
-    """Create emoji or sticker, overwriting if exists. Returns result message."""
+async def create_emoji_or_sticker_with_overwrite(guild, name: str, image_bytes: bytes, source_name: str = "image", create_sticker: bool = False, replace_existing: bool = True) -> str:
+    """Create emoji or sticker, with option to replace or create with different name. Returns result message."""
     import io
     
     if create_sticker:
         # Handle sticker creation
         existing_sticker = discord.utils.get(guild.stickers, name=name)
-        if existing_sticker:
+        if existing_sticker and not replace_existing:
+            # Find a unique name
+            counter = 1
+            new_name = f"{name}_{counter}"
+            while discord.utils.get(guild.stickers, name=new_name):
+                counter += 1
+                new_name = f"{name}_{counter}"
+            name = new_name
+            existing_sticker = None  # Reset since we're using a different name
+        elif existing_sticker and replace_existing:
             try:
                 await existing_sticker.delete(reason="Overwriting with new sticker")
             except Exception:
@@ -62,7 +71,12 @@ async def create_emoji_or_sticker_with_overwrite(guild, name: str, image_bytes: 
                 emoji="📷",
                 file=discord.File(io.BytesIO(image_bytes), filename=source_name)
             )
-            action = "replaced" if existing_sticker else "created"
+            if existing_sticker and replace_existing:
+                action = "replaced"
+            elif not replace_existing and "_" in name:
+                action = f"created as '{name}' (original name existed)"
+            else:
+                action = "created"
             return f"✅ Sticker '{new_sticker.name}' {action}!"
         except discord.HTTPException as e:
             if e.code == 30008:
@@ -74,7 +88,16 @@ async def create_emoji_or_sticker_with_overwrite(guild, name: str, image_bytes: 
     else:
         # Handle emoji creation
         existing_emoji = discord.utils.get(guild.emojis, name=name)
-        if existing_emoji:
+        if existing_emoji and not replace_existing:
+            # Find a unique name
+            counter = 1
+            new_name = f"{name}_{counter}"
+            while discord.utils.get(guild.emojis, name=new_name):
+                counter += 1
+                new_name = f"{name}_{counter}"
+            name = new_name
+            existing_emoji = None  # Reset since we're using a different name
+        elif existing_emoji and replace_existing:
             try:
                 await existing_emoji.delete(reason="Overwriting with new emoji")
             except Exception:
@@ -82,7 +105,12 @@ async def create_emoji_or_sticker_with_overwrite(guild, name: str, image_bytes: 
         
         try:
             new_emoji = await guild.create_custom_emoji(name=name, image=image_bytes)
-            action = "replaced" if existing_emoji else "created"
+            if existing_emoji and replace_existing:
+                action = "replaced"
+            elif not replace_existing and "_" in name:
+                action = f"created as '{name}' (original name existed)"
+            else:
+                action = "created"
             return f"✅ Emoji '{new_emoji.name}' {action}!"
         except discord.HTTPException as e:
             if e.code == 30008:
@@ -303,10 +331,11 @@ class EmojiGroup(app_commands.Group):
     @app_commands.command(name="copy", description="Copy custom emoji(s) from a message")
     @app_commands.describe(
         message_link="Link to the message containing the emoji", 
-        which="Optional: emoji number(s) to copy (e.g. 2 or 1,3)",
-        create_sticker="Create as sticker instead of emoji (default: False)"
+        which="Optional: emoji number(s) to copy (e.g. 2 or 1,3). Default: all emojis",
+        create_sticker="Create as sticker instead of emoji (default: False)",
+        replace_existing="Replace existing emoji if name conflicts (default: True)"
     )
-    async def copy(self, interaction: discord.Interaction, message_link: str, which: str = None, create_sticker: bool = False):
+    async def copy(self, interaction: discord.Interaction, message_link: str, which: str = None, create_sticker: bool = False, replace_existing: bool = True):
         # Check permissions
         permission_check = check_emoji_permissions(interaction)
         if permission_check:
@@ -356,10 +385,13 @@ class EmojiGroup(app_commands.Group):
                 await interaction.response.send_message("❌ Invalid emoji number(s) format. Use e.g. 2 or 1,3.", ephemeral=True)
                 return
         else:
-            indices = [0]  # Default to first emoji
+            indices = list(range(len(emoji_matches)))  # Default to all emojis
         
         results = []
         import aiohttp
+        
+        # Defer the response since this might take a while
+        await interaction.response.defer(ephemeral=True)
         
         for idx in indices:
             emoji_match = emoji_matches[idx]
@@ -378,7 +410,7 @@ class EmojiGroup(app_commands.Group):
             
             # Create emoji or sticker
             result = await create_emoji_or_sticker_with_overwrite(
-                interaction.guild, emoji_name, image_bytes, f"emoji_{emoji_name}", create_sticker
+                interaction.guild, emoji_name, image_bytes, f"emoji_{emoji_name}", create_sticker, replace_existing
             )
             results.append(result)
             
@@ -386,35 +418,39 @@ class EmojiGroup(app_commands.Group):
             if "reached its" in result:
                 break
         
-        await interaction.response.send_message("\n".join(results), ephemeral=True)
+        await interaction.followup.send("\n".join(results), ephemeral=True)
 
     @app_commands.command(name="upload", description="Upload a custom emoji from an image URL")
     @app_commands.describe(
         name="Name for the new emoji/sticker", 
         url="Image URL to upload",
-        create_sticker="Create as sticker instead of emoji (default: False)"
+        create_sticker="Create as sticker instead of emoji (default: False)",
+        replace_existing="Replace existing emoji if name conflicts (default: True)"
     )
-    async def upload(self, interaction: discord.Interaction, name: str, url: str, create_sticker: bool = False):
+    async def upload(self, interaction: discord.Interaction, name: str, url: str, create_sticker: bool = False, replace_existing: bool = True):
         # Check permissions
         permission_check = check_emoji_permissions(interaction)
         if permission_check:
             await interaction.response.send_message(permission_check, ephemeral=True)
             return
         
+        # Defer the response since downloading and uploading might take time
+        await interaction.response.defer(ephemeral=True)
+        
         import aiohttp
         # Download image
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 if resp.status != 200:
-                    await interaction.response.send_message("❌ Could not download the image. Please check the URL.", ephemeral=True)
+                    await interaction.followup.send("❌ Could not download the image. Please check the URL.", ephemeral=True)
                     return
                 image_bytes = await resp.read()
         
         # Create emoji or sticker
         result = await create_emoji_or_sticker_with_overwrite(
-            interaction.guild, name, image_bytes, url.split('/')[-1] or "uploaded_image", create_sticker
+            interaction.guild, name, image_bytes, url.split('/')[-1] or "uploaded_image", create_sticker, replace_existing
         )
-        await interaction.response.send_message(result, ephemeral=True)
+        await interaction.followup.send(result, ephemeral=True)
 
     @app_commands.command(name="rename", description="Rename an existing emoji or sticker")
     @app_commands.describe(
@@ -675,12 +711,12 @@ class BoosterRoleGroup(app_commands.Group):
             return
         
         # Validate name length and content
-        if len(role_title) > 100:
-            await interaction.response.send_message("❌ Role title must be 100 characters or less.", ephemeral=True)
+        if len(role_label) > 100:
+            await interaction.response.send_message("❌ Role label must be 100 characters or less.", ephemeral=True)
             return
         
-        if not role_title.strip():
-            await interaction.response.send_message("❌ Role title cannot be empty.", ephemeral=True)
+        if not role_label.strip():
+            await interaction.response.send_message("❌ Role label cannot be empty.", ephemeral=True)
             return
         
         # Find their highest role (should be their custom role)
@@ -698,11 +734,11 @@ class BoosterRoleGroup(app_commands.Group):
             # Create a new personal role
             try:
                 highest_role = await interaction.guild.create_role(
-                    name=role_title,
+                    name=role_label,
                     reason="Booster role customization"
                 )
                 await interaction.user.add_roles(highest_role, reason="Booster role customization")
-                await interaction.response.send_message(f"✅ Created and assigned new role: **{role_title}**", ephemeral=True)
+                await interaction.response.send_message(f"✅ Created and assigned new role: **{role_label}**", ephemeral=True)
                 return
             except discord.Forbidden:
                 await interaction.response.send_message("❌ I don't have permission to create roles.", ephemeral=True)
@@ -714,8 +750,8 @@ class BoosterRoleGroup(app_commands.Group):
         # Update existing personal role
         old_name = highest_role.name
         try:
-            await highest_role.edit(name=role_title, reason=f"Booster role title change by {interaction.user}")
-            await interaction.response.send_message(f"✅ Role title updated from **{old_name}** to **{role_title}**!", ephemeral=True)
+            await highest_role.edit(name=role_label, reason=f"Booster role label change by {interaction.user}")
+            await interaction.response.send_message(f"✅ Role label updated from **{old_name}** to **{role_label}**!", ephemeral=True)
         except discord.Forbidden:
             await interaction.response.send_message("❌ I don't have permission to edit roles.", ephemeral=True)
         except Exception as e:
