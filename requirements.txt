@@ -1,2 +1,4 @@
 ./discordpy/discord.py
 mysql-connector-python
+python-dotenv
+aiohttp
