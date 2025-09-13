@@ -29,24 +29,55 @@ fi
 echo "📦 Pulling latest changes..."
 git pull origin main || echo "⚠️  Git pull failed - continuing with local files"
 
+# Initialize and update submodules
+echo "📦 Updating git submodules..."
+git submodule update --init --recursive || echo "⚠️  No submodules found or submodule update failed"
+
 # Determine which Python version to use
 if command -v python3.12 &> /dev/null; then
     PYTHON_CMD="python3.12"
+    VENV_PACKAGE="python3.12-venv"
     echo "🐍 Using Python 3.12"
 elif command -v python3.11 &> /dev/null; then
     PYTHON_CMD="python3.11"
+    VENV_PACKAGE="python3.11-venv"
     echo "🐍 Using Python 3.11"
 else
     PYTHON_CMD="python3"
+    VENV_PACKAGE="python3-venv"
     echo "🐍 Using Python 3 ($(python3 --version))"
 fi
 
-# Create virtual environment if it doesn't exist
+# Ensure venv package is installed
+echo "🔧 Ensuring virtual environment package is installed..."
+if ! dpkg -l | grep -q "$VENV_PACKAGE"; then
+    echo "📦 Installing $VENV_PACKAGE..."
+    sudo apt update
+    sudo apt install "$VENV_PACKAGE" -y
+else
+    echo "✅ $VENV_PACKAGE already installed"
+fi
+
+# Create virtual environment if it doesn't exist or is broken
 if [ ! -d "venv" ]; then
     echo "🔧 Creating virtual environment..."
     $PYTHON_CMD -m venv venv
+elif [ ! -f "venv/bin/activate" ]; then
+    echo "🔧 Virtual environment is broken, recreating..."
+    rm -rf venv
+    $PYTHON_CMD -m venv venv
 else
-    echo "✅ Virtual environment exists"
+    echo "✅ Virtual environment exists and is healthy"
+fi
+
+# Verify virtual environment was created successfully
+if [ ! -f "venv/bin/activate" ]; then
+    echo "❌ Failed to create virtual environment!"
+    echo "🔧 Trying to install missing packages..."
+    sudo apt update
+    sudo apt install "$VENV_PACKAGE" -y
+    rm -rf venv
+    $PYTHON_CMD -m venv venv
 fi
 
 # Activate virtual environment and install dependencies

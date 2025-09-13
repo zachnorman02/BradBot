@@ -1,4 +1,4 @@
-./discordpy/discord.py
+-e ./discordpy
 mysql-connector-python
 python-dotenv
 aiohttp
