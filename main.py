@@ -9,7 +9,7 @@ import re
 import asyncio
 from dotenv import load_dotenv
 from typing import Literal
-from websites import websites, fix_link_async, get_site_name
+from websites import websites, get_site_name
 
 # Load environment variables from .env file
 load_dotenv()

@@ -380,20 +380,6 @@ def fix_link(url: str) -> Optional[str]:
     return None
 
 
-async def fix_link_async(url: str) -> Optional[str]:
-    """
-    Async version of fix_link.
-    
-    :param url: The URL to fix
-    :return: Fixed URL if a handler is found, None otherwise
-    """
-    for website_class in websites:
-        website = website_class.if_valid(url)
-        if website:
-            return await website.render()
-    return None
-
-
 def get_site_name(url: str) -> str:
     """
     Get the name of the website from a URL.
