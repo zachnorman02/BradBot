@@ -991,9 +991,9 @@ class TimestampStyle(str, enum.Enum):
 @app_commands.describe(
     user="The user whose messages to delete",
     scope="What to delete - REQUIRED to prevent accidents",
-    start_date="Start date (YYYY-MM-DD format, optional if using relative scope)",
+    start_date="Start date (YYYY-MM-DD) - delete messages AFTER this date/time (optional)",
     start_time="Start time (HH:MM format, 24-hour, optional - defaults to 00:00)",
-    end_date="End date (YYYY-MM-DD format, optional - defaults to start_date)",
+    end_date="End date (YYYY-MM-DD) - delete messages BEFORE this date/time (optional)",
     end_time="End time (HH:MM format, 24-hour, optional - defaults to 23:59)",
     timezone_offset="Hours from UTC (e.g. -5 for EST, -8 for PST, 1 for CET)",
     all_channels="Delete from all channels (default: False, only current channel)",
@@ -1040,93 +1040,79 @@ async def purge_messages(
         # No date filtering - will delete all messages from the user
         pass
     elif scope == 'custom':
-        # Custom date range - validate all required parameters
-        if not start_date:
+        # Custom date range - require at least start_date OR end_date
+        if not start_date and not end_date:
             await interaction.response.send_message(
-                "❌ Custom scope requires `start_date` parameter (YYYY-MM-DD format)",
-                ephemeral=True
-            )
-            return
-        
-        if not end_date:
-            await interaction.response.send_message(
-                "❌ Custom scope requires `end_date` parameter (YYYY-MM-DD format)",
-                ephemeral=True
-            )
-            return
-        
-        if not start_time:
-            await interaction.response.send_message(
-                "❌ Custom scope requires `start_time` parameter (HH:MM format)",
-                ephemeral=True
-            )
-            return
-            
-        if not end_time:
-            await interaction.response.send_message(
-                "❌ Custom scope requires `end_time` parameter (HH:MM format)",
+                "❌ Custom scope requires at least `start_date` or `end_date` parameter:\n"
+                "• Only `start_date`: Delete all messages after this date/time\n"
+                "• Only `end_date`: Delete all messages before this date/time\n"
+                "• Both: Delete messages between these dates",
                 ephemeral=True
             )
             return
         
         try:
-            # Parse dates
-            start_date_parsed = dt.datetime.strptime(start_date, "%Y-%m-%d").date()
-            end_date_parsed = dt.datetime.strptime(end_date, "%Y-%m-%d").date()
-            
-            # Validate date order
-            if start_date_parsed > end_date_parsed:
-                await interaction.response.send_message(
-                    "❌ Start date cannot be after end date",
-                    ephemeral=True
-                )
-                return
-            
-            # Parse and validate times
-            if ':' not in start_time or ':' not in end_time:
-                await interaction.response.send_message(
-                    "❌ Time format must be HH:MM (24-hour format)",
-                    ephemeral=True
-                )
-                return
+            # Parse start date if provided
+            if start_date:
+                start_date_parsed = dt.datetime.strptime(start_date, "%Y-%m-%d").date()
                 
-            start_hour, start_minute = map(int, start_time.split(':'))
-            end_hour, end_minute = map(int, end_time.split(':'))
-            
-            # Validate time ranges
-            if not (0 <= start_hour <= 23 and 0 <= start_minute <= 59):
-                await interaction.response.send_message(
-                    "❌ Invalid start_time. Use HH:MM format (00:00 to 23:59)",
-                    ephemeral=True
-                )
-                return
+                # Parse and validate start_time
+                if ':' not in start_time:
+                    await interaction.response.send_message(
+                        "❌ Time format must be HH:MM (24-hour format)",
+                        ephemeral=True
+                    )
+                    return
+                    
+                start_hour, start_minute = map(int, start_time.split(':'))
                 
-            if not (0 <= end_hour <= 23 and 0 <= end_minute <= 59):
-                await interaction.response.send_message(
-                    "❌ Invalid end_time. Use HH:MM format (00:00 to 23:59)",
-                    ephemeral=True
-                )
-                return
+                # Validate time range
+                if not (0 <= start_hour <= 23 and 0 <= start_minute <= 59):
+                    await interaction.response.send_message(
+                        "❌ Invalid start_time. Use HH:MM format (00:00 to 23:59)",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Create start datetime in user's timezone, then convert to UTC
+                start_datetime = dt.datetime.combine(start_date_parsed, dt.time(start_hour, start_minute))
+                start_datetime = start_datetime + dt.timedelta(hours=timezone_offset)
+                start_datetime = start_datetime.replace(tzinfo=dt.timezone.utc)
             
-            # Create datetime objects in user's timezone
-            start_datetime = dt.datetime.combine(start_date_parsed, dt.time(start_hour, start_minute))
-            end_datetime = dt.datetime.combine(end_date_parsed, dt.time(end_hour, end_minute))
+            # Parse end date if provided
+            if end_date:
+                end_date_parsed = dt.datetime.strptime(end_date, "%Y-%m-%d").date()
+                
+                # Parse and validate end_time
+                if ':' not in end_time:
+                    await interaction.response.send_message(
+                        "❌ Time format must be HH:MM (24-hour format)",
+                        ephemeral=True
+                    )
+                    return
+                    
+                end_hour, end_minute = map(int, end_time.split(':'))
+                
+                # Validate time range
+                if not (0 <= end_hour <= 23 and 0 <= end_minute <= 59):
+                    await interaction.response.send_message(
+                        "❌ Invalid end_time. Use HH:MM format (00:00 to 23:59)",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Create end datetime in user's timezone, then convert to UTC
+                end_datetime = dt.datetime.combine(end_date_parsed, dt.time(end_hour, end_minute))
+                end_datetime = end_datetime + dt.timedelta(hours=timezone_offset)
+                end_datetime = end_datetime.replace(tzinfo=dt.timezone.utc)
             
-            # Validate datetime order
-            if start_datetime > end_datetime:
+            # Validate datetime order if both are provided
+            if start_datetime and end_datetime and start_datetime > end_datetime:
                 await interaction.response.send_message(
                     "❌ Start date/time cannot be after end date/time",
                     ephemeral=True
                 )
                 return
-            
-            # Convert to UTC
-            start_datetime = start_datetime + dt.timedelta(hours=timezone_offset)
-            end_datetime = end_datetime + dt.timedelta(hours=timezone_offset)
-            
-            # Add timezone info
-            start_datetime = start_datetime.replace(tzinfo=dt.timezone.utc)
-            end_datetime = end_datetime.replace(tzinfo=dt.timezone.utc)
             
         except ValueError as e:
             await interaction.response.send_message(
@@ -1166,7 +1152,16 @@ async def purge_messages(
                 
                 # Check date range if specified
                 if start_datetime and end_datetime:
+                    # Both dates specified: between range
                     if not (start_datetime <= message.created_at <= end_datetime):
+                        continue
+                elif start_datetime:
+                    # Only start date: after this date
+                    if message.created_at < start_datetime:
+                        continue
+                elif end_datetime:
+                    # Only end date: before this date
+                    if message.created_at > end_datetime:
                         continue
                 
                 messages_to_delete.append(message)
@@ -1198,11 +1193,18 @@ async def purge_messages(
         date_summary = "from all time"
     elif scope in ['today', 'yesterday', 'last_7_days', 'last_30_days']:
         date_summary = f"scope: {scope.replace('_', ' ')}"
-    elif scope == 'custom' and start_datetime and end_datetime:
+    elif scope == 'custom':
         # Convert back to user's timezone for display
-        user_start = start_datetime - dt.timedelta(hours=timezone_offset)
-        user_end = end_datetime - dt.timedelta(hours=timezone_offset)
-        date_summary = f"from {user_start.strftime('%Y-%m-%d %H:%M')} to {user_end.strftime('%Y-%m-%d %H:%M')} (UTC{timezone_offset:+d})"
+        if start_datetime and end_datetime:
+            user_start = start_datetime - dt.timedelta(hours=timezone_offset)
+            user_end = end_datetime - dt.timedelta(hours=timezone_offset)
+            date_summary = f"from {user_start.strftime('%Y-%m-%d %H:%M')} to {user_end.strftime('%Y-%m-%d %H:%M')} (UTC{timezone_offset:+d})"
+        elif start_datetime:
+            user_start = start_datetime - dt.timedelta(hours=timezone_offset)
+            date_summary = f"after {user_start.strftime('%Y-%m-%d %H:%M')} (UTC{timezone_offset:+d})"
+        elif end_datetime:
+            user_end = end_datetime - dt.timedelta(hours=timezone_offset)
+            date_summary = f"before {user_end.strftime('%Y-%m-%d %H:%M')} (UTC{timezone_offset:+d})"
     else:
         date_summary = f"scope: {scope}"
     
