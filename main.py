@@ -25,8 +25,6 @@ settings = {}
 
 # No need for tracking storage - we'll just check the original message!
 
-@bot.event
-
 # Helper functions for emoji commands
 def check_emoji_permissions(interaction: discord.Interaction) -> str | None:
     """Check if both bot and user have create expressions permission. Returns error message or None if OK."""
@@ -989,6 +987,288 @@ class TimestampStyle(str, enum.Enum):
     SHORT_DATETIME = "f"      # 20 April 2021 16:20
     LONG_DATETIME = "F"       # Tuesday, 20 April 2021 16:20
     RELATIVE = "R"            # 2 months ago
+
+@bot.tree.command(name="purge", description="Delete messages from a specific user within a date/time range")
+@app_commands.describe(
+    user="The user whose messages to delete",
+    scope="What to delete - REQUIRED to prevent accidents",
+    start_date="Start date (YYYY-MM-DD format, optional if using relative scope)",
+    start_time="Start time (HH:MM format, 24-hour, optional - defaults to 00:00)",
+    end_date="End date (YYYY-MM-DD format, optional - defaults to start_date)",
+    end_time="End time (HH:MM format, 24-hour, optional - defaults to 23:59)",
+    timezone_offset="Hours from UTC (e.g. -5 for EST, -8 for PST, 1 for CET)",
+    all_channels="Delete from all channels (default: False, only current channel)",
+    dry_run="Show what would be deleted without actually deleting (default: True)"
+)
+@app_commands.choices(scope=[
+    app_commands.Choice(name="All messages (DANGER)", value="all"),
+    app_commands.Choice(name="Custom date/time range", value="custom")
+])
+async def purge_messages(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    scope: str,
+    start_date: str = None,
+    end_date: str = None,
+    start_time: str = "00:00",
+    end_time: str = "23:59",
+    timezone_offset: int = 0,
+    all_channels: bool = False,
+    dry_run: bool = True
+):
+    """
+    Delete messages from a specific user within a date/time range.
+    Only works if you're deleting your own messages or have manage_messages permission.
+    """
+    import datetime as dt
+    
+    # Permission check
+    is_self = interaction.user.id == user.id
+    has_manage_messages = interaction.user.guild_permissions.manage_messages
+    
+    if not (is_self or has_manage_messages):
+        await interaction.response.send_message(
+            "❌ You can only delete your own messages or need 'Manage Messages' permission to delete others' messages.",
+            ephemeral=True
+        )
+        return
+    
+    # Parse date/time range based on scope
+    start_datetime = None
+    end_datetime = None
+    
+    if scope == 'all':
+        # No date filtering - will delete all messages from the user
+        pass
+    elif scope == 'custom':
+        # Custom date range - validate all required parameters
+        if not start_date:
+            await interaction.response.send_message(
+                "❌ Custom scope requires `start_date` parameter (YYYY-MM-DD format)",
+                ephemeral=True
+            )
+            return
+        
+        if not end_date:
+            await interaction.response.send_message(
+                "❌ Custom scope requires `end_date` parameter (YYYY-MM-DD format)",
+                ephemeral=True
+            )
+            return
+        
+        if not start_time:
+            await interaction.response.send_message(
+                "❌ Custom scope requires `start_time` parameter (HH:MM format)",
+                ephemeral=True
+            )
+            return
+            
+        if not end_time:
+            await interaction.response.send_message(
+                "❌ Custom scope requires `end_time` parameter (HH:MM format)",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            # Parse dates
+            start_date_parsed = dt.datetime.strptime(start_date, "%Y-%m-%d").date()
+            end_date_parsed = dt.datetime.strptime(end_date, "%Y-%m-%d").date()
+            
+            # Validate date order
+            if start_date_parsed > end_date_parsed:
+                await interaction.response.send_message(
+                    "❌ Start date cannot be after end date",
+                    ephemeral=True
+                )
+                return
+            
+            # Parse and validate times
+            if ':' not in start_time or ':' not in end_time:
+                await interaction.response.send_message(
+                    "❌ Time format must be HH:MM (24-hour format)",
+                    ephemeral=True
+                )
+                return
+                
+            start_hour, start_minute = map(int, start_time.split(':'))
+            end_hour, end_minute = map(int, end_time.split(':'))
+            
+            # Validate time ranges
+            if not (0 <= start_hour <= 23 and 0 <= start_minute <= 59):
+                await interaction.response.send_message(
+                    "❌ Invalid start_time. Use HH:MM format (00:00 to 23:59)",
+                    ephemeral=True
+                )
+                return
+                
+            if not (0 <= end_hour <= 23 and 0 <= end_minute <= 59):
+                await interaction.response.send_message(
+                    "❌ Invalid end_time. Use HH:MM format (00:00 to 23:59)",
+                    ephemeral=True
+                )
+                return
+            
+            # Create datetime objects in user's timezone
+            start_datetime = dt.datetime.combine(start_date_parsed, dt.time(start_hour, start_minute))
+            end_datetime = dt.datetime.combine(end_date_parsed, dt.time(end_hour, end_minute))
+            
+            # Validate datetime order
+            if start_datetime > end_datetime:
+                await interaction.response.send_message(
+                    "❌ Start date/time cannot be after end date/time",
+                    ephemeral=True
+                )
+                return
+            
+            # Convert to UTC
+            start_datetime = start_datetime + dt.timedelta(hours=timezone_offset)
+            end_datetime = end_datetime + dt.timedelta(hours=timezone_offset)
+            
+            # Add timezone info
+            start_datetime = start_datetime.replace(tzinfo=dt.timezone.utc)
+            end_datetime = end_datetime.replace(tzinfo=dt.timezone.utc)
+            
+        except ValueError as e:
+            await interaction.response.send_message(
+                "❌ Invalid date/time format. Use YYYY-MM-DD for dates and HH:MM for times (24-hour format)",
+                ephemeral=True
+            )
+            return
+    
+    # Defer response since this might take a while
+    await interaction.response.defer(ephemeral=True)
+    
+    # Determine channels to process
+    channels_to_process = []
+    if all_channels:
+        # Get all text channels the bot can see
+        channels_to_process = [ch for ch in interaction.guild.text_channels if ch.permissions_for(interaction.guild.me).read_message_history]
+    else:
+        # Just the current channel
+        if interaction.channel.permissions_for(interaction.guild.me).read_message_history:
+            channels_to_process = [interaction.channel]
+        else:
+            await interaction.followup.send("❌ I don't have permission to read message history in this channel.", ephemeral=True)
+            return
+    
+    # Collect messages to delete
+    messages_to_delete = []
+    total_scanned = 0
+    
+    try:
+        for channel in channels_to_process:
+            async for message in channel.history(limit=None):
+                total_scanned += 1
+                
+                # Check if message is from the target user
+                if message.author.id != user.id:
+                    continue
+                
+                # Check date range if specified
+                if start_datetime and end_datetime:
+                    if not (start_datetime <= message.created_at <= end_datetime):
+                        continue
+                
+                messages_to_delete.append(message)
+                
+                # Safety limit to prevent excessive processing
+                if len(messages_to_delete) >= 1000:
+                    break
+            
+            if len(messages_to_delete) >= 1000:
+                break
+    
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error scanning messages: {e}", ephemeral=True)
+        return
+    
+    if not messages_to_delete:
+        await interaction.followup.send(
+            f"No messages found from {user.mention} in the specified criteria.\n"
+            f"Scanned {total_scanned} messages across {len(channels_to_process)} channel(s).",
+            ephemeral=True
+        )
+        return
+    
+    # Show summary
+    channel_summary = "all channels" if all_channels else f"#{interaction.channel.name}"
+    
+    # Create date summary based on scope
+    if scope == 'all':
+        date_summary = "from all time"
+    elif scope in ['today', 'yesterday', 'last_7_days', 'last_30_days']:
+        date_summary = f"scope: {scope.replace('_', ' ')}"
+    elif scope == 'custom' and start_datetime and end_datetime:
+        # Convert back to user's timezone for display
+        user_start = start_datetime - dt.timedelta(hours=timezone_offset)
+        user_end = end_datetime - dt.timedelta(hours=timezone_offset)
+        date_summary = f"from {user_start.strftime('%Y-%m-%d %H:%M')} to {user_end.strftime('%Y-%m-%d %H:%M')} (UTC{timezone_offset:+d})"
+    else:
+        date_summary = f"scope: {scope}"
+    
+    summary_message = (
+        f"**{'DRY RUN - ' if dry_run else ''}Purge Summary**\n"
+        f"👤 User: {user.mention}\n"
+        f"📅 Date range: {date_summary}\n"
+        f"📍 Location: {channel_summary}\n"
+        f"🗑️ Messages to delete: {len(messages_to_delete)}\n"
+        f"🔍 Total messages scanned: {total_scanned}"
+    )
+    
+    if dry_run:
+        summary_message += "\n\n✅ This was a dry run - no messages were actually deleted."
+        await interaction.followup.send(summary_message, ephemeral=True)
+        return
+    
+    # Confirm before deletion for large batches
+    if len(messages_to_delete) > 50:
+        summary_message += f"\n\n⚠️ **Warning:** This will delete {len(messages_to_delete)} messages. This action cannot be undone!"
+        await interaction.followup.send(summary_message, ephemeral=True)
+        
+        # For large deletions, require manual confirmation (you could implement a button here)
+        if len(messages_to_delete) > 100:
+            await interaction.followup.send(
+                f"❌ Deletion of {len(messages_to_delete)} messages requires manual confirmation. "
+                "Please run this command again with `dry_run: True` first to verify, or contact an administrator.",
+                ephemeral=True
+            )
+            return
+    
+    # Delete messages
+    deleted_count = 0
+    failed_count = 0
+    
+    for message in messages_to_delete:
+        try:
+            await message.delete()
+            deleted_count += 1
+        except discord.NotFound:
+            # Message already deleted
+            deleted_count += 1
+        except discord.Forbidden:
+            failed_count += 1
+        except Exception:
+            failed_count += 1
+        
+        # Rate limit protection
+        if deleted_count % 10 == 0:
+            await asyncio.sleep(0.5)
+    
+    # Final report
+    result_message = (
+        f"✅ **Purge Complete**\n"
+        f"👤 User: {user.mention}\n"
+        f"📅 Date range: {date_summary}\n"
+        f"📍 Location: {channel_summary}\n"
+        f"✅ Successfully deleted: {deleted_count}\n"
+        f"❌ Failed to delete: {failed_count}"
+    )
+    
+    if failed_count > 0:
+        result_message += "\n\n⚠️ Some messages couldn't be deleted (too old, already deleted, or permission issues)."
+    
+    await interaction.followup.send(result_message, ephemeral=True)
 
 @bot.tree.command(name="timestamp", description="Generate a Discord timestamp")
 @app_commands.describe(
