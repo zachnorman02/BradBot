@@ -991,11 +991,11 @@ class TimestampStyle(str, enum.Enum):
 @app_commands.describe(
     user="The user whose messages to delete",
     scope="What to delete - REQUIRED to prevent accidents",
-    start_date="Start date (YYYY-MM-DD) - delete messages AFTER this date/time (optional)",
-    start_time="Start time (HH:MM format, 24-hour, optional - defaults to 00:00)",
-    end_date="End date (YYYY-MM-DD) - delete messages BEFORE this date/time (optional)",
-    end_time="End time (HH:MM format, 24-hour, optional - defaults to 23:59)",
-    timezone_offset="Hours from UTC (e.g. -5 for EST, -8 for PST, 1 for CET)",
+    start_date="[CUSTOM ONLY] Start date (YYYY-MM-DD) - delete messages AFTER this date/time",
+    start_time="[CUSTOM ONLY] Start time (HH:MM, 24-hour format, defaults to 00:00)",
+    end_date="[CUSTOM ONLY] End date (YYYY-MM-DD) - delete messages BEFORE this date/time",
+    end_time="[CUSTOM ONLY] End time (HH:MM, 24-hour format, defaults to 23:59)", 
+    timezone_offset="[CUSTOM ONLY] Hours from UTC (e.g. -5 for EST, -8 for PST, 1 for CET)",
     all_channels="Delete from all channels (default: False, only current channel)",
     dry_run="Show what would be deleted without actually deleting (default: True)"
 )
@@ -1270,6 +1270,48 @@ async def purge_messages(
         result_message += "\n\n⚠️ Some messages couldn't be deleted (too old, already deleted, or permission issues)."
     
     await interaction.followup.send(result_message, ephemeral=True)
+
+# Autocomplete functions for purge command to provide conditional guidance
+@purge_messages.autocomplete('start_date')
+async def start_date_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    # Only show suggestions if scope is custom
+    if hasattr(interaction.namespace, 'scope') and interaction.namespace.scope == 'custom':
+        suggestions = [
+            app_commands.Choice(name="Today (2025-09-26)", value="2025-09-26"),
+            app_commands.Choice(name="Yesterday (2025-09-25)", value="2025-09-25"),
+            app_commands.Choice(name="One week ago (2025-09-19)", value="2025-09-19"),
+            app_commands.Choice(name="One month ago (2025-08-26)", value="2025-08-26")
+        ]
+        return [choice for choice in suggestions if current.lower() in choice.name.lower()]
+    return [app_commands.Choice(name="Set scope to 'Custom date/time range' first", value="")]
+
+@purge_messages.autocomplete('end_date')
+async def end_date_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    # Only show suggestions if scope is custom
+    if hasattr(interaction.namespace, 'scope') and interaction.namespace.scope == 'custom':
+        suggestions = [
+            app_commands.Choice(name="Today (2025-09-26)", value="2025-09-26"),
+            app_commands.Choice(name="Yesterday (2025-09-25)", value="2025-09-25"),
+            app_commands.Choice(name="One week ago (2025-09-19)", value="2025-09-19"),
+            app_commands.Choice(name="One month ago (2025-08-26)", value="2025-08-26")
+        ]
+        return [choice for choice in suggestions if current.lower() in choice.name.lower()]
+    return [app_commands.Choice(name="Set scope to 'Custom date/time range' first", value="")]
+
+@purge_messages.autocomplete('timezone_offset')
+async def timezone_offset_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    # Only show suggestions if scope is custom
+    if hasattr(interaction.namespace, 'scope') and interaction.namespace.scope == 'custom':
+        suggestions = [
+            app_commands.Choice(name="EST/EDT (UTC-5/-4)", value="-5"),
+            app_commands.Choice(name="CST/CDT (UTC-6/-5)", value="-6"),
+            app_commands.Choice(name="MST/MDT (UTC-7/-6)", value="-7"),
+            app_commands.Choice(name="PST/PDT (UTC-8/-7)", value="-8"),
+            app_commands.Choice(name="UTC (UTC+0)", value="0"),
+            app_commands.Choice(name="CET/CEST (UTC+1/+2)", value="1")
+        ]
+        return [choice for choice in suggestions if current in choice.name or current in choice.value]
+    return [app_commands.Choice(name="Set scope to 'Custom date/time range' first", value="0")]
 
 @bot.tree.command(name="timestamp", description="Generate a Discord timestamp")
 @app_commands.describe(
