@@ -1219,6 +1219,17 @@ async def purge_messages(
     
     if dry_run:
         summary_message += "\n\n✅ This was a dry run - no messages were actually deleted."
+        
+        # Add debug info for the first few messages in dry run
+        if len(messages_to_delete) <= 10:
+            summary_message += "\n\n**Messages found:**"
+            for i, msg in enumerate(messages_to_delete, 1):
+                # Truncate long messages for display
+                content_preview = (msg.content[:50] + "...") if len(msg.content) > 50 else msg.content
+                if not content_preview.strip():
+                    content_preview = "[No text content]"
+                summary_message += f"\n{i}. `{msg.created_at.strftime('%Y-%m-%d %H:%M:%S')}` - {content_preview}"
+        
         await interaction.followup.send(summary_message, ephemeral=True)
         return
     
