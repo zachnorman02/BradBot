@@ -270,10 +270,9 @@ async def on_message(message):
     # Handle replies to Brad's messages - ping the original poster unless opted out
     if message.reference:
         try:
-            # Check for opt-out flags in the reply first
-            opt_out_flags = ['--no-ping', '--noping', '--silent', '-np']
-            message_lower = message.content.lower()
-            if any(flag in message_lower for flag in opt_out_flags):
+            # Check for silent flag at the start of the message
+            message_content = message.content.strip()
+            if message_content.lower().startswith('-s '):
                 pass  # Skip pinging if opt-out flag is present
             else:
                 # Get the message being replied to
@@ -289,7 +288,7 @@ async def on_message(message):
                         # Don't ping if the replier is the original poster
                         if message.author.id != original_poster.id:
                             # Send a subtle ping message
-                            ping_message = f"{original_poster.mention} someone replied to your link"
+                            ping_message = f"{original_poster.mention} {message.author.mention} replied ^"
                             await message.channel.send(ping_message, reference=message, mention_author=False)
         except Exception as e:
             # Silently fail to avoid spam (message might be deleted, etc.)
