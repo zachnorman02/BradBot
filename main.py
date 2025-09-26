@@ -2,7 +2,7 @@ import enum
 import aiohttp
 import datetime
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import os
 import re
@@ -22,6 +22,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # In-memory settings: {guild_id: include_original_message}
 settings = {}
+
+# No need for tracking storage - we'll just check the original message!
+
+@bot.event
 
 # Helper functions for emoji commands
 def check_emoji_permissions(interaction: discord.Interaction) -> str | None:
@@ -209,13 +213,97 @@ async def fix_amp_links(content):
         new_content = new_content.replace(replacement, replacements[replacement])
     return new_content
 
+def is_url_in_code_block(content, url):
+    """Check if a URL is inside a code block (single or triple backticks)"""
+    url_start = content.find(url)
+    if url_start == -1:
+        return False
+    
+    # Check for triple backtick code blocks first
+    triple_blocks = []
+    i = 0
+    while i < len(content):
+        start = content.find('```', i)
+        if start == -1:
+            break
+        end = content.find('```', start + 3)
+        if end == -1:
+            break
+        triple_blocks.append((start, end + 3))
+        i = end + 3
+    
+    # Check if URL is in any triple backtick block
+    for start, end in triple_blocks:
+        if start <= url_start < end:
+            return True
+    
+    # Check for single backtick code blocks (inline code)
+    # Remove triple backtick blocks temporarily to avoid conflicts
+    temp_content = content
+    for start, end in reversed(triple_blocks):
+        temp_content = temp_content[:start] + ' ' * (end - start) + temp_content[end:]
+    
+    # Adjust URL position for the temporary content
+    temp_url_start = temp_content.find(url)
+    if temp_url_start == -1:
+        return False
+    
+    # Find all single backtick pairs
+    backticks = []
+    for i, char in enumerate(temp_content):
+        if char == '`':
+            backticks.append(i)
+    
+    # Check if URL is between any pair of backticks
+    for i in range(0, len(backticks) - 1, 2):
+        if i + 1 < len(backticks):
+            start, end = backticks[i], backticks[i + 1]
+            if start <= temp_url_start < end:
+                return True
+    
+    return False
+
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
     await bot.process_commands(message)
+    
+    # Handle replies to Brad's messages - ping the original poster unless opted out
+    if message.reference:
+        try:
+            # Check for opt-out flags in the reply first
+            opt_out_flags = ['--no-ping', '--noping', '--silent', '-np']
+            message_lower = message.content.lower()
+            if any(flag in message_lower for flag in opt_out_flags):
+                pass  # Skip pinging if opt-out flag is present
+            else:
+                # Get the message being replied to
+                replied_message = await message.channel.fetch_message(message.reference.message_id)
+                
+                # Check if it's a message from Brad (the bot)
+                if replied_message.author == bot.user:
+                    # Look for mentions in Brad's message to find the original poster
+                    if replied_message.mentions:
+                        # The first mention should be the original poster
+                        original_poster = replied_message.mentions[0]
+                        
+                        # Don't ping if the replier is the original poster
+                        if message.author.id != original_poster.id:
+                            # Send a subtle ping message
+                            ping_message = f"{original_poster.mention} someone replied to your link"
+                            await message.channel.send(ping_message, reference=message, mention_author=False)
+        except Exception as e:
+            # Silently fail to avoid spam (message might be deleted, etc.)
+            pass
+    
+    # Continue with URL processing
     url_pattern = re.compile(r'https?://[^\s<>()]+')
     urls = url_pattern.findall(message.content)
+    
+    # Filter out URLs that are in code blocks
+    urls = [url for url in urls if not is_url_in_code_block(message.content, url)]
+    
     if not urls:
         return
     
@@ -295,6 +383,7 @@ async def on_message(message):
         # If original message was a reply, make the new message a reply too
         reference = message.reference
         await message.channel.send(new_content, reference=reference)
+        
         try:
             await message.delete()
         except discord.Forbidden:
