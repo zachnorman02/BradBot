@@ -280,16 +280,23 @@ async def on_message(message):
                 
                 # Check if it's a message from Brad (the bot)
                 if replied_message.author == bot.user:
-                    # Look for mentions in Brad's message to find the original poster
-                    if replied_message.mentions:
-                        # The first mention should be the original poster
-                        original_poster = replied_message.mentions[0]
-                        
-                        # Don't ping if the replier is the original poster
-                        if message.author.id != original_poster.id:
-                            # Send a subtle ping message
-                            ping_message = f"{original_poster.mention} {message.author.mention} replied ^"
-                            await message.channel.send(ping_message, reference=message, mention_author=False)
+                    # Check if the bot's message is just a reply ping notification
+                    # Reply ping messages start with "-# " and contain only a mention
+                    bot_message_content = replied_message.content.strip()
+                    if bot_message_content.startswith('-# ') and bot_message_content.count('<@') == 1 and bot_message_content.count('>') == 1:
+                        # This is just a reply ping message, don't create another ping
+                        pass
+                    else:
+                        # Look for mentions in Brad's message to find the original poster
+                        if replied_message.mentions:
+                            # The first mention should be the original poster
+                            original_poster = replied_message.mentions[0]
+                            
+                            # Don't ping if the replier is the original poster
+                            if message.author.id != original_poster.id and message.content:
+                                # Send a subtle ping message
+                                ping_message = f"-# {original_poster.mention}"
+                                await message.channel.send(ping_message, reference=message, mention_author=False)
         except Exception as e:
             # Silently fail to avoid spam (message might be deleted, etc.)
             pass
