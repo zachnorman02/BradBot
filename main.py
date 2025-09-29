@@ -685,6 +685,46 @@ class EmojiGroup(app_commands.Group):
         except Exception as e:
             await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
 
+    @app_commands.command(name="delete", description="Delete an existing emoji or sticker")
+    @app_commands.describe(
+        name="Name of the emoji/sticker to delete",
+        is_sticker="Whether to delete a sticker instead of emoji (default: False)"
+    )
+    async def delete(self, interaction: discord.Interaction, name: str, is_sticker: bool = False):
+        # Check permissions
+        permission_check = check_emoji_permissions(interaction)
+        if permission_check:
+            await interaction.response.send_message(permission_check, ephemeral=True)
+            return
+        
+        if is_sticker:
+            # Find the sticker by name
+            existing_item = discord.utils.get(interaction.guild.stickers, name=name)
+            if not existing_item:
+                await interaction.response.send_message(f"❌ No sticker found with the name '{name}' in this server.", ephemeral=True)
+                return
+            
+            item_type = "sticker"
+        else:
+            # Find the emoji by name
+            existing_item = discord.utils.get(interaction.guild.emojis, name=name)
+            if not existing_item:
+                await interaction.response.send_message(f"❌ No emoji found with the name '{name}' in this server.", ephemeral=True)
+                return
+            
+            item_type = "emoji"
+        
+        try:
+            # Delete the item
+            await existing_item.delete(reason=f"Deleted by {interaction.user}")
+            await interaction.response.send_message(f"✅ {item_type.capitalize()} '{name}' has been deleted!", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I don't have permission to delete this item.", ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+
 
 class BoosterRoleGroup(app_commands.Group):
     """Booster role customization commands"""
