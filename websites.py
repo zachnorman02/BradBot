@@ -118,10 +118,10 @@ class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
     routes = [
-        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram)/(p|reels?|tv|share)/([\w-]+)",
-        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
+        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram.com)/(p|reels?|tv|share)/([\w-]+)",
+        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
     ]
-    replacement = "d.vxinstagram"
+    replacement = "d.vxinstagram.com"
 
 
 class TikTokLink(SimpleWebsiteLink):
