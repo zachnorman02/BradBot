@@ -1592,7 +1592,7 @@ async def timestamp(
             response += f"**Your timestamp:** `{discord_timestamp}`\n"
             response += f"**Preview:** {discord_timestamp}\n\n"
         else:
-            response += "**All format examples:**\n" + "\n.join(all_formats)
+            response += "**All format examples:**\n" + "\n".join(all_formats)
         
         await interaction.response.send_message(response)
         
