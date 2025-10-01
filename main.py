@@ -600,10 +600,10 @@ class EmojiGroup(app_commands.Group):
     @app_commands.describe(
         message_link="Link to the message containing the image",
         name="Name for the new emoji/sticker",
-        which="Optional: image number to copy if there are multiple (e.g. 2)",
+        which="Optional: image number(s) to copy if there are multiple (e.g. 2 or 1,3). Default: first image",
         create_sticker="Create as a sticker instead of an emoji (default: False)"
     )
-    async def from_message(self, interaction: discord.Interaction, message_link: str, name: str, which: int = 1, create_sticker: bool = False):
+    async def from_message(self, interaction: discord.Interaction, message_link: str, name: str, which: str = None, create_sticker: bool = False):
         # Check permissions
         permission_check = check_emoji_permissions(interaction)
         if permission_check:
@@ -648,42 +648,66 @@ class EmojiGroup(app_commands.Group):
             await interaction.response.send_message("❌ No images found in that message.", ephemeral=True)
             return
         
-        if which < 1 or which > len(all_images):
-            await interaction.response.send_message(f"❌ Invalid image number. Found {len(all_images)} image(s) in the message.", ephemeral=True)
-            return
-        
-        # Get the specified image
-        image_type, image_source = all_images[which - 1]
-        
-        try:
-            if image_type == 'attachment':
-                # Check file size
-                size_limit = 512 * 1024 if create_sticker else 256 * 1024
-                if image_source.size > size_limit:
-                    limit_name = "sticker" if create_sticker else "emoji"
-                    await interaction.response.send_message(f"❌ Image is too large ({image_source.size/1024:.1f}KB). Discord {limit_name}s must be under {size_limit/1024}KB.", ephemeral=True)
+        # Parse which images to copy
+        indices = []
+        if which:
+            try:
+                indices = [int(i.strip())-1 for i in which.split(",") if i.strip().isdigit()]
+                indices = [i for i in indices if 0 <= i < len(all_images)]
+                if not indices:
+                    await interaction.response.send_message("❌ No valid image number(s) specified.", ephemeral=True)
                     return
+            except Exception:
+                await interaction.response.send_message("❌ Invalid image number(s) format. Use e.g. 2 or 1,3.", ephemeral=True)
+                return
+        else:
+            indices = [0]  # Default to first image
+        
+        results = []
+        
+        # Defer the response since this might take a while
+        await interaction.response.defer(ephemeral=True)
+        
+        for idx in indices:
+            # Get the specified image
+            image_type, image_source = all_images[idx]
+            
+            try:
+                if image_type == 'attachment':
+                    # Check file size
+                    size_limit = 512 * 1024 if create_sticker else 256 * 1024
+                    if image_source.size > size_limit:
+                        limit_name = "sticker" if create_sticker else "emoji"
+                        results.append(f"❌ Image {idx+1} is too large ({image_source.size/1024:.1f}KB). Discord {limit_name}s must be under {size_limit/1024}KB.")
+                        continue
+                    
+                    image_bytes = await image_source.read()
+                    source_name = image_source.filename
+                else:  # embed image
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(image_source) as resp:
+                            if resp.status != 200:
+                                results.append(f"❌ Could not download embed image {idx+1}.")
+                                continue
+                            image_bytes = await resp.read()
+                            source_name = "embed_image"
                 
-                image_bytes = await image_source.read()
-                source_name = image_source.filename
-            else:  # embed image
-                import aiohttp
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(image_source) as resp:
-                        if resp.status != 200:
-                            await interaction.response.send_message(f"❌ Could not download embed image.", ephemeral=True)
-                            return
-                        image_bytes = await resp.read()
-                        source_name = "embed_image"
-            
-            # Create emoji or sticker
-            result = await create_emoji_or_sticker_with_overwrite(
-                interaction.guild, name, image_bytes, source_name, create_sticker
-            )
-            await interaction.response.send_message(result, ephemeral=True)
-            
-        except Exception as e:
-            await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+                # Create emoji or sticker with indexed name if multiple
+                emoji_name = name if len(indices) == 1 else f"{name}_{idx+1}"
+                result = await create_emoji_or_sticker_with_overwrite(
+                    interaction.guild, emoji_name, image_bytes, source_name, create_sticker
+                )
+                results.append(result)
+                
+                # Stop if we hit limit
+                if "reached its" in result:
+                    break
+                
+            except Exception as e:
+                results.append(f"❌ An unexpected error occurred with image {idx+1}: {e}")
+        
+        await interaction.followup.send("\n".join(results), ephemeral=True)
 
     @app_commands.command(name="delete", description="Delete an existing emoji or sticker")
     @app_commands.describe(
@@ -724,6 +748,102 @@ class EmojiGroup(app_commands.Group):
             await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+
+    @app_commands.command(name="reaction", description="Copy an emoji from a message reaction")
+    @app_commands.describe(
+        message_link="Link to the message with the reaction",
+        which="Optional: reaction number(s) to copy if there are multiple (e.g. 2 or 1,3). Default: all reactions",
+        create_sticker="Create as sticker instead of emoji (default: False)",
+        replace_existing="Replace existing emoji if name conflicts (default: True)"
+    )
+    async def from_reaction(self, interaction: discord.Interaction, message_link: str, which: str = None, create_sticker: bool = False, replace_existing: bool = True):
+        # Check permissions
+        permission_check = check_emoji_permissions(interaction)
+        if permission_check:
+            await interaction.response.send_message(permission_check, ephemeral=True)
+            return
+        
+        # Parse message link
+        guild_id, channel_id, message_id = parse_message_link(message_link)
+        if guild_id is None:
+            await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
+            return
+        
+        if guild_id != interaction.guild.id:
+            await interaction.response.send_message("❌ The message must be from this server.", ephemeral=True)
+            return
+        
+        channel = interaction.guild.get_channel(channel_id)
+        if not channel:
+            await interaction.response.send_message("❌ Could not find the channel.", ephemeral=True)
+            return
+        
+        try:
+            msg = await channel.fetch_message(message_id)
+        except Exception:
+            await interaction.response.send_message("❌ Could not fetch the message.", ephemeral=True)
+            return
+        
+        # Find all custom emoji reactions on the message
+        custom_reactions = []
+        for reaction in msg.reactions:
+            if hasattr(reaction.emoji, 'id'):  # Custom emoji
+                custom_reactions.append(reaction.emoji)
+        
+        if not custom_reactions:
+            await interaction.response.send_message("❌ No custom emoji reactions found on that message.", ephemeral=True)
+            return
+        
+        # Parse which reactions to copy
+        indices = []
+        if which:
+            try:
+                indices = [int(i.strip())-1 for i in which.split(",") if i.strip().isdigit()]
+                indices = [i for i in indices if 0 <= i < len(custom_reactions)]
+                if not indices:
+                    await interaction.response.send_message("❌ No valid reaction number(s) specified.", ephemeral=True)
+                    return
+            except Exception:
+                await interaction.response.send_message("❌ Invalid reaction number(s) format. Use e.g. 2 or 1,3.", ephemeral=True)
+                return
+        else:
+            indices = list(range(len(custom_reactions)))  # Default to all reactions
+        
+        results = []
+        import aiohttp
+        
+        # Defer the response since this might take a while
+        await interaction.response.defer(ephemeral=True)
+        
+        for idx in indices:
+            # Get the selected emoji
+            selected_emoji = custom_reactions[idx]
+            emoji_name = selected_emoji.name
+            emoji_id = selected_emoji.id
+            is_animated = selected_emoji.animated
+            
+            # Download the custom emoji
+            ext = 'gif' if is_animated else 'png'
+            url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        results.append(f"❌ Could not download emoji '{emoji_name}'.")
+                        continue
+                    image_bytes = await resp.read()
+            
+            # Create emoji or sticker
+            result = await create_emoji_or_sticker_with_overwrite(
+                interaction.guild, emoji_name, image_bytes, f"emoji_{emoji_name}", create_sticker, replace_existing
+            )
+            results.append(result)
+            
+            # Stop if we hit limit
+            if "reached its" in result:
+                break
+        
+        await interaction.followup.send("\n".join(results), ephemeral=True)
 
 
 class BoosterRoleGroup(app_commands.Group):
@@ -1472,7 +1592,7 @@ async def timestamp(
             response += f"**Your timestamp:** `{discord_timestamp}`\n"
             response += f"**Preview:** {discord_timestamp}\n\n"
         else:
-            response += "**All format examples:**\n" + "\n".join(all_formats)
+            response += "**All format examples:**\n" + "\n.join(all_formats)
         
         await interaction.response.send_message(response)
         
