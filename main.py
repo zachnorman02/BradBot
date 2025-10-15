@@ -161,8 +161,8 @@ async def on_ready():
     # Start daily booster role check task
     bot.loop.create_task(daily_booster_role_check())
     
-# List of sites that support EmbedEZ
-EMBEDEZ_SITES = {'instagram', 'snapchat', 'ifunny', 'imgur', 'weibo', 'rule34'}
+# List of sites that support EmbedEZ (Instagram handled separately)
+EMBEDEZ_SITES = {'snapchat', 'ifunny', 'imgur', 'weibo', 'rule34'}
 
 async def get_embedez_link(url: str) -> str | None:
     """
@@ -315,6 +315,7 @@ async def on_message(message):
     content_changed = False
     fixed_urls = {}
     embedez_url = None
+    instagram_embed_url = None
     
     # Process all URLs for fixes
     for url in urls:
@@ -324,6 +325,9 @@ async def on_message(message):
                 fixed_url = await website.render()
                 if fixed_url and fixed_url != url:
                     fixed_urls[url] = fixed_url
+                    # Check if this is Instagram and get embed URL
+                    if website.__class__.__name__ == 'InstagramLink' and hasattr(website, 'get_embed_url'):
+                        instagram_embed_url = website.get_embed_url()
                 break
     
     # Apply website fixes
@@ -382,6 +386,8 @@ async def on_message(message):
         new_content = f'{message.author.mention}: {new_content}'
         if embedez_url:
             new_content += f"\n-# [EmbedEZ]({embedez_url})"
+        if instagram_embed_url:
+            new_content += f"\n-# [Embed]({instagram_embed_url})"
 
     if content_changed:
         # If original message was a reply, make the new message a reply too

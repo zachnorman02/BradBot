@@ -118,10 +118,26 @@ class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
     routes = [
-        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram.com)/(p|reels?|tv|share)/([\w-]+)",
-        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
+        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram\.com)/(p|reels?|tv|share)/([\w-]+)",
+        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram\.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
     ]
-    replacement = "d.vxinstagram.com"
+    replacement = "instagram.com"  # Keep Instagram domain, just remove trackers
+    
+    def get_embed_url(self) -> Optional[str]:
+        """Get the embed URL using d.vxinstagram for better embeds."""
+        if not self.is_valid():
+            return None
+        # Replace domain with d.vxinstagram for embed
+        for route in self.routes:
+            if re.match(route, self.url, re.IGNORECASE):
+                embed_url = re.sub(
+                    r'https?://[^/]+', 
+                    'https://d.vxinstagram.com', 
+                    self.url, 
+                    flags=re.IGNORECASE
+                )
+                return self._clean_tracking_params(embed_url)
+        return None
 
 
 class TikTokLink(SimpleWebsiteLink):
