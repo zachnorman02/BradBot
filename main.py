@@ -322,12 +322,13 @@ async def on_message(message):
         for website_class in websites:
             website = website_class.if_valid(url)
             if website:
+                # Check if this is Instagram and get embed URL
+                if website.__class__.__name__ == 'InstagramLink' and hasattr(website, 'get_embed_url'):
+                    instagram_embed_url = website.get_embed_url()
+                
                 fixed_url = await website.render()
                 if fixed_url and fixed_url != url:
                     fixed_urls[url] = fixed_url
-                    # Check if this is Instagram and get embed URL
-                    if website.__class__.__name__ == 'InstagramLink' and hasattr(website, 'get_embed_url'):
-                        instagram_embed_url = website.get_embed_url()
                 break
     
     # Apply website fixes
