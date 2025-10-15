@@ -113,26 +113,35 @@ class InstagramProfileLink(SimpleWebsiteLink):
         r"https?://(?:www\.)?instagram\.com/[\w.-]+/?(?:\?.*)?$"
     ]
     replacement = "instagram.com"
+    
+    def is_valid(self) -> bool:
+        """Check if URL matches profile route but NOT post routes."""
+        for route in self.routes:
+            if re.match(route, self.url, re.IGNORECASE):
+                # Exclude URLs that have /p/, /reel/, /tv/, /share/ paths (those are posts, not profiles)
+                if not re.search(r'/(p|reel|reels|tv|share)/', self.url, re.IGNORECASE):
+                    return True
+        return False
 
 class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
     routes = [
-        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram\.com)/(p|reels?|tv|share)/([\w-]+)",
-        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram\.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
+        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram\.com|kkinstagram\.com)/(p|reels?|tv|share)/([\w-]+)",
+        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram\.com|kkinstagram\.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
     ]
     replacement = "instagram.com"  # Keep Instagram domain, just remove trackers
     
     def get_embed_url(self) -> Optional[str]:
-        """Get the embed URL using d.vxinstagram for better embeds."""
+        """Get the embed URL using kkinstagram for better embeds."""
         if not self.is_valid():
             return None
-        # Replace domain with d.vxinstagram for embed
+        # Replace domain with kkinstagram for embed
         for route in self.routes:
             if re.match(route, self.url, re.IGNORECASE):
                 embed_url = re.sub(
                     r'https?://[^/]+', 
-                    'https://d.vxinstagram.com', 
+                    'https://kkinstagram.com', 
                     self.url, 
                     flags=re.IGNORECASE
                 )
@@ -348,8 +357,8 @@ class Rule34Link(SimpleWebsiteLink):
 
 websites = [
     TwitterLink,
-    InstagramProfileLink,
     InstagramLink,
+    InstagramProfileLink,
     TikTokLink,
     RedditLink,
     YouTubeLink,

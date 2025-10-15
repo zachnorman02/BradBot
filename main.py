@@ -373,12 +373,15 @@ async def on_message(message):
         if site_name == url or site_name == (original_url or url):
             continue
         
-        if i == 0 and not embedez_url:
+        # Check if this URL should have suppressed embed (EmbedEZ only, not Instagram)
+        should_suppress = embedez_url is not None
+        
+        if i == 0 and not should_suppress:
             # First URL gets normal markdown link (will show embed)
             new_content = new_content.replace(url, f'[{site_name}]({url})')
             content_changed = True
-        elif i > 0 or embedez_url:
-            # Other URLs get suppressed embeds
+        else:
+            # Other URLs or URLs with separate embeds get suppressed embeds
             new_content = new_content.replace(url, f'[{site_name}](<{url}>)')
             content_changed = True
     
