@@ -162,7 +162,7 @@ async def on_ready():
     bot.loop.create_task(daily_booster_role_check())
     
 # List of sites that support EmbedEZ (Instagram handled separately)
-EMBEDEZ_SITES = {'snapchat', 'ifunny', 'imgur', 'weibo', 'rule34'}
+EMBEDEZ_SITES = {'snapchat', 'ifunny', 'weibo', 'rule34'}
 
 async def get_embedez_link(url: str) -> str | None:
     """
