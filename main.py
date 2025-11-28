@@ -267,6 +267,8 @@ async def on_message(message):
         return
     await bot.process_commands(message)
     
+    # Comment out replies until db is set up for users to set themselves
+    """
     # Handle replies to Brad's messages - ping the original poster unless opted out
     if message.reference:
         try:
@@ -300,6 +302,7 @@ async def on_message(message):
         except Exception as e:
             # Silently fail to avoid spam (message might be deleted, etc.)
             pass
+        """
     
     # Continue with URL processing
     url_pattern = re.compile(r'https?://[^\s<>()]+')
