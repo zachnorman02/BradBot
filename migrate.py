@@ -38,7 +38,7 @@ class Migration001(Migration):
         
         -- Settings table (key-value store for all settings)
         CREATE TABLE IF NOT EXISTS main.settings (
-            id SERIAL PRIMARY KEY,
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             entity_type CHARACTER VARYING NOT NULL,
             entity_id BIGINT NOT NULL,
             guild_id BIGINT NOT NULL,
