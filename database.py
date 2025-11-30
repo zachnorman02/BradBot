@@ -28,13 +28,16 @@ class Database:
         
         # Use the default credential chain (EC2 instance role)
         session = boto3.Session(region_name=self.region)
-        client = session.client('dsql')
         
-        # Generate authentication token for DSQL
-        # Note: DSQL uses generate_db_auth_token similar to RDS but from dsql client
-        token = client.generate_db_auth_token(
-            hostname=self.host,
-            region=self.region
+        # Use RDS client to generate token - this works for DSQL endpoints too
+        rds_client = session.client('rds', region_name=self.region)
+        
+        # Generate authentication token
+        token = rds_client.generate_db_auth_token(
+            DBHostname=self.host,
+            Port=self.port,
+            DBUsername=self.user,
+            Region=self.region
         )
         return token
     
