@@ -34,6 +34,20 @@ class Database:
         # Use the default credential chain (EC2 instance role)
         session = boto3.Session(region_name=self.region)
         
+        # Log which credentials are being used
+        credentials = session.get_credentials()
+        print(f"   Using AWS credentials - Access Key ID: {credentials.access_key[:10]}...", flush=True)
+        
+        # Get caller identity to see which IAM principal we're using
+        try:
+            sts_client = session.client('sts')
+            identity = sts_client.get_caller_identity()
+            print(f"   AWS Identity - ARN: {identity['Arn']}", flush=True)
+            print(f"   AWS Identity - Account: {identity['Account']}", flush=True)
+            print(f"   AWS Identity - UserId: {identity['UserId']}", flush=True)
+        except Exception as e:
+            print(f"   Could not get caller identity: {e}", flush=True)
+        
         # Use RDS client to generate token - this works for DSQL endpoints too
         rds_client = session.client('rds', region_name=self.region)
         
