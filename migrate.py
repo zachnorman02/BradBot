@@ -90,11 +90,24 @@ class Migration002(Migration):
         
         print(f"✅ Applied migration {self.version}: {self.description}")
 
+# Migration: Grant admin read access
+class Migration003(Migration):
+    def __init__(self):
+        super().__init__("003", "Grant admin user read access to tables")
+    
+    def up(self):
+        # Grant read access to admin user for debugging
+        db.execute_query("""
+            GRANT SELECT ON ALL TABLES IN SCHEMA main TO admin
+        """, fetch=False)
+        
+        print(f"✅ Applied migration {self.version}: {self.description}")
+
 # Add new migrations here as you need them
 # Example:
-# class Migration003(Migration):
+# class Migration004(Migration):
 #     def __init__(self):
-#         super().__init__("003", "Add another feature")
+#         super().__init__("004", "Add another feature")
 #     
 #     def up(self):
 #         sql = """
@@ -109,7 +122,8 @@ class Migration002(Migration):
 MIGRATIONS = [
     Migration001(),
     Migration002(),
-    # Migration003(),  # Add new migrations here
+    Migration003(),  # Grant admin read access
+    # Migration004(),  # Add new migrations here
 ]
 
 def get_applied_migrations():
