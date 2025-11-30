@@ -305,7 +305,6 @@ async def on_message(message):
                     else:
                         # Not in database (old message) - parse the mention from the bot's message
                         # Bot messages start with "<@user_id>: ..." format
-                        import re
                         mention_match = re.match(r'^<@!?(\d+)>:', replied_message.content)
                         if mention_match:
                             original_user_id = int(mention_match.group(1))
