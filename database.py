@@ -48,17 +48,13 @@ class Database:
         except Exception as e:
             print(f"   Could not get caller identity: {e}", flush=True)
         
-        # Use RDS client to generate token - this works for DSQL endpoints too
-        rds_client = session.client('rds', region_name=self.region)
-        
+        dsql_client = session.client('dsql', region_name=self.region)
+
         print(f"   Generating IAM token for user '{self.user}' at '{self.host}'...", flush=True)
         
         # Generate authentication token
-        token = rds_client.generate_db_auth_token(
-            DBHostname=self.host,
-            Port=self.port,
-            DBUsername=self.user,
-            Region=self.region
+        token = dsql_client.generate_db_connect_admin_auth_token(
+            self.host, self.region
         )
         
         # Log token info (first/last few chars only for security)
