@@ -37,6 +37,8 @@ class Database:
         # Use RDS client to generate token - this works for DSQL endpoints too
         rds_client = session.client('rds', region_name=self.region)
         
+        print(f"   Generating IAM token for user '{self.user}' at '{self.host}'...", flush=True)
+        
         # Generate authentication token
         token = rds_client.generate_db_auth_token(
             DBHostname=self.host,
@@ -44,6 +46,10 @@ class Database:
             DBUsername=self.user,
             Region=self.region
         )
+        
+        # Log token info (first/last few chars only for security)
+        print(f"   Token generated successfully (length: {len(token)}, starts with: {token[:20]}...)", flush=True)
+        
         return token
     
     def get_connection_params(self) -> dict:
@@ -53,7 +59,9 @@ class Database:
             'port': self.port,
             'database': self.database,
             'user': self.user,
-            'sslmode': 'require'
+            'sslmode': 'require',
+            'sslrootcert': 'system',  # Use system CA certificates
+            'connect_timeout': 10
         }
         
         if self.use_iam_auth:
