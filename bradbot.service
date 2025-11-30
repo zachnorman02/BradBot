@@ -10,7 +10,7 @@ Environment=PATH=/home/ubuntu/bradbot/venv/bin
 Environment=DB_HOST=ontgcoj4pznoqbq4aznk64mehy.dsql.us-east-1.on.aws
 Environment=DB_PORT=5432
 Environment=DB_NAME=postgres
-Environment=DB_USER=admin
+Environment=DB_USER=BradBotRole
 Environment=USE_IAM_AUTH=true
 Environment=AWS_REGION=us-east-1
 ExecStart=/home/ubuntu/bradbot/venv/bin/python main.py
