@@ -56,7 +56,7 @@ class Migration001(Migration):
         
         # Index for faster lookups
         db.execute_query("""
-            CREATE INDEX IF NOT EXISTS idx_settings_name ON main.settings(setting_name)
+            CREATE INDEX ASYNC IF NOT EXISTS idx_settings_name ON main.settings(setting_name)
         """, fetch=False)
         
         print(f"✅ Applied migration {self.version}: {self.description}")
@@ -81,11 +81,11 @@ class Migration002(Migration):
         
         # Create indexes separately
         db.execute_query("""
-            CREATE INDEX IF NOT EXISTS idx_message_tracking_user ON main.message_tracking(user_id)
+            CREATE INDEX ASYNC IF NOT EXISTS idx_message_tracking_user ON main.message_tracking(user_id)
         """, fetch=False)
         
         db.execute_query("""
-            CREATE INDEX IF NOT EXISTS idx_message_tracking_guild ON main.message_tracking(guild_id)
+            CREATE INDEX ASYNC IF NOT EXISTS idx_message_tracking_guild ON main.message_tracking(guild_id)
         """, fetch=False)
         
         print(f"✅ Applied migration {self.version}: {self.description}")
