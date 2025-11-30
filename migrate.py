@@ -37,8 +37,8 @@ class Migration001(Migration):
         );
         
         -- Settings table (key-value store for all settings)
+        -- No auto-increment ID needed - unique constraint serves as primary key
         CREATE TABLE IF NOT EXISTS main.settings (
-            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             entity_type CHARACTER VARYING NOT NULL,
             entity_id BIGINT NOT NULL,
             guild_id BIGINT NOT NULL,
@@ -46,10 +46,10 @@ class Migration001(Migration):
             setting_value TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            CONSTRAINT idx_settings_lookup UNIQUE (entity_type, entity_id, guild_id, setting_name)
+            PRIMARY KEY (entity_type, entity_id, guild_id, setting_name)
         );
         
-        -- Indexes for faster lookups
+        -- Index for faster lookups by setting name
         CREATE INDEX IF NOT EXISTS idx_settings_name ON main.settings(setting_name);
         """
         db.execute_query(sql, fetch=False)
