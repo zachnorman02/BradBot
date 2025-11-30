@@ -31,6 +31,9 @@ jobs:
           pip install -r requirements.txt &&
           echo "Running database migrations..." &&
           python migrate.py migrate &&
+          echo "Updating systemd service file..." &&
+          sudo cp bradbot.service /etc/systemd/system/bradbot.service &&
+          sudo systemctl daemon-reload &&
           sudo systemctl restart bradbot &&
           sudo systemctl status bradbot --no-pager
         '
