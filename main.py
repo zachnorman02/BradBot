@@ -147,25 +147,19 @@ async def daily_booster_role_check():
 
 @bot.event
 async def on_ready():
-    import sys
-    print(f'{bot.user} has logged in!', flush=True)
+    print(f'{bot.user} has logged in!')
     
     # Initialize database connection pool
-    print("🔄 Attempting to initialize database connection...", flush=True)
     try:
-        print("   Step 1: Calling db.init_pool()...", flush=True)
         db.init_pool()
-        print("   Step 2: Testing connection with SELECT 1...", flush=True)
         # Test the connection with a simple query
         result = db.execute_query("SELECT 1")
-        print(f"✅ Database connection pool initialized and tested successfully! Result: {result}", flush=True)
+        print(f"✅ Database connected successfully")
     except Exception as e:
-        print(f"⚠️  Database initialization failed: {type(e).__name__}: {e}", flush=True)
-        print(f"   Full error details: {repr(e)}", flush=True)
-        print("   Reply notifications will not work until database is configured", flush=True)
+        print(f"⚠️  Database initialization failed: {e}")
+        print("   Reply notifications will not work until database is configured")
     
-    print("🔄 Adding command groups to the tree...", flush=True)
-    # Add command groups to the tree (testing new BoosterGroup)
+    # Add command groups to the tree
     bot.tree.add_command(EmojiGroup(name="emoji", description="Emoji and sticker management commands"))
     bot.tree.add_command(BoosterGroup())
     bot.tree.add_command(SettingsGroup(name="settings", description="User settings and preferences"))

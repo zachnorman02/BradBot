@@ -1,10 +1,5 @@
 """
-Database con    def __init__(self):
-        self.host = os.getenv('DB_HOST')
-        self.port = int(os.getenv('DB_PORT', '5432'))
-        self.database = os.getenv('DB_NAME', 'postgres')
-        self.user = os.getenv('DB_USER', 'bradbotrole')
-        self.use_iam_auth = os.getenv('USE_IAM_AUTH', 'true').lower() == 'true'n and utilities for BradBot
+Database connection and utilities for BradBot
 Supports Aurora DSQL with IAM authentication
 """
 import os
@@ -23,42 +18,20 @@ class Database:
         self.host = os.getenv('DB_HOST')
         self.port = int(os.getenv('DB_PORT', '5432'))
         self.database = os.getenv('DB_NAME', 'postgres')
-        self.user = os.getenv('DB_USER', 'BradBotRole')
+        self.user = os.getenv('DB_USER', 'bradbotrole')
         self.use_iam_auth = os.getenv('USE_IAM_AUTH', 'true').lower() == 'true'
         self.region = os.getenv('AWS_REGION', 'us-east-1')
         self.connection_pool: Optional[pool.SimpleConnectionPool] = None
         
     def _get_iam_token(self) -> str:
         """Generate IAM authentication token for Aurora DSQL"""
-        
-        # Use the default credential chain (EC2 instance role)
         session = boto3.Session(region_name=self.region)
-        
-        # Log which credentials are being used
-        credentials = session.get_credentials()
-        print(f"   Using AWS credentials - Access Key ID: {credentials.access_key[:10]}...", flush=True)
-        
-        # Get caller identity to see which IAM principal we're using
-        try:
-            sts_client = session.client('sts')
-            identity = sts_client.get_caller_identity()
-            print(f"   AWS Identity - ARN: {identity['Arn']}", flush=True)
-            print(f"   AWS Identity - Account: {identity['Account']}", flush=True)
-            print(f"   AWS Identity - UserId: {identity['UserId']}", flush=True)
-        except Exception as e:
-            print(f"   Could not get caller identity: {e}", flush=True)
-        
         dsql_client = session.client('dsql', region_name=self.region)
-
-        print(f"   Generating IAM token for user '{self.user}' at '{self.host}'...", flush=True)
         
         # Generate authentication token
         token = dsql_client.generate_db_connect_auth_token(
             self.host, self.region
         )
-        
-        # Log token info (first/last few chars only for security)
-        print(f"   Token generated successfully (length: {len(token)}, starts with: {token[:20]}...)", flush=True)
         
         return token
     

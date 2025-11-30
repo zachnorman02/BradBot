@@ -32,16 +32,12 @@ jobs:
           echo "Updating systemd service file..." &&
           sudo cp bradbot.service /etc/systemd/system/bradbot.service &&
           sudo systemctl daemon-reload &&
-          echo "Skipping migrations - will run manually after IAM propagates..." &&
-          echo "Stopping bot completely..." &&
-          sudo systemctl stop bradbot &&
-          sleep 2 &&
-          echo "Starting bot with new code..." &&
-          sudo systemctl start bradbot &&
-          sleep 5 &&
-          sudo systemctl status bradbot --no-pager &&
-          echo "Checking bot logs for database connection..." &&
-          sudo journalctl -u bradbot --since "1 minute ago" --no-pager | grep -E "(database|Database|ERROR|⚠️|🔄|Step)" || echo "No database/error messages found"
+          echo "Running database migrations..." &&
+          python migrate.py migrate &&
+          echo "Restarting bot..." &&
+          sudo systemctl restart bradbot &&
+          sleep 3 &&
+          sudo systemctl status bradbot --no-pager
         '
         
     - name: Health Check
