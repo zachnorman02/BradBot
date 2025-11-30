@@ -155,12 +155,16 @@ class Database:
     def store_message_tracking(self, bot_message_id: int, user_id: int, guild_id: int, 
                                original_url: str, fixed_url: str):
         """Store tracking information for a bot's replacement message"""
-        query = """
-        INSERT INTO main.message_tracking (message_id, user_id, guild_id, original_url, fixed_url)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (message_id) DO NOTHING
-        """
-        self.execute_query(query, (bot_message_id, user_id, guild_id, original_url, fixed_url), fetch=False)
+        # Aurora DSQL doesn't support ON CONFLICT, so check if exists first
+        check_query = "SELECT 1 FROM main.message_tracking WHERE message_id = %s"
+        exists = self.execute_query(check_query, (bot_message_id,))
+        
+        if not exists:
+            query = """
+            INSERT INTO main.message_tracking (message_id, user_id, guild_id, original_url, fixed_url)
+            VALUES (%s, %s, %s, %s, %s)
+            """
+            self.execute_query(query, (bot_message_id, user_id, guild_id, original_url, fixed_url), fetch=False)
     
     def get_message_original_user(self, bot_message_id: int) -> Optional[tuple]:
         """Get original user info for a bot message. Returns (user_id, guild_id) or None"""

@@ -335,6 +335,8 @@ async def on_message(message):
     if not urls:
         return
     
+    print(f"[DEBUG] Found URLs: {urls}")
+    
     new_content = message.content
     content_changed = False
     fixed_urls = {}
@@ -346,20 +348,25 @@ async def on_message(message):
         for website_class in websites:
             website = website_class.if_valid(url)
             if website:
+                print(f"[DEBUG] URL {url} matched {website.__class__.__name__}")
                 # Check if this is Instagram and get embed URL
                 if website.__class__.__name__ == 'InstagramLink' and hasattr(website, 'get_embed_url'):
                     instagram_embed_url = website.get_embed_url()
                 
                 fixed_url = await website.render()
+                print(f"[DEBUG] Rendered URL: {url} -> {fixed_url}")
                 if fixed_url and fixed_url != url:
                     fixed_urls[url] = fixed_url
+                    print(f"[DEBUG] Added to fixed_urls: {url} -> {fixed_url}")
                 break
     
     # Apply website fixes
     if fixed_urls:
+        print(f"[DEBUG] Applying fixes: {fixed_urls}")
         for original_url, fixed_url in fixed_urls.items():
             new_content = new_content.replace(original_url, fixed_url)
         content_changed = True
+        print(f"[DEBUG] Content changed: {content_changed}, new_content: {new_content}")
     
     amp_fixed_content = await fix_amp_links(new_content)
     if amp_fixed_content != new_content:
@@ -416,11 +423,14 @@ async def on_message(message):
             new_content += f"\n-# [EmbedEZ]({embedez_url})"
         if instagram_embed_url:
             new_content += f"\n-# [Embed]({instagram_embed_url})"
+        print(f"[DEBUG] Final content to send: {new_content}")
 
     if content_changed:
+        print(f"[DEBUG] Attempting to send message...")
         # If original message was a reply, make the new message a reply too
         reference = message.reference
         sent_message = await message.channel.send(new_content, reference=reference)
+        print(f"[DEBUG] Message sent: {sent_message.id}")
         
         # Store message tracking for reply notifications
         if sent_message and message.guild:
