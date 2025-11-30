@@ -53,7 +53,7 @@ class Database:
         print(f"   Generating IAM token for user '{self.user}' at '{self.host}'...", flush=True)
         
         # Generate authentication token
-        token = dsql_client.generate_db_connect_admin_auth_token(
+        token = dsql_client.generate_db_connect_auth_token(
             self.host, self.region
         )
         
