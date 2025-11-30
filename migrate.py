@@ -103,11 +103,32 @@ class Migration003(Migration):
         
         print(f"✅ Applied migration {self.version}: {self.description}")
 
+# Migration: Clean up duplicate settings
+class Migration004(Migration):
+    def __init__(self):
+        super().__init__("004", "Clean up duplicate settings entries")
+    
+    def up(self):
+        # Delete older duplicate entries, keeping only the most recent for each user
+        db.execute_query("""
+            DELETE FROM main.settings
+            WHERE entity_type = 'user' 
+            AND setting_name = 'reply_notifications'
+            AND (entity_type, entity_id, guild_id, setting_name, updated_at) NOT IN (
+                SELECT entity_type, entity_id, guild_id, setting_name, MAX(updated_at)
+                FROM main.settings
+                WHERE entity_type = 'user' AND setting_name = 'reply_notifications'
+                GROUP BY entity_type, entity_id, guild_id, setting_name
+            )
+        """, fetch=False)
+        
+        print(f"✅ Applied migration {self.version}: {self.description}")
+
 # Add new migrations here as you need them
 # Example:
-# class Migration004(Migration):
+# class Migration005(Migration):
 #     def __init__(self):
-#         super().__init__("004", "Add another feature")
+#         super().__init__("005", "Add another feature")
 #     
 #     def up(self):
 #         sql = """
@@ -123,7 +144,8 @@ MIGRATIONS = [
     Migration001(),
     Migration002(),
     Migration003(),  # Grant admin read access
-    # Migration004(),  # Add new migrations here
+    Migration004(),  # Clean up duplicate settings
+    # Migration005(),  # Add new migrations here
 ]
 
 def get_applied_migrations():

@@ -124,6 +124,8 @@ class Database:
         AND entity_id = %s 
         AND guild_id = %s 
         AND setting_name = 'reply_notifications'
+        ORDER BY updated_at DESC
+        LIMIT 1
         """
         result = self.execute_query(query, (user_id, guild_id))
         if result:
@@ -132,15 +134,22 @@ class Database:
     
     def set_user_reply_notifications(self, user_id: int, guild_id: int, enabled: bool):
         """Set user's reply notification preference"""
-        query = """
+        # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
+        delete_query = """
+        DELETE FROM main.settings 
+        WHERE entity_type = 'user' 
+        AND entity_id = %s 
+        AND guild_id = %s 
+        AND setting_name = 'reply_notifications'
+        """
+        self.execute_query(delete_query, (user_id, guild_id), fetch=False)
+        
+        # Then insert the new value
+        insert_query = """
         INSERT INTO main.settings (entity_type, entity_id, guild_id, setting_name, setting_value, created_at, updated_at)
         VALUES ('user', %s, %s, 'reply_notifications', %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ON CONFLICT (entity_type, entity_id, guild_id, setting_name) 
-        DO UPDATE SET 
-            setting_value = EXCLUDED.setting_value,
-            updated_at = CURRENT_TIMESTAMP
         """
-        self.execute_query(query, (user_id, guild_id, 'true' if enabled else 'false'), fetch=False)
+        self.execute_query(insert_query, (user_id, guild_id, 'true' if enabled else 'false'), fetch=False)
     
     # Message tracking methods
     def store_message_tracking(self, bot_message_id: int, user_id: int, guild_id: int, 

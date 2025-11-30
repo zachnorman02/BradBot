@@ -296,10 +296,22 @@ async def on_message(message):
                 else:
                     # Look up the original user from message tracking
                     user_data = db.get_message_original_user(replied_message.id)
+                    original_user_id = None
+                    guild_id = message.guild.id if message.guild else None
                     
                     if user_data:
+                        # Found in tracking database
                         original_user_id, guild_id = user_data
-                        
+                    else:
+                        # Not in database (old message) - parse the mention from the bot's message
+                        # Bot messages start with "<@user_id>: ..." format
+                        import re
+                        mention_match = re.match(r'^<@!?(\d+)>:', replied_message.content)
+                        if mention_match:
+                            original_user_id = int(mention_match.group(1))
+                    
+                    # If we found an original user, check if they want notifications
+                    if original_user_id and guild_id:
                         # Don't ping if the replier is the original poster
                         if message.author.id != original_user_id:
                             # Check if user has reply notifications enabled
@@ -424,8 +436,11 @@ async def on_message(message):
                     original_url=original_url,
                     fixed_url=fixed_url
                 )
+                print(f"✓ Stored message tracking: bot_msg={sent_message.id}, user={message.author.id}")
             except Exception as e:
-                print(f"Failed to store message tracking: {e}")
+                print(f"✗ Failed to store message tracking: {e}")
+                import traceback
+                traceback.print_exc()
         
         try:
             await message.delete()
