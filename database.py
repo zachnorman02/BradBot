@@ -25,11 +25,16 @@ class Database:
         
     def _get_iam_token(self) -> str:
         """Generate IAM authentication token for Aurora DSQL"""
-        rds_client = boto3.client('rds', region_name=self.region)
-        token = rds_client.generate_db_auth_token(
-            DBHostname=self.host,
-            Port=self.port,
-            DBUsername=self.user
+        
+        # Use the default credential chain (EC2 instance role)
+        session = boto3.Session(region_name=self.region)
+        client = session.client('dsql')
+        
+        # Generate authentication token for DSQL
+        # Note: DSQL uses generate_db_auth_token similar to RDS but from dsql client
+        token = client.generate_db_auth_token(
+            hostname=self.host,
+            region=self.region
         )
         return token
     
