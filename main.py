@@ -10,6 +10,7 @@ import asyncio
 from dotenv import load_dotenv
 from typing import Literal
 from websites import websites, get_site_name
+from database import db
 
 # Load environment variables from .env file
 load_dotenv()
@@ -148,9 +149,18 @@ async def daily_booster_role_check():
 async def on_ready():
     print(f'{bot.user} has logged in!')
     
+    # Initialize database connection pool
+    try:
+        db.init_pool()
+        print("✅ Database connection pool initialized")
+    except Exception as e:
+        print(f"⚠️  Database initialization failed: {e}")
+        print("   Reply notifications will not work until database is configured")
+    
     # Add command groups to the tree (testing new BoosterGroup)
     bot.tree.add_command(EmojiGroup(name="emoji", description="Emoji and sticker management commands"))
     bot.tree.add_command(BoosterGroup())
+    bot.tree.add_command(SettingsGroup(name="settings", description="User settings and preferences"))
     
     try:
         # Sync slash commands
@@ -267,42 +277,39 @@ async def on_message(message):
         return
     await bot.process_commands(message)
     
-    # Comment out replies until db is set up for users to set themselves
-    """
-    # Handle replies to Brad's messages - ping the original poster unless opted out
+    # Handle replies to bot's messages - ping the original poster if they have notifications enabled
     if message.reference:
         try:
-            # Check for silent flag at the start of the message
-            message_content = message.content.strip()
-            if message_content.lower().startswith('-s '):
-                pass  # Skip pinging if opt-out flag is present
-            else:
-                # Get the message being replied to
-                replied_message = await message.channel.fetch_message(message.reference.message_id)
-                
-                # Check if it's a message from Brad (the bot)
-                if replied_message.author == bot.user:
-                    # Check if the bot's message is just a reply ping notification
-                    # Reply ping messages start with "-# " and contain only a mention
-                    bot_message_content = replied_message.content.strip()
-                    if bot_message_content.startswith('-# ') and bot_message_content.count('<@') == 1 and bot_message_content.count('>') == 1:
-                        # This is just a reply ping message, don't create another ping
-                        pass
-                    else:
-                        # Look for mentions in Brad's message to find the original poster
-                        if replied_message.mentions:
-                            # The first mention should be the original poster
-                            original_poster = replied_message.mentions[0]
+            # Get the message being replied to
+            replied_message = await message.channel.fetch_message(message.reference.message_id)
+            
+            # Check if it's a message from the bot
+            if replied_message.author == bot.user:
+                # Check if the bot's message is just a reply ping notification
+                # Reply ping messages start with "-# " and contain only a mention
+                bot_message_content = replied_message.content.strip()
+                if bot_message_content.startswith('-# ') and bot_message_content.count('<@') == 1 and bot_message_content.count('>') == 1:
+                    # This is just a reply ping message, don't create another ping
+                    pass
+                else:
+                    # Look up the original user from message tracking
+                    user_data = db.get_message_original_user(replied_message.id)
+                    
+                    if user_data:
+                        original_user_id, guild_id = user_data
+                        
+                        # Don't ping if the replier is the original poster
+                        if message.author.id != original_user_id:
+                            # Check if user has reply notifications enabled
+                            notifications_enabled = db.get_user_reply_notifications(original_user_id, guild_id)
                             
-                            # Don't ping if the replier is the original poster
-                            if message.author.id != original_poster.id and message.content:
+                            if notifications_enabled:
                                 # Send a subtle ping message
-                                ping_message = f"-# {original_poster.mention}"
+                                ping_message = f"-# <@{original_user_id}>"
                                 await message.channel.send(ping_message, reference=message, mention_author=False)
         except Exception as e:
-            # Silently fail to avoid spam (message might be deleted, etc.)
-            pass
-        """
+            # Silently fail to avoid spam (message might be deleted, db error, etc.)
+            print(f"Error handling reply notification: {e}")
     
     # Continue with URL processing
     url_pattern = re.compile(r'https?://[^\s<>()]+')
@@ -399,7 +406,24 @@ async def on_message(message):
     if content_changed:
         # If original message was a reply, make the new message a reply too
         reference = message.reference
-        await message.channel.send(new_content, reference=reference)
+        sent_message = await message.channel.send(new_content, reference=reference)
+        
+        # Store message tracking for reply notifications
+        if sent_message and message.guild:
+            # Get the first fixed URL for tracking
+            original_url = urls[0] if urls else None
+            fixed_url = list(fixed_urls.values())[0] if fixed_urls else None
+            
+            try:
+                db.store_message_tracking(
+                    bot_message_id=sent_message.id,
+                    user_id=message.author.id,
+                    guild_id=message.guild.id,
+                    original_url=original_url,
+                    fixed_url=fixed_url
+                )
+            except Exception as e:
+                print(f"Failed to store message tracking: {e}")
         
         try:
             await message.delete()
@@ -1613,5 +1637,50 @@ async def timestamp(
         await interaction.response.send_message(f"❌ Error parsing input: {e}", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ An error occurred: {e}", ephemeral=True)
+
+# ============================================================================
+# SETTINGS COMMAND GROUP
+# ============================================================================
+
+class SettingsGroup(app_commands.Group):
+    """User settings and preferences"""
+    
+    @app_commands.command(name="notify", description="Toggle reply notifications when someone replies to your fixed links")
+    @app_commands.describe(enabled="Enable or disable reply notifications")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="Enable notifications", value=1),
+        app_commands.Choice(name="Disable notifications", value=0)
+    ])
+    async def notify(self, interaction: discord.Interaction, enabled: int):
+        """Toggle reply notification preferences"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Update user preference
+            db.set_user_reply_notifications(
+                user_id=interaction.user.id,
+                guild_id=interaction.guild.id,
+                enabled=bool(enabled)
+            )
+            
+            status = "**enabled** ✅" if enabled else "**disabled** 🔕"
+            await interaction.response.send_message(
+                f"Reply notifications {status}\n"
+                f"You will {'now' if enabled else 'no longer'} be pinged when someone replies to messages "
+                f"where the bot fixed your links.",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error updating notification preference: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating your notification preference. Please try again later.",
+                ephemeral=True
+            )
 
 bot.run(os.getenv("DISCORD_TOKEN"))

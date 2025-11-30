@@ -1,4 +1,5 @@
 -e ./discordpy
-mysql-connector-python
 python-dotenv
 aiohttp
+psycopg2-binary
+boto3

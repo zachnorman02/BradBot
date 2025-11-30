@@ -1,0 +1,205 @@
+"""
+Database migration manager for BradBot
+Tracks and applies database schema changes automatically
+"""
+import os
+from datetime import datetime
+from database import db
+
+class Migration:
+    """Base class for database migrations"""
+    
+    def __init__(self, version: str, description: str):
+        self.version = version
+        self.description = description
+        self.timestamp = datetime.now()
+    
+    def up(self):
+        """Apply the migration"""
+        raise NotImplementedError
+    
+    def down(self):
+        """Rollback the migration (optional)"""
+        pass
+
+# Migration: Initial Schema
+class Migration001(Migration):
+    def __init__(self):
+        super().__init__("001", "Initial schema - migration tracking and settings table")
+    
+    def up(self):
+        sql = """
+        -- Migration tracking table
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version VARCHAR(10) PRIMARY KEY,
+            description TEXT,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        -- Settings table (key-value store for all settings)
+        CREATE TABLE IF NOT EXISTS main.settings (
+            id SERIAL PRIMARY KEY,
+            entity_type CHARACTER VARYING NOT NULL,
+            entity_id BIGINT NOT NULL,
+            guild_id BIGINT NOT NULL,
+            setting_name CHARACTER VARYING NOT NULL,
+            setting_value TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT idx_settings_lookup UNIQUE (entity_type, entity_id, guild_id, setting_name)
+        );
+        
+        -- Indexes for faster lookups
+        CREATE INDEX IF NOT EXISTS idx_settings_name ON main.settings(setting_name);
+        """
+        db.execute_query(sql, fetch=False)
+        print(f"✅ Applied migration {self.version}: {self.description}")
+
+# Migration: Message Tracking
+class Migration002(Migration):
+    def __init__(self):
+        super().__init__("002", "Add message tracking for reply notifications")
+    
+    def up(self):
+        sql = """
+        -- Message tracking table to link bot messages to original users
+        CREATE TABLE IF NOT EXISTS message_tracking (
+            message_id BIGINT PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            guild_id BIGINT NOT NULL,
+            original_url TEXT,
+            fixed_url TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        -- Indexes for faster lookups
+        CREATE INDEX IF NOT EXISTS idx_message_tracking_user ON message_tracking(user_id);
+        CREATE INDEX IF NOT EXISTS idx_message_tracking_guild ON message_tracking(guild_id);
+        """
+        db.execute_query(sql, fetch=False)
+        print(f"✅ Applied migration {self.version}: {self.description}")
+
+# Add new migrations here as you need them
+# Example:
+# class Migration003(Migration):
+#     def __init__(self):
+#         super().__init__("003", "Add another feature")
+#     
+#     def up(self):
+#         sql = """
+#         CREATE TABLE IF NOT EXISTS new_table (
+#             id SERIAL PRIMARY KEY,
+#             name TEXT NOT NULL
+#         );
+#         """
+#         db.execute_query(sql, fetch=False)
+
+# List of all migrations in order
+MIGRATIONS = [
+    Migration001(),
+    Migration002(),
+    # Migration003(),  # Add new migrations here
+]
+
+def get_applied_migrations():
+    """Get list of already applied migration versions"""
+    try:
+        result = db.execute_query(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        )
+        return [row[0] for row in result]
+    except Exception:
+        # Table doesn't exist yet, return empty list
+        return []
+
+def apply_migrations():
+    """Apply all pending migrations"""
+    print("🔄 Checking for pending migrations...")
+    
+    # Initialize database connection
+    db.init_pool()
+    
+    # Get applied migrations
+    applied = get_applied_migrations()
+    print(f"   Already applied: {len(applied)} migration(s)")
+    
+    # Apply pending migrations
+    pending_count = 0
+    for migration in MIGRATIONS:
+        if migration.version not in applied:
+            print(f"   Applying migration {migration.version}: {migration.description}")
+            try:
+                # Apply migration
+                migration.up()
+                
+                # Record migration
+                db.execute_query(
+                    "INSERT INTO schema_migrations (version, description) VALUES (%s, %s)",
+                    (migration.version, migration.description),
+                    fetch=False
+                )
+                pending_count += 1
+            except Exception as e:
+                print(f"   ❌ Error applying migration {migration.version}: {e}")
+                raise
+    
+    if pending_count == 0:
+        print("✅ Database is up to date")
+    else:
+        print(f"✅ Applied {pending_count} migration(s) successfully")
+    
+    return pending_count
+
+def rollback_migration(version: str):
+    """Rollback a specific migration (if down() is implemented)"""
+    for migration in MIGRATIONS:
+        if migration.version == version:
+            print(f"Rolling back migration {version}...")
+            migration.down()
+            db.execute_query(
+                "DELETE FROM schema_migrations WHERE version = %s",
+                (version,),
+                fetch=False
+            )
+            print(f"✅ Rolled back migration {version}")
+            return
+    print(f"❌ Migration {version} not found")
+
+def list_migrations():
+    """List all migrations and their status"""
+    db.init_pool()
+    applied = get_applied_migrations()
+    
+    print("\n📋 Migration Status:")
+    print("-" * 70)
+    print(f"{'Version':<10} {'Status':<15} {'Description'}")
+    print("-" * 70)
+    
+    for migration in MIGRATIONS:
+        status = "✅ Applied" if migration.version in applied else "⏳ Pending"
+        print(f"{migration.version:<10} {status:<15} {migration.description}")
+    
+    print("-" * 70)
+    print(f"Total: {len(MIGRATIONS)} migrations, {len(applied)} applied, {len(MIGRATIONS) - len(applied)} pending\n")
+
+if __name__ == "__main__":
+    import sys
+    
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+        
+        if command == "list":
+            list_migrations()
+        elif command == "migrate":
+            apply_migrations()
+        elif command == "rollback" and len(sys.argv) > 2:
+            version = sys.argv[2]
+            rollback_migration(version)
+        else:
+            print("Usage:")
+            print("  python migrate.py list       - List all migrations")
+            print("  python migrate.py migrate    - Apply pending migrations")
+            print("  python migrate.py rollback <version> - Rollback a migration")
+    else:
+        # Default: apply migrations
+        apply_migrations()
