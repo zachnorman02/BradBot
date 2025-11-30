@@ -32,10 +32,12 @@ jobs:
           echo "Updating systemd service file..." &&
           sudo cp bradbot.service /etc/systemd/system/bradbot.service &&
           sudo systemctl daemon-reload &&
-          echo "Running database migrations..." &&
-          python migrate.py migrate &&
-          echo "Restarting bot..." &&
-          sudo systemctl restart bradbot &&
+          echo "Stopping bot to run migrations..." &&
+          sudo systemctl stop bradbot &&
+          echo "Running database migrations with service environment..." &&
+          sudo -u ubuntu bash -c "cd /home/ubuntu/bradbot && source venv/bin/activate && export DB_HOST=ontgcoj4pznoqbq4aznk64mehy.dsql.us-east-1.on.aws DB_PORT=5432 DB_NAME=postgres DB_USER=bradbotrole USE_IAM_AUTH=true AWS_REGION=us-east-1 && python migrate.py migrate" &&
+          echo "Starting bot..." &&
+          sudo systemctl start bradbot &&
           sleep 3 &&
           sudo systemctl status bradbot --no-pager
         '
