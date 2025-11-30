@@ -29,8 +29,8 @@ class Migration001(Migration):
     
     def up(self):
         sql = """
-        -- Migration tracking table
-        CREATE TABLE IF NOT EXISTS schema_migrations (
+        -- Migration tracking table in main schema
+        CREATE TABLE IF NOT EXISTS main.schema_migrations (
             version VARCHAR(10) PRIMARY KEY,
             description TEXT,
             applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -62,8 +62,8 @@ class Migration002(Migration):
     
     def up(self):
         sql = """
-        -- Message tracking table to link bot messages to original users
-        CREATE TABLE IF NOT EXISTS message_tracking (
+        -- Message tracking table to link bot messages to original users (in main schema)
+        CREATE TABLE IF NOT EXISTS main.message_tracking (
             message_id BIGINT PRIMARY KEY,
             user_id BIGINT NOT NULL,
             guild_id BIGINT NOT NULL,
@@ -73,8 +73,8 @@ class Migration002(Migration):
         );
         
         -- Indexes for faster lookups
-        CREATE INDEX IF NOT EXISTS idx_message_tracking_user ON message_tracking(user_id);
-        CREATE INDEX IF NOT EXISTS idx_message_tracking_guild ON message_tracking(guild_id);
+        CREATE INDEX IF NOT EXISTS idx_message_tracking_user ON main.message_tracking(user_id);
+        CREATE INDEX IF NOT EXISTS idx_message_tracking_guild ON main.message_tracking(guild_id);
         """
         db.execute_query(sql, fetch=False)
         print(f"✅ Applied migration {self.version}: {self.description}")
@@ -105,7 +105,7 @@ def get_applied_migrations():
     """Get list of already applied migration versions"""
     try:
         result = db.execute_query(
-            "SELECT version FROM schema_migrations ORDER BY version"
+            "SELECT version FROM main.schema_migrations ORDER BY version"
         )
         return [row[0] for row in result]
     except Exception:
@@ -134,7 +134,7 @@ def apply_migrations():
                 
                 # Record migration
                 db.execute_query(
-                    "INSERT INTO schema_migrations (version, description) VALUES (%s, %s)",
+                    "INSERT INTO main.schema_migrations (version, description) VALUES (%s, %s)",
                     (migration.version, migration.description),
                     fetch=False
                 )
@@ -157,7 +157,7 @@ def rollback_migration(version: str):
             print(f"Rolling back migration {version}...")
             migration.down()
             db.execute_query(
-                "DELETE FROM schema_migrations WHERE version = %s",
+                "DELETE FROM main.schema_migrations WHERE version = %s",
                 (version,),
                 fetch=False
             )

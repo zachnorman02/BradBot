@@ -147,7 +147,7 @@ class Database:
                                original_url: str, fixed_url: str):
         """Store tracking information for a bot's replacement message"""
         query = """
-        INSERT INTO message_tracking (message_id, user_id, guild_id, original_url, fixed_url)
+        INSERT INTO main.message_tracking (message_id, user_id, guild_id, original_url, fixed_url)
         VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT (message_id) DO NOTHING
         """
@@ -155,7 +155,7 @@ class Database:
     
     def get_message_original_user(self, bot_message_id: int) -> Optional[tuple]:
         """Get original user info for a bot message. Returns (user_id, guild_id) or None"""
-        query = "SELECT user_id, guild_id FROM message_tracking WHERE message_id = %s"
+        query = "SELECT user_id, guild_id FROM main.message_tracking WHERE message_id = %s"
         result = self.execute_query(query, (bot_message_id,))
         if result:
             return result[0]
