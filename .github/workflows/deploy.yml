@@ -32,19 +32,12 @@ jobs:
           echo "Updating systemd service file..." &&
           sudo cp bradbot.service /etc/systemd/system/bradbot.service &&
           sudo systemctl daemon-reload &&
-          echo "Running database migrations..." &&
-          export DB_HOST=ontgcoj4pznoqbq4aznk64mehy.dsql.us-east-1.on.aws &&
-          export DB_PORT=5432 &&
-          export DB_NAME=postgres &&
-          export DB_USER=admin &&
-          export USE_IAM_AUTH=true &&
-          export AWS_REGION=us-east-1 &&
-          python migrate.py migrate || echo "⚠️  Migrations failed, continuing anyway..." &&
+          echo "Skipping migrations - will run manually after IAM propagates..." &&
           sudo systemctl restart bradbot &&
           sleep 5 &&
           sudo systemctl status bradbot --no-pager &&
           echo "Checking bot logs for database connection..." &&
-          sudo journalctl -u bradbot -n 100 --no-pager | grep -i "database" || echo "No database messages found"
+          sudo journalctl -u bradbot -n 100 --no-pager | grep -E "(database|Database|ERROR|⚠️)" || echo "No database/error messages found"
         '
         
     - name: Health Check
