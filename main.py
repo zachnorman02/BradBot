@@ -152,7 +152,9 @@ async def on_ready():
     # Initialize database connection pool
     try:
         db.init_pool()
-        print("✅ Database connection pool initialized")
+        # Test the connection with a simple query
+        result = db.execute_query("SELECT 1")
+        print("✅ Database connection pool initialized and tested successfully")
     except Exception as e:
         print(f"⚠️  Database initialization failed: {e}")
         print("   Reply notifications will not work until database is configured")
