@@ -19,7 +19,7 @@ class Database:
         self.port = int(os.getenv('DB_PORT', '5432'))
         self.database = os.getenv('DB_NAME', 'postgres')
         self.user = os.getenv('DB_USER', 'admin')
-        self.use_iam_auth = os.getenv('USE_IAM_AUTH', 'false').lower() == 'true'
+        self.use_iam_auth = os.getenv('USE_IAM_AUTH', 'true').lower() == 'true'
         self.region = os.getenv('AWS_REGION', 'us-east-1')
         self.connection_pool: Optional[pool.SimpleConnectionPool] = None
         
