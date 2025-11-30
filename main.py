@@ -150,15 +150,20 @@ async def on_ready():
     print(f'{bot.user} has logged in!')
     
     # Initialize database connection pool
+    print("🔄 Attempting to initialize database connection...")
     try:
+        print("   Step 1: Calling db.init_pool()...")
         db.init_pool()
+        print("   Step 2: Testing connection with SELECT 1...")
         # Test the connection with a simple query
         result = db.execute_query("SELECT 1")
-        print("✅ Database connection pool initialized and tested successfully")
+        print(f"✅ Database connection pool initialized and tested successfully! Result: {result}")
     except Exception as e:
-        print(f"⚠️  Database initialization failed: {e}")
+        print(f"⚠️  Database initialization failed: {type(e).__name__}: {e}")
+        print(f"   Full error details: {repr(e)}")
         print("   Reply notifications will not work until database is configured")
     
+    print("🔄 Adding command groups to the tree...")
     # Add command groups to the tree (testing new BoosterGroup)
     bot.tree.add_command(EmojiGroup(name="emoji", description="Emoji and sticker management commands"))
     bot.tree.add_command(BoosterGroup())
