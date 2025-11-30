@@ -1,5 +1,10 @@
 """
-Database connection and utilities for BradBot
+Database con    def __init__(self):
+        self.host = os.getenv('DB_HOST')
+        self.port = int(os.getenv('DB_PORT', '5432'))
+        self.database = os.getenv('DB_NAME', 'postgres')
+        self.user = os.getenv('DB_USER', 'bradbotrole')
+        self.use_iam_auth = os.getenv('USE_IAM_AUTH', 'true').lower() == 'true'n and utilities for BradBot
 Supports Aurora DSQL with IAM authentication
 """
 import os
