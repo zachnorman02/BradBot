@@ -28,31 +28,37 @@ class Migration001(Migration):
         super().__init__("001", "Initial schema - migration tracking and settings table")
     
     def up(self):
-        sql = """
-        -- Migration tracking table in main schema
-        CREATE TABLE IF NOT EXISTS main.schema_migrations (
-            version VARCHAR(10) PRIMARY KEY,
-            description TEXT,
-            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+        # Aurora DSQL doesn't support multiple DDL statements in one transaction
+        # Execute each CREATE statement separately
         
-        -- Settings table (key-value store for all settings)
-        -- No auto-increment ID needed - unique constraint serves as primary key
-        CREATE TABLE IF NOT EXISTS main.settings (
-            entity_type CHARACTER VARYING NOT NULL,
-            entity_id BIGINT NOT NULL,
-            guild_id BIGINT NOT NULL,
-            setting_name CHARACTER VARYING NOT NULL,
-            setting_value TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (entity_type, entity_id, guild_id, setting_name)
-        );
+        # Migration tracking table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.schema_migrations (
+                version VARCHAR(10) PRIMARY KEY,
+                description TEXT,
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
         
-        -- Index for faster lookups by setting name
-        CREATE INDEX IF NOT EXISTS idx_settings_name ON main.settings(setting_name);
-        """
-        db.execute_query(sql, fetch=False)
+        # Settings table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.settings (
+                entity_type CHARACTER VARYING NOT NULL,
+                entity_id BIGINT NOT NULL,
+                guild_id BIGINT NOT NULL,
+                setting_name CHARACTER VARYING NOT NULL,
+                setting_value TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (entity_type, entity_id, guild_id, setting_name)
+            )
+        """, fetch=False)
+        
+        # Index for faster lookups
+        db.execute_query("""
+            CREATE INDEX IF NOT EXISTS idx_settings_name ON main.settings(setting_name)
+        """, fetch=False)
+        
         print(f"✅ Applied migration {self.version}: {self.description}")
 
 # Migration: Message Tracking
@@ -61,22 +67,27 @@ class Migration002(Migration):
         super().__init__("002", "Add message tracking for reply notifications")
     
     def up(self):
-        sql = """
-        -- Message tracking table to link bot messages to original users (in main schema)
-        CREATE TABLE IF NOT EXISTS main.message_tracking (
-            message_id BIGINT PRIMARY KEY,
-            user_id BIGINT NOT NULL,
-            guild_id BIGINT NOT NULL,
-            original_url TEXT,
-            fixed_url TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+        # Create message tracking table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.message_tracking (
+                message_id BIGINT PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                guild_id BIGINT NOT NULL,
+                original_url TEXT,
+                fixed_url TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
         
-        -- Indexes for faster lookups
-        CREATE INDEX IF NOT EXISTS idx_message_tracking_user ON main.message_tracking(user_id);
-        CREATE INDEX IF NOT EXISTS idx_message_tracking_guild ON main.message_tracking(guild_id);
-        """
-        db.execute_query(sql, fetch=False)
+        # Create indexes separately
+        db.execute_query("""
+            CREATE INDEX IF NOT EXISTS idx_message_tracking_user ON main.message_tracking(user_id)
+        """, fetch=False)
+        
+        db.execute_query("""
+            CREATE INDEX IF NOT EXISTS idx_message_tracking_guild ON main.message_tracking(guild_id)
+        """, fetch=False)
+        
         print(f"✅ Applied migration {self.version}: {self.description}")
 
 # Add new migrations here as you need them
