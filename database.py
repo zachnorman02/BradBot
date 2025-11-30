@@ -59,8 +59,7 @@ class Database:
             'port': self.port,
             'database': self.database,
             'user': self.user,
-            'sslmode': 'verify-full',  # Required when using sslrootcert=system
-            'sslrootcert': 'system',  # Use system CA certificates
+            'sslmode': 'require',  # Require SSL but don't verify certificate
             'connect_timeout': 10
         }
         
