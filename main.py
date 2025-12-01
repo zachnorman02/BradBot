@@ -1969,23 +1969,33 @@ class AdminGroup(app_commands.Group):
         role="The role to save"
     )
     @app_commands.default_permissions(administrator=True)
-    async def save_booster_role(self, interaction: discord.Interaction, user: discord.Member, role: discord.Role):
+    async def save_booster_role(self, interaction: discord.Interaction, user: discord.User, role: discord.Role):
         """Manually save a specific booster role to the database (requires administrator permission)"""
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
             return
         
+        # Defer response
+        await interaction.response.defer(ephemeral=True)
+        
         try:
+            # Get member from user ID
+            member = interaction.guild.get_member(user.id)
+            if not member:
+                await interaction.followup.send(
+                    f"❌ Could not find {user.mention} in this server.",
+                    ephemeral=True
+                )
+                return
+            
             # Initialize database connection if needed
             if not db.connection_pool:
                 db.init_pool()
             
-            # Validate that the user is a booster
-            if not user.premium_since:
-                await interaction.response.send_message(
-                    f"⚠️ Warning: {user.mention} is not currently a server booster. Saving anyway...",
-                    ephemeral=True
-                )
+            # Check if booster (warning only)
+            booster_warning = ""
+            if not member.premium_since:
+                booster_warning = f"\n⚠️ Note: {user.mention} is not currently a server booster."
             
             # Prepare role data
             color_hex = f"#{role.color.value:06x}"
@@ -2030,16 +2040,16 @@ class AdminGroup(app_commands.Group):
             if tertiary_color_hex:
                 color_info += f", {tertiary_color_hex}"
             
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"✅ Saved booster role for {user.mention}\n"
                 f"• Role: `{role.name}`\n"
-                f"• Colors: {color_info} ({color_type}){icon_status}",
+                f"• Colors: {color_info} ({color_type}){icon_status}{booster_warning}",
                 ephemeral=True
             )
             
         except Exception as e:
             print(f"Error saving booster role: {e}")
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"❌ An error occurred while saving the booster role: {str(e)[:100]}",
                 ephemeral=True
             )
