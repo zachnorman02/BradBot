@@ -149,12 +149,20 @@ class Migration005(Migration):
         """
         db.execute_query(sql, fetch=False)
         
-        # Create index on guild_id for faster lookups
+        # Create index on guild_id for faster lookups (Aurora DSQL requires ASYNC)
         index_sql = """
-        CREATE INDEX IF NOT EXISTS idx_booster_roles_guild 
+        CREATE INDEX ASYNC idx_booster_roles_guild 
         ON main.booster_roles(guild_id);
         """
-        db.execute_query(index_sql, fetch=False)
+        try:
+            db.execute_query(index_sql, fetch=False)
+            print(f"   ℹ️  Index creation started asynchronously (may take a few moments to complete)")
+        except Exception as e:
+            # Index might already exist or be in progress
+            if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
+                print(f"   ℹ️  Index already exists")
+            else:
+                print(f"   ⚠️  Could not create index: {e}")
         
         # Grant read access to admin user
         grant_sql = """
