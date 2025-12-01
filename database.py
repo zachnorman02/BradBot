@@ -213,6 +213,87 @@ class Database:
         if result:
             return result[0]
         return None
+    
+    # Booster role methods
+    def store_booster_role(self, user_id: int, guild_id: int, role_id: int, 
+                          role_name: str, color_hex: str, color_type: str = 'solid',
+                          icon_hash: str = None, icon_data: bytes = None):
+        """Store or update booster role configuration in database"""
+        # Aurora DSQL doesn't support ON CONFLICT, so check if exists first
+        check_query = "SELECT 1 FROM main.booster_roles WHERE user_id = %s AND guild_id = %s"
+        exists = self.execute_query(check_query, (user_id, guild_id))
+        
+        if exists:
+            # Delete existing record
+            delete_query = "DELETE FROM main.booster_roles WHERE user_id = %s AND guild_id = %s"
+            self.execute_query(delete_query, (user_id, guild_id), fetch=False)
+        
+        # Insert new record
+        query = """
+        INSERT INTO main.booster_roles 
+        (user_id, guild_id, role_id, role_name, color_hex, color_type, icon_hash, icon_data, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """
+        self.execute_query(query, (user_id, guild_id, role_id, role_name, color_hex, 
+                                   color_type, icon_hash, icon_data), fetch=False)
+    
+    def get_booster_role(self, user_id: int, guild_id: int) -> Optional[dict]:
+        """Get booster role configuration from database. Returns dict or None"""
+        query = """
+        SELECT role_id, role_name, color_hex, color_type, icon_hash, icon_data, created_at, updated_at
+        FROM main.booster_roles 
+        WHERE user_id = %s AND guild_id = %s
+        """
+        result = self.execute_query(query, (user_id, guild_id))
+        if result:
+            row = result[0]
+            return {
+                'role_id': row[0],
+                'role_name': row[1],
+                'color_hex': row[2],
+                'color_type': row[3],
+                'icon_hash': row[4],
+                'icon_data': row[5],
+                'created_at': row[6],
+                'updated_at': row[7]
+            }
+        return None
+    
+    def delete_booster_role(self, user_id: int, guild_id: int):
+        """Delete booster role configuration from database"""
+        query = "DELETE FROM main.booster_roles WHERE user_id = %s AND guild_id = %s"
+        self.execute_query(query, (user_id, guild_id), fetch=False)
+    
+    def get_all_booster_roles(self, guild_id: int) -> list:
+        """Get all booster role configurations for a guild. Returns list of dicts"""
+        query = """
+        SELECT user_id, role_id, role_name, color_hex, color_type, icon_hash, icon_data, created_at, updated_at
+        FROM main.booster_roles 
+        WHERE guild_id = %s
+        """
+        result = self.execute_query(query, (guild_id,))
+        if result:
+            return [{
+                'user_id': row[0],
+                'role_id': row[1],
+                'role_name': row[2],
+                'color_hex': row[3],
+                'color_type': row[4],
+                'icon_hash': row[5],
+                'icon_data': row[6],
+                'created_at': row[7],
+                'updated_at': row[8]
+            } for row in result]
+        return []
+    
+    def update_booster_role_id(self, user_id: int, guild_id: int, new_role_id: int):
+        """Update the role_id for a booster role (when role is recreated)"""
+        query = """
+        UPDATE main.booster_roles 
+        SET role_id = %s, updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = %s AND guild_id = %s
+        """
+        self.execute_query(query, (new_role_id, user_id, guild_id), fetch=False)
 
 # Global database instance
 db = Database()

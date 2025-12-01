@@ -126,18 +126,44 @@ class Migration004(Migration):
 
 # Add new migrations here as you need them
 # Example:
-# class Migration005(Migration):
-#     def __init__(self):
-#         super().__init__("005", "Add another feature")
-#     
-#     def up(self):
-#         sql = """
-#         CREATE TABLE IF NOT EXISTS new_table (
-#             id SERIAL PRIMARY KEY,
-#             name TEXT NOT NULL
-#         );
-#         """
-#         db.execute_query(sql, fetch=False)
+class Migration005(Migration):
+    def __init__(self):
+        super().__init__("005", "Create booster_roles table for persistent booster role configurations")
+    
+    def up(self):
+        # Create booster_roles table
+        sql = """
+        CREATE TABLE IF NOT EXISTS main.booster_roles (
+            user_id BIGINT NOT NULL,
+            guild_id BIGINT NOT NULL,
+            role_id BIGINT NOT NULL,
+            role_name TEXT NOT NULL,
+            color_hex TEXT NOT NULL,
+            color_type TEXT NOT NULL DEFAULT 'solid',
+            icon_hash TEXT,
+            icon_data BYTEA,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, guild_id)
+        );
+        """
+        db.execute_query(sql, fetch=False)
+        
+        # Create index on guild_id for faster lookups
+        index_sql = """
+        CREATE INDEX IF NOT EXISTS idx_booster_roles_guild 
+        ON main.booster_roles(guild_id);
+        """
+        db.execute_query(index_sql, fetch=False)
+        
+        # Grant read access to admin user
+        grant_sql = """
+        GRANT SELECT ON main.booster_roles TO admin;
+        """
+        try:
+            db.execute_query(grant_sql, fetch=False)
+        except Exception as e:
+            print(f"   ⚠️  Could not grant admin access (may not exist): {e}")
 
 # List of all migrations in order
 MIGRATIONS = [
@@ -145,7 +171,7 @@ MIGRATIONS = [
     Migration002(),
     Migration003(),  # Grant admin read access
     Migration004(),  # Clean up duplicate settings
-    # Migration005(),  # Add new migrations here
+    Migration005(),  # Booster roles table
 ]
 
 def get_applied_migrations():

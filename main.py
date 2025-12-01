@@ -1,12 +1,13 @@
 import enum
 import aiohttp
-import datetime
+import datetime as dt
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import os
 import re
 import asyncio
+import io
 from dotenv import load_dotenv
 from typing import Literal
 from websites import websites, get_site_name
@@ -41,7 +42,6 @@ def parse_message_link(message_link: str):
 
 async def create_emoji_or_sticker_with_overwrite(guild, name: str, image_bytes: bytes, source_name: str = "image", create_sticker: bool = False, replace_existing: bool = True) -> str:
     """Create emoji or sticker, with option to replace or create with different name. Returns result message."""
-    import io
     
     if create_sticker:
         # Handle sticker creation
@@ -133,11 +133,39 @@ async def daily_booster_role_check():
                 # Find custom roles (only one member, not @everyone, not booster role)
                 personal_roles = [role for role in member.roles if role != booster_role and not role.is_default() and len(role.members) == 1]
                 if personal_roles and booster_role not in member.roles:
+                    # User lost booster status - save role info to DB before deleting
                     for role in personal_roles:
                         try:
+                            # Save role configuration to database
+                            color_hex = f"#{role.color.value:06x}"
+                            icon_hash = role.icon.key if role.icon else None
+                            icon_data = None
+                            if role.icon:
+                                try:
+                                    icon_data = await role.icon.read()
+                                except Exception:
+                                    pass
+                            
+                            # Get existing role data to preserve color_type
+                            existing_role = db.get_booster_role(member.id, guild.id)
+                            color_type = existing_role['color_type'] if existing_role else 'solid'
+                            
+                            db.store_booster_role(
+                                user_id=member.id,
+                                guild_id=guild.id,
+                                role_id=role.id,  # Will be outdated once deleted, but kept for reference
+                                role_name=role.name,
+                                color_hex=color_hex,
+                                color_type=color_type,
+                                icon_hash=icon_hash,
+                                icon_data=icon_data
+                            )
+                            print(f"Saved booster role for {member.display_name} before deletion")
+                            
+                            # Now delete the role
                             await role.delete(reason="Lost server booster status")
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            print(f"Error handling role removal for {member.display_name}: {e}")
 
 @bot.event
 async def on_ready():
@@ -157,6 +185,7 @@ async def on_ready():
     bot.tree.add_command(EmojiGroup(name="emoji", description="Emoji and sticker management commands"))
     bot.tree.add_command(BoosterGroup())
     bot.tree.add_command(SettingsGroup(name="settings", description="User settings and preferences"))
+    # bot.tree.add_command(AdminGroup(name="admin", description="Admin database management commands"))  # Uncomment when commands are added
     
     try:
         # Sync slash commands
@@ -525,7 +554,6 @@ class EmojiGroup(app_commands.Group):
             indices = list(range(len(emoji_matches)))  # Default to all emojis
         
         results = []
-        import aiohttp
         
         # Defer the response since this might take a while
         await interaction.response.defer(ephemeral=True)
@@ -574,7 +602,6 @@ class EmojiGroup(app_commands.Group):
         # Defer the response since downloading and uploading might take time
         await interaction.response.defer(ephemeral=True)
         
-        import aiohttp
         # Download image
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
@@ -728,7 +755,6 @@ class EmojiGroup(app_commands.Group):
                     image_bytes = await image_source.read()
                     source_name = image_source.filename
                 else:  # embed image
-                    import aiohttp
                     async with aiohttp.ClientSession() as session:
                         async with session.get(image_source) as resp:
                             if resp.status != 200:
@@ -854,7 +880,6 @@ class EmojiGroup(app_commands.Group):
             indices = list(range(len(custom_reactions)))  # Default to all reactions
         
         results = []
-        import aiohttp
         
         # Defer the response since this might take a while
         await interaction.response.defer(ephemeral=True)
@@ -890,6 +915,90 @@ class EmojiGroup(app_commands.Group):
         await interaction.followup.send("\n".join(results), ephemeral=True)
 
 
+# Helper functions for booster roles
+async def get_or_create_booster_role(interaction: discord.Interaction, db_role_data: dict = None):
+    """Get existing booster role or create/restore from database"""
+    # Find existing custom role (only they have it)
+    user_roles = [role for role in interaction.user.roles if not role.is_default()]
+    personal_role = None
+    
+    for role in user_roles:
+        if len(role.members) == 1 and not any(r.is_premium_subscriber() for r in [role]):
+            personal_role = role
+            break
+    
+    # If no role exists, check database for saved role
+    if not personal_role and db_role_data:
+        # Restore role from database
+        try:
+            color = discord.Color(int(db_role_data['color_hex'].replace('#', ''), 16))
+            
+            # Create role with saved configuration
+            personal_role = await interaction.guild.create_role(
+                name=db_role_data['role_name'],
+                color=color,
+                reason="Restoring saved booster role"
+            )
+            
+            # Set icon if it exists
+            if db_role_data['icon_data'] and "ROLE_ICONS" in interaction.guild.features:
+                try:
+                    await personal_role.edit(display_icon=db_role_data['icon_data'])
+                except Exception as e:
+                    print(f"Could not restore role icon: {e}")
+            
+            # Assign to user
+            await interaction.user.add_roles(personal_role, reason="Restoring saved booster role")
+            
+            # Update role_id in database
+            db.update_booster_role_id(interaction.user.id, interaction.guild.id, personal_role.id)
+            
+        except Exception as e:
+            print(f"Error restoring role from database: {e}")
+            return None
+    
+    # If still no role, create a default one
+    if not personal_role:
+        try:
+            personal_role = await interaction.guild.create_role(
+                name=f"{interaction.user.display_name}'s Role",
+                reason="Booster role customization"
+            )
+            await interaction.user.add_roles(personal_role, reason="Booster role customization")
+        except Exception as e:
+            print(f"Error creating new role: {e}")
+            return None
+    
+    return personal_role
+
+
+async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role, color_type: str = "solid"):
+    """Save role configuration to database"""
+    try:
+        color_hex = f"#{role.color.value:06x}"
+        icon_hash = role.icon.key if role.icon else None
+        icon_data = None
+        
+        if role.icon:
+            try:
+                icon_data = await role.icon.read()
+            except Exception:
+                pass
+        
+        db.store_booster_role(
+            user_id=user_id,
+            guild_id=guild_id,
+            role_id=role.id,
+            role_name=role.name,
+            color_hex=color_hex,
+            color_type=color_type,
+            icon_hash=icon_hash,
+            icon_data=icon_data
+        )
+    except Exception as e:
+        print(f"Error saving role to database: {e}")
+
+
 class BoosterRoleGroup(app_commands.Group):
     """Booster role customization commands"""
     
@@ -910,31 +1019,14 @@ class BoosterRoleGroup(app_commands.Group):
             await interaction.response.send_message("❌ This command is only available to server boosters!", ephemeral=True)
             return
         
-        # Find or create their custom role
-        user_roles = [role for role in interaction.user.roles if not role.is_default()]
-        if user_roles:
-            highest_role = user_roles[0]
-            for role in user_roles[1:]:
-                if role.position > highest_role.position:
-                    highest_role = role
-        else:
-            highest_role = None
+        # Check database for saved role first
+        db_role_data = db.get_booster_role(interaction.user.id, interaction.guild.id)
         
-        # Check if this is their personal booster role (only they have it)
-        if highest_role is None or len(highest_role.members) > 1 or highest_role.is_default():
-            # Create a new personal role
-            try:
-                highest_role = await interaction.guild.create_role(
-                    name=f"{interaction.user.display_name}'s Role",
-                    reason="Booster role customization"
-                )
-                await interaction.user.add_roles(highest_role, reason="Booster role customization")
-            except discord.Forbidden:
-                await interaction.response.send_message("❌ I don't have permission to create roles.", ephemeral=True)
-                return
-            except Exception as e:
-                await interaction.response.send_message(f"❌ Error creating role: {e}", ephemeral=True)
-                return
+        # Get or create/restore booster role
+        highest_role = await get_or_create_booster_role(interaction, db_role_data)
+        if not highest_role:
+            await interaction.response.send_message("❌ Failed to create or find your booster role.", ephemeral=True)
+            return
         
         # Generate color based on style and hex values
         color = None
@@ -984,6 +1076,9 @@ class BoosterRoleGroup(app_commands.Group):
         try:
             await highest_role.edit(color=color)
             
+            # Save to database
+            await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role, style)
+            
             embed = discord.Embed(
                 title="✅ Role Color Updated!",
                 description=description,
@@ -1016,40 +1111,29 @@ class BoosterRoleGroup(app_commands.Group):
             await interaction.response.send_message("❌ Role label cannot be empty.", ephemeral=True)
             return
         
-        # Find their highest role (should be their custom role)
-        user_roles = [role for role in interaction.user.roles if not role.is_default()]
-        if user_roles:
-            highest_role = user_roles[0]
-            for role in user_roles[1:]:
-                if role.position > highest_role.position:
-                    highest_role = role
-        else:
-            highest_role = None
+        # Check database for saved role first
+        db_role_data = db.get_booster_role(interaction.user.id, interaction.guild.id)
         
-        # Check if this is their personal booster role (only they have it)
-        if highest_role is None or len(highest_role.members) > 1 or highest_role.is_default():
-            # Create a new personal role
-            try:
-                highest_role = await interaction.guild.create_role(
-                    name=role_label,
-                    reason="Booster role customization"
-                )
-                await interaction.user.add_roles(highest_role, reason="Booster role customization")
-                await interaction.response.send_message(f"✅ Created and assigned new role: **{role_label}**", ephemeral=True)
-                return
-            except discord.Forbidden:
-                await interaction.response.send_message("❌ I don't have permission to create roles.", ephemeral=True)
-                return
-            except Exception as e:
-                await interaction.response.send_message(f"❌ Error creating role: {e}", ephemeral=True)
-                return
+        # Get or create/restore booster role
+        highest_role = await get_or_create_booster_role(interaction, db_role_data)
+        if not highest_role:
+            await interaction.response.send_message("❌ Failed to create or find your booster role.", ephemeral=True)
+            return
         
-        # Update existing personal role
+        # Update role name
         old_name = highest_role.name
         try:
             await highest_role.edit(name=role_label, reason=f"Booster role label change by {interaction.user}")
+            
+            # Save to database
+            await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role, 
+                                 db_role_data['color_type'] if db_role_data else 'solid')
+            
             await interaction.response.send_message(f"✅ Role label updated from **{old_name}** to **{role_label}**!", ephemeral=True)
         except discord.Forbidden:
+            await interaction.response.send_message("❌ I don't have permission to edit roles.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error updating role title: {e}", ephemeral=True)
             await interaction.response.send_message("❌ I don't have permission to edit roles.", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"❌ Error updating role title: {e}", ephemeral=True)
@@ -1067,31 +1151,14 @@ class BoosterRoleGroup(app_commands.Group):
             await interaction.response.send_message("❌ This server doesn't support role icons.", ephemeral=True)
             return
         
-        # Find their highest role (should be their custom role)
-        user_roles = [role for role in interaction.user.roles if not role.is_default()]
-        if user_roles:
-            highest_role = user_roles[0]
-            for role in user_roles[1:]:
-                if role.position > highest_role.position:
-                    highest_role = role
-        else:
-            highest_role = None
+        # Check database for saved role first
+        db_role_data = db.get_booster_role(interaction.user.id, interaction.guild.id)
         
-        # Check if this is their personal booster role (only they have it)
-        if highest_role is None or len(highest_role.members) > 1 or highest_role.is_default():
-            # Create a new personal role
-            try:
-                highest_role = await interaction.guild.create_role(
-                    name=f"{interaction.user.display_name}'s Role",
-                    reason="Booster role customization"
-                )
-                await interaction.user.add_roles(highest_role, reason="Booster role customization")
-            except discord.Forbidden:
-                await interaction.response.send_message("❌ I don't have permission to create roles.", ephemeral=True)
-                return
-            except Exception as e:
-                await interaction.response.send_message(f"❌ Error creating role: {e}", ephemeral=True)
-                return
+        # Get or create/restore booster role
+        highest_role = await get_or_create_booster_role(interaction, db_role_data)
+        if not highest_role:
+            await interaction.response.send_message("❌ Failed to create or find your booster role.", ephemeral=True)
+            return
         
         try:
             # If icon_url is an attachment, use its URL
@@ -1099,14 +1166,19 @@ class BoosterRoleGroup(app_commands.Group):
                 icon_url = interaction.attachments[0].url
             
             # Download the image
-            import aiohttp
             async with aiohttp.ClientSession() as session:
                 async with session.get(icon_url) as resp:
                     if resp.status != 200:
                         await interaction.response.send_message("❌ Could not download the image. Please check the URL or upload a valid image.", ephemeral=True)
                         return
                     image_bytes = await resp.read()
+            
             await highest_role.edit(icon=image_bytes)
+            
+            # Save to database
+            await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role, 
+                                 db_role_data['color_type'] if db_role_data else 'solid')
+            
             await interaction.response.send_message(f"✅ Role icon updated!", ephemeral=True)
         except discord.Forbidden:
             await interaction.response.send_message("❌ I don't have permission to edit roles.", ephemeral=True)
@@ -1230,7 +1302,6 @@ async def purge_messages(
     Delete messages from a specific user within a date/time range.
     Only works if you're deleting your own messages or have manage_messages permission.
     """
-    import datetime as dt
     
     # Permission check
     is_self = interaction.user.id == user.id
@@ -1541,7 +1612,6 @@ async def timestamp(
     """
     Creates a Discord timestamp that shows relative time and adapts to user's timezone.
     """
-    import datetime as dt
     
     try:
         now = dt.datetime.now()
@@ -1689,5 +1759,11 @@ class SettingsGroup(app_commands.Group):
                 "❌ An error occurred while updating your notification preference. Please try again later.",
                 ephemeral=True
             )
+
+
+class AdminGroup(app_commands.Group):
+    """Admin commands for database management"""
+    pass
+    
 
 bot.run(os.getenv("DISCORD_TOKEN"))
