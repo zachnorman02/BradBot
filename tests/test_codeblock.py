@@ -4,55 +4,14 @@ Test script for the code block detection function.
 Run this locally to test the is_url_in_code_block function without starting the bot.
 """
 
-def is_url_in_code_block(content, url):
-    """Check if a URL is inside a code block (single or triple backticks)"""
-    url_start = content.find(url)
-    if url_start == -1:
-        return False
-    
-    # Check for triple backtick code blocks first
-    triple_blocks = []
-    i = 0
-    while i < len(content):
-        start = content.find('```', i)
-        if start == -1:
-            break
-        end = content.find('```', start + 3)
-        if end == -1:
-            break
-        triple_blocks.append((start, end + 3))
-        i = end + 3
-    
-    # Check if URL is in any triple backtick block
-    for start, end in triple_blocks:
-        if start <= url_start < end:
-            return True
-    
-    # Check for single backtick code blocks (inline code)
-    # Remove triple backtick blocks temporarily to avoid conflicts
-    temp_content = content
-    for start, end in reversed(triple_blocks):
-        temp_content = temp_content[:start] + ' ' * (end - start) + temp_content[end:]
-    
-    # Adjust URL position for the temporary content
-    temp_url_start = temp_content.find(url)
-    if temp_url_start == -1:
-        return False
-    
-    # Find all single backtick pairs
-    backticks = []
-    for i, char in enumerate(temp_content):
-        if char == '`':
-            backticks.append(i)
-    
-    # Check if URL is between any pair of backticks
-    for i in range(0, len(backticks) - 1, 2):
-        if i + 1 < len(backticks):
-            start, end = backticks[i], backticks[i + 1]
-            if start <= temp_url_start < end:
-                return True
-    
-    return False
+import sys
+import os
+
+# Add the parent directory to Python path so we can import modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from helpers import is_url_in_code_block
+
 
 def test_function():
     """Test cases for the is_url_in_code_block function"""

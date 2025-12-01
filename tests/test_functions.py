@@ -7,11 +7,11 @@ Run this to test individual functions without connecting to Discord
 import sys
 import os
 
-# Add the current directory to Python path so we can import from main.py
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add the parent directory to Python path so we can import modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the functions we want to test
-from main import is_url_in_code_block, fix_amp_links
+from helpers import is_url_in_code_block, fix_amp_links
 
 def test_code_block_detection():
     """Test the code block URL detection function"""
