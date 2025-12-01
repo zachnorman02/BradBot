@@ -159,7 +159,7 @@ class Database:
     def get_user_reply_notifications(self, user_id: int, guild_id: int) -> bool:
         """Get user's reply notification preference. Defaults to True if not set."""
         query = """
-        SELECT setting_value FROM main.settings 
+        SELECT setting_value FROM main.user_settings 
         WHERE entity_type = 'user' 
         AND entity_id = %s 
         AND guild_id = %s 
@@ -176,7 +176,7 @@ class Database:
         """Set user's reply notification preference"""
         # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
         delete_query = """
-        DELETE FROM main.settings 
+        DELETE FROM main.user_settings 
         WHERE entity_type = 'user' 
         AND entity_id = %s 
         AND guild_id = %s 
@@ -186,10 +186,42 @@ class Database:
         
         # Then insert the new value
         insert_query = """
-        INSERT INTO main.settings (entity_type, entity_id, guild_id, setting_name, setting_value, created_at, updated_at)
+        INSERT INTO main.user_settings (entity_type, entity_id, guild_id, setting_name, setting_value, created_at, updated_at)
         VALUES ('user', %s, %s, 'reply_notifications', %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (user_id, guild_id, 'true' if enabled else 'false'), fetch=False)
+    
+    # Guild settings methods
+    def get_guild_link_replacement_enabled(self, guild_id: int) -> bool:
+        """Get whether link replacement is enabled for a guild. Defaults to True."""
+        query = """
+        SELECT setting_value FROM main.guild_settings 
+        WHERE guild_id = %s 
+        AND setting_name = 'link_replacement'
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """
+        result = self.execute_query(query, (guild_id,))
+        if result:
+            return result[0][0].lower() == 'true'
+        return True  # Default: link replacement enabled
+    
+    def set_guild_link_replacement(self, guild_id: int, enabled: bool):
+        """Set guild's link replacement preference"""
+        # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
+        delete_query = """
+        DELETE FROM main.guild_settings 
+        WHERE guild_id = %s 
+        AND setting_name = 'link_replacement'
+        """
+        self.execute_query(delete_query, (guild_id,), fetch=False)
+        
+        # Then insert the new value
+        insert_query = """
+        INSERT INTO main.guild_settings (guild_id, setting_name, setting_value, created_at, updated_at)
+        VALUES (%s, 'link_replacement', %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """
+        self.execute_query(insert_query, (guild_id, 'true' if enabled else 'false'), fetch=False)
     
     # Message tracking methods
     def store_message_tracking(self, bot_message_id: int, user_id: int, guild_id: int, 

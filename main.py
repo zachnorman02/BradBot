@@ -185,7 +185,7 @@ async def on_ready():
     bot.tree.add_command(EmojiGroup(name="emoji", description="Emoji and sticker management commands"))
     bot.tree.add_command(BoosterGroup())
     bot.tree.add_command(SettingsGroup(name="settings", description="User settings and preferences"))
-    # bot.tree.add_command(AdminGroup(name="admin", description="Admin database management commands"))  # Uncomment when commands are added
+    bot.tree.add_command(AdminGroup(name="admin", description="Admin server management commands"))
     
     try:
         # Sync slash commands
@@ -346,6 +346,16 @@ async def on_message(message):
         except Exception as e:
             # Silently fail to avoid spam (message might be deleted, db error, etc.)
             print(f"Error handling reply notification: {e}")
+    
+    # Check if link replacement is enabled for this guild
+    if message.guild:
+        try:
+            link_replacement_enabled = db.get_guild_link_replacement_enabled(message.guild.id)
+            if not link_replacement_enabled:
+                return  # Skip link replacement if disabled
+        except Exception as e:
+            # If there's a database error, default to enabled (fail open)
+            print(f"Error checking guild link replacement setting: {e}")
     
     # Continue with URL processing
     url_pattern = re.compile(r'https?://[^\s<>()]+')
@@ -1763,7 +1773,154 @@ class SettingsGroup(app_commands.Group):
 
 class AdminGroup(app_commands.Group):
     """Admin commands for database management"""
-    pass
+    
+    @app_commands.command(name="linkreplacement", description="Toggle automatic link replacement for this server")
+    @app_commands.describe(enabled="Enable or disable automatic link replacement")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="Enable link replacement", value=1),
+        app_commands.Choice(name="Disable link replacement", value=0)
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def link_replacement(self, interaction: discord.Interaction, enabled: int):
+        """Toggle link replacement for the server (requires administrator permission)"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Update guild setting
+            db.set_guild_link_replacement(
+                guild_id=interaction.guild.id,
+                enabled=bool(enabled)
+            )
+            
+            status = "**enabled** ✅" if enabled else "**disabled** 🔕"
+            await interaction.response.send_message(
+                f"Link replacement {status}\n"
+                f"The bot will {'now automatically fix' if enabled else 'no longer fix'} social media links "
+                f"(Twitter/X, TikTok, Instagram, Reddit, etc.) in this server.",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error updating link replacement setting: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating the link replacement setting. Please try again later.",
+                ephemeral=True
+            )
+    
+    @app_commands.command(name="loadboosterroles", description="Load existing booster roles into the database")
+    @app_commands.default_permissions(administrator=True)
+    async def load_booster_roles(self, interaction: discord.Interaction):
+        """Scan server for existing booster roles and save them to database (requires administrator permission)"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        # Defer response since this might take a while
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            guild = interaction.guild
+            roles_found = 0
+            roles_saved = 0
+            errors = 0
+            
+            # Get the booster role
+            booster_role = discord.utils.get(guild.roles, is_premium_subscriber=True)
+            if not booster_role:
+                await interaction.followup.send(
+                    "❌ No booster role found in this server. Make sure the server has boosting enabled.",
+                    ephemeral=True
+                )
+                return
+            
+            # Build a report
+            report_lines = []
+            
+            # Scan all members who have the booster role
+            for member in guild.members:
+                if booster_role not in member.roles:
+                    continue
+                
+                # Find their custom role (only one member, not @everyone, not booster role)
+                personal_roles = [
+                    role for role in member.roles 
+                    if role != booster_role 
+                    and not role.is_default() 
+                    and len(role.members) == 1
+                ]
+                
+                if not personal_roles:
+                    continue
+                
+                # Use the first personal role found
+                role = personal_roles[0]
+                roles_found += 1
+                
+                try:
+                    # Prepare role data
+                    color_hex = f"#{role.color.value:06x}"
+                    icon_hash = role.icon.key if role.icon else None
+                    icon_data = None
+                    
+                    # Download icon data if it exists
+                    if role.icon:
+                        try:
+                            icon_data = await role.icon.read()
+                        except Exception as e:
+                            print(f"Could not read icon for {member.display_name}: {e}")
+                    
+                    # Save to database (default to 'solid' since we don't know the original type)
+                    db.store_booster_role(
+                        user_id=member.id,
+                        guild_id=guild.id,
+                        role_id=role.id,
+                        role_name=role.name,
+                        color_hex=color_hex,
+                        color_type='solid',  # Default assumption
+                        icon_hash=icon_hash,
+                        icon_data=icon_data
+                    )
+                    
+                    roles_saved += 1
+                    icon_status = " (with icon)" if icon_data else ""
+                    report_lines.append(f"✅ {member.display_name}: `{role.name}`{icon_status}")
+                    
+                except Exception as e:
+                    errors += 1
+                    report_lines.append(f"❌ {member.display_name}: Error - {str(e)[:50]}")
+                    print(f"Error saving role for {member.display_name}: {e}")
+            
+            # Build summary message
+            summary = f"**Booster Roles Scan Complete**\n\n"
+            summary += f"📊 **Summary:**\n"
+            summary += f"• Found: {roles_found} role(s)\n"
+            summary += f"• Saved: {roles_saved} role(s)\n"
+            summary += f"• Errors: {errors}\n\n"
+            
+            if report_lines:
+                summary += "**Details:**\n" + "\n".join(report_lines[:20])  # Limit to 20 entries to avoid message length issues
+                if len(report_lines) > 20:
+                    summary += f"\n... and {len(report_lines) - 20} more"
+            else:
+                summary += "ℹ️ No custom booster roles found in this server."
+            
+            await interaction.followup.send(summary, ephemeral=True)
+            
+        except Exception as e:
+            print(f"Error loading booster roles: {e}")
+            await interaction.followup.send(
+                f"❌ An error occurred while loading booster roles: {str(e)[:100]}",
+                ephemeral=True
+            )
     
 
 bot.run(os.getenv("DISCORD_TOKEN"))

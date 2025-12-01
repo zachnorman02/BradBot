@@ -173,6 +173,59 @@ class Migration005(Migration):
         except Exception as e:
             print(f"   ⚠️  Could not grant admin access (may not exist): {e}")
 
+class Migration006(Migration):
+    def __init__(self):
+        super().__init__("006", "Rename settings to user_settings and create guild_settings table")
+    
+    def up(self):
+        # Rename settings table to user_settings
+        rename_sql = """
+        ALTER TABLE main.settings RENAME TO user_settings;
+        """
+        db.execute_query(rename_sql, fetch=False)
+        print(f"   ✅ Renamed settings table to user_settings")
+        
+        # Create guild_settings table
+        create_table_sql = """
+        CREATE TABLE IF NOT EXISTS main.guild_settings (
+            guild_id BIGINT NOT NULL,
+            setting_name CHARACTER VARYING NOT NULL,
+            setting_value TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (guild_id, setting_name)
+        );
+        """
+        db.execute_query(create_table_sql, fetch=False)
+        print(f"   ✅ Created guild_settings table")
+        
+        # Create index on guild_id for faster lookups
+        index_sql = """
+        CREATE INDEX ASYNC idx_guild_settings_guild 
+        ON main.guild_settings(guild_id);
+        """
+        try:
+            db.execute_query(index_sql, fetch=False)
+            print(f"   ℹ️  Index creation started asynchronously")
+        except Exception as e:
+            if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
+                print(f"   ℹ️  Index already exists")
+            else:
+                print(f"   ⚠️  Could not create index: {e}")
+        
+        # Grant read access to admin user
+        grant_sql = """
+        GRANT SELECT ON main.guild_settings TO admin;
+        """
+        try:
+            db.execute_query(grant_sql, fetch=False)
+        except Exception as e:
+            print(f"   ⚠️  Could not grant admin access (may not exist): {e}")
+        
+        # Set default link_replacement setting to enabled for all existing guilds
+        # We'll do this via the bot's on_guild_join or on first use
+        print(f"   ℹ️  Guild setting 'link_replacement' defaults to enabled")
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -180,6 +233,7 @@ MIGRATIONS = [
     Migration003(),  # Grant admin read access
     Migration004(),  # Clean up duplicate settings
     Migration005(),  # Booster roles table
+    Migration006(),  # Rename to user_settings and add guild_settings
 ]
 
 def get_applied_migrations():
