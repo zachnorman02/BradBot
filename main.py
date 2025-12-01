@@ -21,11 +21,6 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# In-memory settings: {guild_id: include_original_message}
-settings = {}
-
-# No need for tracking storage - we'll just check the original message!
-
 # Helper functions for emoji commands
 def check_emoji_permissions(interaction: discord.Interaction) -> str | None:
     """Check if both bot and user have create expressions permission. Returns error message or None if OK."""
@@ -37,7 +32,6 @@ def check_emoji_permissions(interaction: discord.Interaction) -> str | None:
 
 def parse_message_link(message_link: str):
     """Parse message link and return guild_id, channel_id, message_id or None if invalid"""
-    import re
     match = re.match(r"https://discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)", message_link)
     if not match:
         return None, None, None
@@ -334,8 +328,6 @@ async def on_message(message):
     if not urls:
         return
     
-    print(f"[DEBUG] Found URLs: {urls}")
-    
     new_content = message.content
     content_changed = False
     fixed_urls = {}
@@ -347,25 +339,20 @@ async def on_message(message):
         for website_class in websites:
             website = website_class.if_valid(url)
             if website:
-                print(f"[DEBUG] URL {url} matched {website.__class__.__name__}")
                 # Check if this is Instagram and get embed URL
                 if website.__class__.__name__ == 'InstagramLink' and hasattr(website, 'get_embed_url'):
                     instagram_embed_url = website.get_embed_url()
                 
                 fixed_url = await website.render()
-                print(f"[DEBUG] Rendered URL: {url} -> {fixed_url}")
                 if fixed_url and fixed_url != url:
                     fixed_urls[url] = fixed_url
-                    print(f"[DEBUG] Added to fixed_urls: {url} -> {fixed_url}")
                 break
     
     # Apply website fixes
     if fixed_urls:
-        print(f"[DEBUG] Applying fixes: {fixed_urls}")
         for original_url, fixed_url in fixed_urls.items():
             new_content = new_content.replace(original_url, fixed_url)
         content_changed = True
-        print(f"[DEBUG] Content changed: {content_changed}, new_content: {new_content}")
     
     amp_fixed_content = await fix_amp_links(new_content)
     if amp_fixed_content != new_content:
@@ -422,14 +409,11 @@ async def on_message(message):
             new_content += f"\n-# [EmbedEZ]({embedez_url})"
         if instagram_embed_url:
             new_content += f"\n-# [Embed]({instagram_embed_url})"
-        print(f"[DEBUG] Final content to send: {new_content}")
 
     if content_changed:
-        print(f"[DEBUG] Attempting to send message...")
         # If original message was a reply, make the new message a reply too
         reference = message.reference
         sent_message = await message.channel.send(new_content, reference=reference)
-        print(f"[DEBUG] Message sent: {sent_message.id}")
         
         # Store message tracking for reply notifications
         if sent_message and message.guild:
@@ -445,11 +429,9 @@ async def on_message(message):
                     original_url=original_url,
                     fixed_url=fixed_url
                 )
-                print(f"✓ Stored message tracking: bot_msg={sent_message.id}, user={message.author.id}")
             except Exception as e:
-                print(f"✗ Failed to store message tracking: {e}")
-                import traceback
-                traceback.print_exc()
+                # Silently log database errors, don't interrupt message flow
+                print(f"Failed to store message tracking: {e}")
         
         try:
             await message.delete()
@@ -520,7 +502,6 @@ class EmojiGroup(app_commands.Group):
             return
         
         # Find all custom emojis in the message
-        import re
         emoji_pattern = r'<a?:([\w]+):([0-9]+)>'
         emoji_matches = list(re.finditer(emoji_pattern, msg.content))
         
