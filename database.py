@@ -206,7 +206,7 @@ class Database:
             return result[0][0].lower() == 'true'
         return True  # Default: link replacement enabled
     
-    def set_guild_link_replacement(self, guild_id: int, enabled: bool):
+    def set_guild_link_replacement(self, guild_id: int, enabled: bool, changed_by_user_id: int = None, changed_by_username: str = None):
         """Set guild's link replacement preference"""
         # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
         delete_query = """
@@ -222,6 +222,12 @@ class Database:
         VALUES (%s, 'link_replacement', %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (guild_id, 'true' if enabled else 'false'), fetch=False)
+        
+        # Log who made the change
+        if changed_by_user_id:
+            status = 'enabled' if enabled else 'disabled'
+            username_info = f" ({changed_by_username})" if changed_by_username else ""
+            print(f"🔧 Guild {guild_id}: Link replacement {status} by user {changed_by_user_id}{username_info}")
     
     # Message tracking methods
     def store_message_tracking(self, bot_message_id: int, user_id: int, guild_id: int, 

@@ -30,7 +30,9 @@ class AdminGroup(app_commands.Group):
             # Update guild setting
             db.set_guild_link_replacement(
                 guild_id=interaction.guild.id,
-                enabled=bool(enabled)
+                enabled=bool(enabled),
+                changed_by_user_id=interaction.user.id,
+                changed_by_username=str(interaction.user)
             )
             
             status = "**enabled** ✅" if enabled else "**disabled** 🔕"
@@ -258,5 +260,74 @@ class AdminGroup(app_commands.Group):
             print(f"Error saving booster role: {e}")
             await interaction.followup.send(
                 f"❌ An error occurred while saving the booster role: {str(e)[:100]}",
+                ephemeral=True
+            )
+    
+    @app_commands.command(name="sql", description="Execute a SQL query (BOT OWNER ONLY)")
+    @app_commands.describe(query="The SQL query to execute")
+    async def execute_sql(self, interaction: discord.Interaction, query: str):
+        """Execute a SQL query on the database (BOT OWNER ONLY)"""
+        # Check if user is the bot owner
+        app_info = await interaction.client.application_info()
+        if interaction.user.id != app_info.owner.id:
+            await interaction.response.send_message(
+                "❌ This command is restricted to the bot owner only.",
+                ephemeral=True
+            )
+            return
+        
+        # Defer response since query might take time
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Log the query execution
+            print(f"🔍 SQL Query executed by {interaction.user} (ID: {interaction.user.id}):")
+            print(f"   Query: {query}")
+            
+            # Determine if this is a SELECT query or a modification query
+            is_select = query.strip().upper().startswith('SELECT')
+            
+            if is_select:
+                # Execute SELECT query and fetch results
+                results = db.execute_query(query)
+                
+                if not results:
+                    await interaction.followup.send("✅ Query executed successfully. No results returned.", ephemeral=True)
+                    return
+                
+                # Format results as a table
+                response = f"✅ Query returned {len(results)} row(s):\n```\n"
+                
+                # Limit output to prevent message from being too long
+                max_rows = 20
+                for i, row in enumerate(results[:max_rows]):
+                    response += f"{i+1}. {row}\n"
+                
+                if len(results) > max_rows:
+                    response += f"... and {len(results) - max_rows} more row(s)\n"
+                
+                response += "```"
+                
+                # Discord message limit is 2000 characters
+                if len(response) > 1900:
+                    response = response[:1900] + "\n...\n```\n⚠️ Output truncated due to length"
+                
+                await interaction.followup.send(response, ephemeral=True)
+            else:
+                # Execute modification query (INSERT, UPDATE, DELETE, etc.)
+                db.execute_query(query, fetch=False)
+                await interaction.followup.send("✅ Query executed successfully.", ephemeral=True)
+            
+            print(f"   ✅ Query completed successfully")
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"   ❌ Query failed: {error_msg}")
+            await interaction.followup.send(
+                f"❌ Error executing query:\n```\n{error_msg[:1800]}\n```",
                 ephemeral=True
             )
