@@ -126,13 +126,11 @@ async def daily_booster_role_check():
         wait_seconds = (next_run - now).total_seconds()
         await asyncio.sleep(wait_seconds)
         for guild in bot.guilds:
-            booster_role = discord.utils.get(guild.roles, is_premium_subscriber=True)
-            if not booster_role:
-                continue
             for member in guild.members:
-                # Find custom roles (only one member, not @everyone, not booster role)
-                personal_roles = [role for role in member.roles if role != booster_role and not role.is_default() and len(role.members) == 1]
-                if personal_roles and booster_role not in member.roles:
+                # Find custom roles (only one member, not @everyone)
+                personal_roles = [role for role in member.roles if not role.is_default() and len(role.members) == 1]
+                # Check if user has custom roles but is NOT a booster (lost booster status)
+                if personal_roles and not member.premium_since:
                     # User lost booster status - save role info to DB before deleting
                     for role in personal_roles:
                         try:
@@ -928,14 +926,15 @@ class EmojiGroup(app_commands.Group):
 # Helper functions for booster roles
 async def get_or_create_booster_role(interaction: discord.Interaction, db_role_data: dict = None):
     """Get existing booster role or create/restore from database"""
-    # Find existing custom role (only they have it)
-    user_roles = [role for role in interaction.user.roles if not role.is_default()]
-    personal_role = None
+    # Find existing custom role(s) (only they have it, not @everyone)
+    personal_roles = [
+        role for role in interaction.user.roles 
+        if not role.is_default() 
+        and len(role.members) == 1
+    ]
     
-    for role in user_roles:
-        if len(role.members) == 1 and not any(r.is_premium_subscriber() for r in [role]):
-            personal_role = role
-            break
+    # Use the highest personal role by position
+    personal_role = max(personal_roles, key=lambda r: r.position) if personal_roles else None
     
     # If no role exists, check database for saved role
     if not personal_role and db_role_data:
@@ -1833,36 +1832,27 @@ class AdminGroup(app_commands.Group):
             roles_saved = 0
             errors = 0
             
-            # Get the booster role
-            booster_role = discord.utils.get(guild.roles, is_premium_subscriber=True)
-            if not booster_role:
-                await interaction.followup.send(
-                    "❌ No booster role found in this server. Make sure the server has boosting enabled.",
-                    ephemeral=True
-                )
-                return
-            
             # Build a report
             report_lines = []
             
-            # Scan all members who have the booster role
+            # Scan all members for boosters and their custom roles
             for member in guild.members:
-                if booster_role not in member.roles:
+                # Check if member is a booster
+                if not member.premium_since:
                     continue
                 
-                # Find their custom role (only one member, not @everyone, not booster role)
+                # Find their custom role (only one member, not @everyone)
                 personal_roles = [
                     role for role in member.roles 
-                    if role != booster_role 
-                    and not role.is_default() 
+                    if not role.is_default() 
                     and len(role.members) == 1
                 ]
                 
                 if not personal_roles:
                     continue
                 
-                # Use the first personal role found
-                role = personal_roles[0]
+                # Use the highest personal role by position
+                role = max(personal_roles, key=lambda r: r.position)
                 roles_found += 1
                 
                 try:
