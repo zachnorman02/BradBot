@@ -120,9 +120,9 @@ async def create_emoji_or_sticker_with_overwrite(guild, name: str, image_bytes: 
 async def daily_booster_role_check():
     await bot.wait_until_ready()
     while not bot.is_closed():
-        now = datetime.datetime.now(datetime.UTC)
+        now = dt.datetime.now(dt.timezone.utc)
         # Run at midnight UTC
-        next_run = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        next_run = (now + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         wait_seconds = (next_run - now).total_seconds()
         await asyncio.sleep(wait_seconds)
         for guild in bot.guilds:
@@ -994,8 +994,8 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
     return personal_role
 
 
-async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role, color_type: str = "solid"):
-    """Save role configuration to database"""
+async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role):
+    """Save role configuration to database. Auto-detects color_type if not provided."""
     try:
         color_hex = f"#{role.color.value:06x}"
         secondary_color_hex = f"#{role.secondary_color.value:06x}" if role.secondary_color else None
@@ -1008,6 +1008,12 @@ async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role, color
                 icon_data = await role.icon.read()
             except Exception:
                 pass
+        if tertiary_color_hex:
+            color_type = "holographic"
+        elif secondary_color_hex:
+            color_type = "gradient"
+        else:
+            color_type = "solid"
         
         db.store_booster_role(
             user_id=user_id,
@@ -1960,8 +1966,7 @@ class AdminGroup(app_commands.Group):
     @app_commands.command(name="saveboosterrole", description="Manually save a booster role to the database")
     @app_commands.describe(
         user="The user who owns the role",
-        role="The role to save",
-        color_type="Color type: solid, gradient, or holographic (default: solid)"
+        role="The role to save"
     )
     @app_commands.choices(color_type=[
         app_commands.Choice(name="Solid", value="solid"),
@@ -1969,7 +1974,7 @@ class AdminGroup(app_commands.Group):
         app_commands.Choice(name="Holographic", value="holographic")
     ])
     @app_commands.default_permissions(administrator=True)
-    async def save_booster_role(self, interaction: discord.Interaction, user: discord.Member, role: discord.Role, color_type: str = "solid"):
+    async def save_booster_role(self, interaction: discord.Interaction, user: discord.Member, role: discord.Role):
         """Manually save a specific booster role to the database (requires administrator permission)"""
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
@@ -1979,22 +1984,6 @@ class AdminGroup(app_commands.Group):
             # Initialize database connection if needed
             if not db.connection_pool:
                 db.init_pool()
-            
-            # Validate that the role only has 1 member
-            if len(role.members) != 1:
-                await interaction.response.send_message(
-                    f"❌ Role `{role.name}` has {len(role.members)} member(s). Booster roles should only have 1 member.",
-                    ephemeral=True
-                )
-                return
-            
-            # Validate that the user has the role
-            if role not in user.roles:
-                await interaction.response.send_message(
-                    f"❌ {user.mention} does not have the role `{role.name}`.",
-                    ephemeral=True
-                )
-                return
             
             # Validate that the user is a booster
             if not user.premium_since:
