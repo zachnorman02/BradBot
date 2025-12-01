@@ -1229,7 +1229,7 @@ class BoosterRoleGroup(app_commands.Group):
             )
             
             # Save to database
-            await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role, style)
+            await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role)
             
             embed = discord.Embed(
                 title="✅ Role Color Updated!",
@@ -1278,8 +1278,7 @@ class BoosterRoleGroup(app_commands.Group):
             await highest_role.edit(name=role_label, reason=f"Booster role label change by {interaction.user}")
             
             # Save to database
-            await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role, 
-                                 db_role_data['color_type'] if db_role_data else 'solid')
+            await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role)
             
             await interaction.response.send_message(f"✅ Role label updated from **{old_name}** to **{role_label}**!", ephemeral=True)
         except discord.Forbidden:
@@ -1328,8 +1327,7 @@ class BoosterRoleGroup(app_commands.Group):
             await highest_role.edit(icon=image_bytes)
             
             # Save to database
-            await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role, 
-                                 db_role_data['color_type'] if db_role_data else 'solid')
+            await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role)
             
             await interaction.response.send_message(f"✅ Role icon updated!", ephemeral=True)
         except discord.Forbidden:
