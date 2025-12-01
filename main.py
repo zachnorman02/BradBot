@@ -1968,11 +1968,6 @@ class AdminGroup(app_commands.Group):
         user="The user who owns the role",
         role="The role to save"
     )
-    @app_commands.choices(color_type=[
-        app_commands.Choice(name="Solid", value="solid"),
-        app_commands.Choice(name="Gradient", value="gradient"),
-        app_commands.Choice(name="Holographic", value="holographic")
-    ])
     @app_commands.default_permissions(administrator=True)
     async def save_booster_role(self, interaction: discord.Interaction, user: discord.Member, role: discord.Role):
         """Manually save a specific booster role to the database (requires administrator permission)"""
@@ -1998,6 +1993,14 @@ class AdminGroup(app_commands.Group):
             tertiary_color_hex = f"#{role.tertiary_color.value:06x}" if role.tertiary_color else None
             icon_hash = role.icon.key if role.icon else None
             icon_data = None
+            
+            # Auto-detect color type based on colors present
+            if tertiary_color_hex:
+                color_type = "holographic"
+            elif secondary_color_hex:
+                color_type = "gradient"
+            else:
+                color_type = "solid"
             
             # Download icon data if it exists
             if role.icon:
