@@ -136,6 +136,8 @@ async def daily_booster_role_check():
                         try:
                             # Save role configuration to database
                             color_hex = f"#{role.color.value:06x}"
+                            secondary_color_hex = f"#{role.secondary_color.value:06x}" if role.secondary_color else None
+                            tertiary_color_hex = f"#{role.tertiary_color.value:06x}" if role.tertiary_color else None
                             icon_hash = role.icon.key if role.icon else None
                             icon_data = None
                             if role.icon:
@@ -156,7 +158,9 @@ async def daily_booster_role_check():
                                 color_hex=color_hex,
                                 color_type=color_type,
                                 icon_hash=icon_hash,
-                                icon_data=icon_data
+                                icon_data=icon_data,
+                                secondary_color_hex=secondary_color_hex,
+                                tertiary_color_hex=tertiary_color_hex
                             )
                             print(f"Saved booster role for {member.display_name} before deletion")
                             
@@ -940,12 +944,21 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
     if not personal_role and db_role_data:
         # Restore role from database
         try:
-            color = discord.Color(int(db_role_data['color_hex'].replace('#', ''), 16))
+            primary_color = discord.Color(int(db_role_data['color_hex'].replace('#', ''), 16))
+            secondary_color = None
+            tertiary_color = None
+            
+            if db_role_data.get('secondary_color_hex'):
+                secondary_color = discord.Color(int(db_role_data['secondary_color_hex'].replace('#', ''), 16))
+            if db_role_data.get('tertiary_color_hex'):
+                tertiary_color = discord.Color(int(db_role_data['tertiary_color_hex'].replace('#', ''), 16))
             
             # Create role with saved configuration
             personal_role = await interaction.guild.create_role(
                 name=db_role_data['role_name'],
-                color=color,
+                color=primary_color,
+                secondary_color=secondary_color,
+                tertiary_color=tertiary_color,
                 reason="Restoring saved booster role"
             )
             
@@ -982,9 +995,12 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
 
 
 async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role, color_type: str = "solid"):
+async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role, color_type: str = "solid"):
     """Save role configuration to database"""
     try:
         color_hex = f"#{role.color.value:06x}"
+        secondary_color_hex = f"#{role.secondary_color.value:06x}" if role.secondary_color else None
+        tertiary_color_hex = f"#{role.tertiary_color.value:06x}" if role.tertiary_color else None
         icon_hash = role.icon.key if role.icon else None
         icon_data = None
         
@@ -1002,7 +1018,9 @@ async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role, color
             color_hex=color_hex,
             color_type=color_type,
             icon_hash=icon_hash,
-            icon_data=icon_data
+            icon_data=icon_data,
+            secondary_color_hex=secondary_color_hex,
+            tertiary_color_hex=tertiary_color_hex
         )
     except Exception as e:
         print(f"Error saving role to database: {e}")
@@ -1015,14 +1033,15 @@ class BoosterRoleGroup(app_commands.Group):
     @app_commands.describe(
         style="Color style type",
         hex="Primary color (hex code like #FF0000)",
-        hex2="Secondary color for gradients (hex code like #00FF00)"
+        hex2="Secondary color for gradient/holographic (hex code like #00FF00)",
+        hex3="Tertiary color for holographic only (hex code like #0000FF)"
     )
     @app_commands.choices(style=[
         app_commands.Choice(name="Solid", value="solid"),
         app_commands.Choice(name="Gradient", value="gradient"),
         app_commands.Choice(name="Holographic", value="holographic")
     ])
-    async def color(self, interaction: discord.Interaction, style: str = "solid", hex: str = None, hex2: str = None):
+    async def color(self, interaction: discord.Interaction, style: str = "solid", hex: str = None, hex2: str = None, hex3: str = None):
         # Check if user is a booster
         if not any(role.is_premium_subscriber() for role in interaction.user.roles):
             await interaction.response.send_message("❌ This command is only available to server boosters!", ephemeral=True)
@@ -1038,52 +1057,71 @@ class BoosterRoleGroup(app_commands.Group):
             return
         
         # Generate color based on style and hex values
-        color = None
+        primary_color = None
+        secondary_color = None
+        tertiary_color = None
         description = ""
         
         if style == "solid":
             if hex:
                 try:
-                    color = discord.Color(int(hex.replace('#', ''), 16))
+                    primary_color = discord.Color(int(hex.replace('#', ''), 16))
                     description = f"Solid color: {hex}"
                 except ValueError:
                     await interaction.response.send_message("❌ Invalid hex color format. Use format like #FF0000", ephemeral=True)
                     return
             else:
-                color = discord.Color.random()
-                description = f"Random solid color: #{color.value:06X}"
+                primary_color = discord.Color.random()
+                description = f"Random solid color: #{primary_color.value:06X}"
         
         elif style == "gradient":
-            # For gradient, we'll use the primary color but mention it's a gradient
+            # Gradient requires primary and secondary colors
             if hex:
                 try:
-                    color = discord.Color(int(hex.replace('#', ''), 16))
-                    description = f"Gradient color (primary): {hex}"
-                    if hex2:
-                        description += f" to {hex2}"
+                    primary_color = discord.Color(int(hex.replace('#', ''), 16))
                 except ValueError:
-                    await interaction.response.send_message("❌ Invalid hex color format. Use format like #FF0000", ephemeral=True)
+                    await interaction.response.send_message("❌ Invalid primary hex color format. Use format like #FF0000", ephemeral=True)
                     return
             else:
-                color = discord.Color.random()
-                description = f"Random gradient color: #{color.value:06X}"
+                primary_color = discord.Color.random()
+            
+            if hex2:
+                try:
+                    secondary_color = discord.Color(int(hex2.replace('#', ''), 16))
+                except ValueError:
+                    await interaction.response.send_message("❌ Invalid secondary hex color format. Use format like #00FF00", ephemeral=True)
+                    return
+            else:
+                # Generate a complementary color
+                secondary_color = discord.Color.random()
+            
+            description = f"Gradient: #{primary_color.value:06X} → #{secondary_color.value:06X}"
         
         elif style == "holographic":
-            # For holographic, we'll use a bright/iridescent color
-            if hex:
+            # Holographic uses specific Discord values or custom ones
+            if hex and hex2 and hex3:
                 try:
-                    color = discord.Color(int(hex.replace('#', ''), 16))
-                    description = f"Holographic color: {hex}"
+                    primary_color = discord.Color(int(hex.replace('#', ''), 16))
+                    secondary_color = discord.Color(int(hex2.replace('#', ''), 16))
+                    tertiary_color = discord.Color(int(hex3.replace('#', ''), 16))
+                    description = f"Holographic: #{primary_color.value:06X}, #{secondary_color.value:06X}, #{tertiary_color.value:06X}"
                 except ValueError:
                     await interaction.response.send_message("❌ Invalid hex color format. Use format like #FF0000", ephemeral=True)
                     return
             else:
-                # Use a bright, colorful default for holographic
-                color = discord.Color.from_rgb(255, 0, 255)  # Bright magenta
-                description = f"Holographic color: #{color.value:06X}"
+                # Use Discord's default holographic values
+                primary_color = discord.Color(11127295)   # 0xA9D9FF
+                secondary_color = discord.Color(16759788) # 0xFFADDC
+                tertiary_color = discord.Color(16761760)  # 0xFFB5A0
+                description = f"Holographic (Discord default)"
         
         try:
-            await highest_role.edit(color=color)
+            # Edit role with all color values
+            await highest_role.edit(
+                color=primary_color,
+                secondary_color=secondary_color,
+                tertiary_color=tertiary_color
+            )
             
             # Save to database
             await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role, style)
@@ -1091,7 +1129,7 @@ class BoosterRoleGroup(app_commands.Group):
             embed = discord.Embed(
                 title="✅ Role Color Updated!",
                 description=description,
-                color=color
+                color=primary_color
             )
             embed.add_field(name="Style", value=style.title(), inline=True)
             embed.add_field(name="Role", value=highest_role.mention, inline=True)
@@ -1858,8 +1896,14 @@ class AdminGroup(app_commands.Group):
                 try:
                     # Prepare role data
                     color_hex = f"#{role.color.value:06x}"
+                    secondary_color_hex = f"#{role.secondary_color.value:06x}" if role.secondary_color else None
+                    tertiary_color_hex = f"#{role.tertiary_color.value:06x}" if role.tertiary_color else None
                     icon_hash = role.icon.key if role.icon else None
                     icon_data = None
+                    
+                    # Try to get existing color type from database, default to 'solid'
+                    existing_role = db.get_booster_role(member.id, guild.id)
+                    color_type = existing_role['color_type'] if existing_role else 'solid'
                     
                     # Download icon data if it exists
                     if role.icon:
@@ -1868,16 +1912,18 @@ class AdminGroup(app_commands.Group):
                         except Exception as e:
                             print(f"Could not read icon for {member.display_name}: {e}")
                     
-                    # Save to database (default to 'solid' since we don't know the original type)
+                    # Save to database (preserve existing color_type or default to 'solid')
                     db.store_booster_role(
                         user_id=member.id,
                         guild_id=guild.id,
                         role_id=role.id,
                         role_name=role.name,
                         color_hex=color_hex,
-                        color_type='solid',  # Default assumption
+                        color_type=color_type,
                         icon_hash=icon_hash,
-                        icon_data=icon_data
+                        icon_data=icon_data,
+                        secondary_color_hex=secondary_color_hex,
+                        tertiary_color_hex=tertiary_color_hex
                     )
                     
                     roles_saved += 1
@@ -1909,6 +1955,101 @@ class AdminGroup(app_commands.Group):
             print(f"Error loading booster roles: {e}")
             await interaction.followup.send(
                 f"❌ An error occurred while loading booster roles: {str(e)[:100]}",
+                ephemeral=True
+            )
+    
+    @app_commands.command(name="saveboosterrole", description="Manually save a booster role to the database")
+    @app_commands.describe(
+        user="The user who owns the role",
+        role="The role to save",
+        color_type="Color type: solid, gradient, or holographic (default: solid)"
+    )
+    @app_commands.choices(color_type=[
+        app_commands.Choice(name="Solid", value="solid"),
+        app_commands.Choice(name="Gradient", value="gradient"),
+        app_commands.Choice(name="Holographic", value="holographic")
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def save_booster_role(self, interaction: discord.Interaction, user: discord.Member, role: discord.Role, color_type: str = "solid"):
+        """Manually save a specific booster role to the database (requires administrator permission)"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Validate that the role only has 1 member
+            if len(role.members) != 1:
+                await interaction.response.send_message(
+                    f"❌ Role `{role.name}` has {len(role.members)} member(s). Booster roles should only have 1 member.",
+                    ephemeral=True
+                )
+                return
+            
+            # Validate that the user has the role
+            if role not in user.roles:
+                await interaction.response.send_message(
+                    f"❌ {user.mention} does not have the role `{role.name}`.",
+                    ephemeral=True
+                )
+                return
+            
+            # Validate that the user is a booster
+            if not user.premium_since:
+                await interaction.response.send_message(
+                    f"⚠️ Warning: {user.mention} is not currently a server booster. Saving anyway...",
+                    ephemeral=True
+                )
+            
+            # Prepare role data
+            color_hex = f"#{role.color.value:06x}"
+            secondary_color_hex = f"#{role.secondary_color.value:06x}" if role.secondary_color else None
+            tertiary_color_hex = f"#{role.tertiary_color.value:06x}" if role.tertiary_color else None
+            icon_hash = role.icon.key if role.icon else None
+            icon_data = None
+            
+            # Download icon data if it exists
+            if role.icon:
+                try:
+                    icon_data = await role.icon.read()
+                except Exception as e:
+                    print(f"Could not read icon for role {role.name}: {e}")
+            
+            # Save to database
+            db.store_booster_role(
+                user_id=user.id,
+                guild_id=interaction.guild.id,
+                role_id=role.id,
+                role_name=role.name,
+                color_hex=color_hex,
+                color_type=color_type,
+                icon_hash=icon_hash,
+                icon_data=icon_data,
+                secondary_color_hex=secondary_color_hex,
+                tertiary_color_hex=tertiary_color_hex
+            )
+            
+            icon_status = " with icon" if icon_data else ""
+            color_info = color_hex
+            if secondary_color_hex:
+                color_info += f", {secondary_color_hex}"
+            if tertiary_color_hex:
+                color_info += f", {tertiary_color_hex}"
+            
+            await interaction.response.send_message(
+                f"✅ Saved booster role for {user.mention}\n"
+                f"• Role: `{role.name}`\n"
+                f"• Colors: {color_info} ({color_type}){icon_status}",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            print(f"Error saving booster role: {e}")
+            await interaction.response.send_message(
+                f"❌ An error occurred while saving the booster role: {str(e)[:100]}",
                 ephemeral=True
             )
     

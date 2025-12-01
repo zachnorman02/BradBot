@@ -226,6 +226,27 @@ class Migration006(Migration):
         # We'll do this via the bot's on_guild_join or on first use
         print(f"   ℹ️  Guild setting 'link_replacement' defaults to enabled")
 
+class Migration007(Migration):
+    def __init__(self):
+        super().__init__("007", "Add secondary and tertiary color columns to booster_roles")
+    
+    def up(self):
+        # Add secondary_color_hex column
+        alter_secondary_sql = """
+        ALTER TABLE main.booster_roles 
+        ADD COLUMN IF NOT EXISTS secondary_color_hex TEXT;
+        """
+        db.execute_query(alter_secondary_sql, fetch=False)
+        print(f"   ✅ Added secondary_color_hex column")
+        
+        # Add tertiary_color_hex column
+        alter_tertiary_sql = """
+        ALTER TABLE main.booster_roles 
+        ADD COLUMN IF NOT EXISTS tertiary_color_hex TEXT;
+        """
+        db.execute_query(alter_tertiary_sql, fetch=False)
+        print(f"   ✅ Added tertiary_color_hex column")
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -234,6 +255,7 @@ MIGRATIONS = [
     Migration004(),  # Clean up duplicate settings
     Migration005(),  # Booster roles table
     Migration006(),  # Rename to user_settings and add guild_settings
+    Migration007(),  # Add secondary and tertiary color columns
 ]
 
 def get_applied_migrations():
