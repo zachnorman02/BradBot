@@ -71,15 +71,41 @@ class Database:
         )
     
     def get_connection(self):
-        """Get a connection from the pool"""
+        """Get a connection from the pool, handling IAM token expiration"""
         if not self.connection_pool:
             self.init_pool()
-        return self.connection_pool.getconn()
+        
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                conn = self.connection_pool.getconn()
+                # Test if connection is still valid
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                return conn
+            except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+                # Connection is bad, close the pool and reinitialize with fresh IAM token
+                print(f"Database connection error (attempt {attempt + 1}/{max_retries}): {e}")
+                try:
+                    self.close_pool()
+                except Exception:
+                    pass
+                if attempt < max_retries - 1:
+                    self.init_pool()
+                else:
+                    raise
     
     def release_connection(self, conn):
         """Release a connection back to the pool"""
         if self.connection_pool:
-            self.connection_pool.putconn(conn)
+            try:
+                self.connection_pool.putconn(conn)
+            except Exception:
+                # If we can't release, just close it
+                try:
+                    conn.close()
+                except Exception:
+                    pass
     
     def close_pool(self):
         """Close all connections in the pool"""
@@ -89,31 +115,45 @@ class Database:
     
     def execute_query(self, query: str, params: tuple = None, fetch: bool = True):
         """Execute a query and return results"""
-        conn = self.get_connection()
+        conn = None
         try:
+            conn = self.get_connection()
             with conn.cursor() as cursor:
                 cursor.execute(query, params)
                 if fetch:
-                    return cursor.fetchall()
+                    result = cursor.fetchall()
+                    conn.commit()
+                    return result
                 conn.commit()
         except Exception as e:
-            conn.rollback()
+            if conn:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             raise e
         finally:
-            self.release_connection(conn)
+            if conn:
+                self.release_connection(conn)
     
     def execute_many(self, query: str, params_list: list):
         """Execute a query with multiple parameter sets"""
-        conn = self.get_connection()
+        conn = None
         try:
+            conn = self.get_connection()
             with conn.cursor() as cursor:
                 cursor.executemany(query, params_list)
                 conn.commit()
         except Exception as e:
-            conn.rollback()
+            if conn:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             raise e
         finally:
-            self.release_connection(conn)
+            if conn:
+                self.release_connection(conn)
     
     # User preference methods
     def get_user_reply_notifications(self, user_id: int, guild_id: int) -> bool:
