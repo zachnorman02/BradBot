@@ -995,7 +995,6 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
 
 
 async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role, color_type: str = "solid"):
-async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role, color_type: str = "solid"):
     """Save role configuration to database"""
     try:
         color_hex = f"#{role.color.value:06x}"
