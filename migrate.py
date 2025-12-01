@@ -247,6 +247,47 @@ class Migration007(Migration):
         db.execute_query(alter_tertiary_sql, fetch=False)
         print(f"   ✅ Added tertiary_color_hex column")
 
+# Migration: Update color types based on actual color data
+class Migration008(Migration):
+    def __init__(self):
+        super().__init__("008", "Update color_type to gradient/holographic based on secondary/tertiary colors")
+    
+    def up(self):
+        # Update to 'gradient' if secondary_color_hex exists but not tertiary
+        update_gradient_sql = """
+        UPDATE main.booster_roles 
+        SET color_type = 'gradient'
+        WHERE secondary_color_hex IS NOT NULL 
+        AND (tertiary_color_hex IS NULL OR tertiary_color_hex = '')
+        AND color_type = 'solid';
+        """
+        db.execute_query(update_gradient_sql, fetch=False)
+        print(f"   ✅ Updated rows with secondary color to 'gradient'")
+        
+        # Update to 'holographic' if both secondary and tertiary exist
+        update_holographic_sql = """
+        UPDATE main.booster_roles 
+        SET color_type = 'holographic'
+        WHERE secondary_color_hex IS NOT NULL 
+        AND tertiary_color_hex IS NOT NULL 
+        AND tertiary_color_hex != ''
+        AND color_type != 'holographic';
+        """
+        db.execute_query(update_holographic_sql, fetch=False)
+        print(f"   ✅ Updated rows with tertiary color to 'holographic'")
+
+# Migration: Grant admin access to all tables
+class Migration009(Migration):
+    def __init__(self):
+        super().__init__("009", "Grant admin SELECT access to all tables")
+    
+    def up(self):
+        # Grant read access on all current and future tables
+        db.execute_query("""
+            GRANT SELECT ON ALL TABLES IN SCHEMA main TO admin
+        """, fetch=False)
+        print(f"   ✅ Granted admin SELECT access to all tables")
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -256,6 +297,8 @@ MIGRATIONS = [
     Migration005(),  # Booster roles table
     Migration006(),  # Rename to user_settings and add guild_settings
     Migration007(),  # Add secondary and tertiary color columns
+    Migration008(),  # Update color_type based on color data
+    Migration009(),  # Grant admin access to all tables
 ]
 
 def get_applied_migrations():
