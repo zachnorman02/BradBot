@@ -170,6 +170,106 @@ async def daily_booster_role_check():
                             print(f"Error handling role removal for {member.display_name}: {e}")
 
 @bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    """Detect when a member starts boosting and auto-create or restore their role"""
+    # Check if member just started boosting
+    if not before.premium_since and after.premium_since:
+        try:
+            # Check if they have a saved role in the database
+            db_role_data = db.get_booster_role(after.id, after.guild.id)
+            
+            if db_role_data:
+                # User has a saved role - restore it
+                try:
+                    primary_color = discord.Color(int(db_role_data['color_hex'].replace('#', ''), 16))
+                    secondary_color = None
+                    tertiary_color = None
+                    
+                    if db_role_data.get('secondary_color_hex'):
+                        secondary_color = discord.Color(int(db_role_data['secondary_color_hex'].replace('#', ''), 16))
+                    if db_role_data.get('tertiary_color_hex'):
+                        tertiary_color = discord.Color(int(db_role_data['tertiary_color_hex'].replace('#', ''), 16))
+                    
+                    # Create role with saved configuration
+                    restored_role = await after.guild.create_role(
+                        name=db_role_data['role_name'],
+                        color=primary_color,
+                        secondary_color=secondary_color,
+                        tertiary_color=tertiary_color,
+                        reason=f"Auto-restoring booster role for {after.display_name}"
+                    )
+                    
+                    # Set icon if it exists
+                    if db_role_data['icon_data'] and "ROLE_ICONS" in after.guild.features:
+                        try:
+                            await restored_role.edit(display_icon=db_role_data['icon_data'])
+                        except Exception as e:
+                            print(f"Could not restore role icon for {after.display_name}: {e}")
+                    
+                    # Assign to user
+                    await after.add_roles(restored_role, reason="Auto-restoring booster role")
+                    
+                    # Update role_id in database
+                    db.update_booster_role_id(after.id, after.guild.id, restored_role.id)
+                    
+                    print(f"✅ Auto-restored booster role '{db_role_data['role_name']}' for {after.display_name}")
+                    
+                except Exception as e:
+                    print(f"Error restoring booster role for {after.display_name}: {e}")
+            else:
+                # No saved role - create a new default role
+                try:
+                    new_role = await after.guild.create_role(
+                        name=after.name,
+                        color=discord.Color.random(),
+                        reason=f"Auto-creating booster role for new booster {after.name}"
+                    )
+                    
+                    # Position it above the user's current highest role
+                    try:
+                        user_top_role = after.top_role
+                        # Position new role just above their current top role
+                        await new_role.edit(position=user_top_role.position + 1)
+                    except Exception as e:
+                        print(f"Could not position role: {e}")
+                    
+                    # Assign to user
+                    await after.add_roles(new_role, reason="Auto-creating booster role")
+                    
+                    # Save to database with auto-detected color type
+                    color_hex = f"#{new_role.color.value:06x}"
+                    secondary_color_hex = f"#{new_role.secondary_color.value:06x}" if new_role.secondary_color else None
+                    tertiary_color_hex = f"#{new_role.tertiary_color.value:06x}" if new_role.tertiary_color else None
+                    
+                    # Auto-detect color type
+                    if tertiary_color_hex:
+                        color_type = "holographic"
+                    elif secondary_color_hex:
+                        color_type = "gradient"
+                    else:
+                        color_type = "solid"
+                    
+                    db.store_booster_role(
+                        user_id=after.id,
+                        guild_id=after.guild.id,
+                        role_id=new_role.id,
+                        role_name=new_role.name,
+                        color_hex=color_hex,
+                        color_type=color_type,
+                        icon_hash=None,
+                        icon_data=None,
+                        secondary_color_hex=secondary_color_hex,
+                        tertiary_color_hex=tertiary_color_hex
+                    )
+                    
+                    print(f"✅ Auto-created new booster role '{new_role.name}' for {after.display_name}")
+                    
+                except Exception as e:
+                    print(f"Error creating new booster role for {after.display_name}: {e}")
+        except Exception as e:
+            print(f"Error checking for saved booster role: {e}")
+
+@bot.event
 async def on_ready():
     print(f'{bot.user} has logged in!')
     
@@ -1965,37 +2065,51 @@ class AdminGroup(app_commands.Group):
     
     @app_commands.command(name="saveboosterrole", description="Manually save a booster role to the database")
     @app_commands.describe(
-        user="The user who owns the role",
-        role="The role to save"
+        role="The role to save",
+        user="The user who owns the role (select from dropdown)",
+        user_id="Alternative: Manually enter user ID (for users not in server)"
     )
     @app_commands.default_permissions(administrator=True)
-    async def save_booster_role(self, interaction: discord.Interaction, user: discord.User, role: discord.Role):
+    async def save_booster_role(self, interaction: discord.Interaction, role: discord.Role, user: discord.User = None, user_id: str = None):
         """Manually save a specific booster role to the database (requires administrator permission)"""
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        # Require either user or user_id
+        if not user and not user_id:
+            await interaction.response.send_message("❌ Please provide either a user (from dropdown) or a user_id.", ephemeral=True)
             return
         
         # Defer response
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # Get member from user ID
-            member = interaction.guild.get_member(user.id)
-            if not member:
-                await interaction.followup.send(
-                    f"❌ Could not find {user.mention} in this server.",
-                    ephemeral=True
-                )
-                return
+            # Determine which user ID to use
+            if user:
+                uid = user.id
+            else:
+                # Convert user_id string to int
+                try:
+                    uid = int(user_id)
+                except ValueError:
+                    await interaction.followup.send(
+                        f"❌ Invalid user ID format. Please provide a numeric user ID.",
+                        ephemeral=True
+                    )
+                    return
+            
+            # Try to get member info (optional - just for booster status warning)
+            member = interaction.guild.get_member(uid)
+            booster_warning = ""
+            if member and not member.premium_since:
+                booster_warning = f"\n⚠️ Note: <@{uid}> is not currently a server booster."
+            elif not member:
+                booster_warning = f"\n⚠️ Note: User is not currently in the server."
             
             # Initialize database connection if needed
             if not db.connection_pool:
                 db.init_pool()
-            
-            # Check if booster (warning only)
-            booster_warning = ""
-            if not member.premium_since:
-                booster_warning = f"\n⚠️ Note: {user.mention} is not currently a server booster."
             
             # Prepare role data
             color_hex = f"#{role.color.value:06x}"
@@ -2021,7 +2135,7 @@ class AdminGroup(app_commands.Group):
             
             # Save to database
             db.store_booster_role(
-                user_id=user.id,
+                user_id=uid,
                 guild_id=interaction.guild.id,
                 role_id=role.id,
                 role_name=role.name,
@@ -2041,7 +2155,7 @@ class AdminGroup(app_commands.Group):
                 color_info += f", {tertiary_color_hex}"
             
             await interaction.followup.send(
-                f"✅ Saved booster role for {user.mention}\n"
+                f"✅ Saved booster role for <@{uid}>\n"
                 f"• Role: `{role.name}`\n"
                 f"• Colors: {color_info} ({color_type}){icon_status}{booster_warning}",
                 ephemeral=True
