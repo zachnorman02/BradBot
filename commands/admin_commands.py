@@ -49,6 +49,47 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
     
+    @app_commands.command(name="verifyroles", description="Toggle automatic verified/lvl 0 role management for this server")
+    @app_commands.describe(enabled="Enable or disable automatic verified role management")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="Enable verified role automation", value=1),
+        app_commands.Choice(name="Disable verified role automation", value=0)
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def verify_roles(self, interaction: discord.Interaction, enabled: int):
+        """Toggle verified/lvl 0 role automation for the server (requires administrator permission)"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Update guild setting
+            db.set_guild_setting(
+                guild_id=interaction.guild.id,
+                setting_name='verify_roles_enabled',
+                setting_value='true' if enabled else 'false'
+            )
+            
+            status = "**enabled** ✅" if enabled else "**disabled** 🔕"
+            await interaction.response.send_message(
+                f"Verified role automation {status}\n"
+                f"The bot will {'now automatically' if enabled else 'no longer'}:\n"
+                f"• Remove 'unverified' role when 'verified' role is added\n"
+                f"• Assign 'lvl 0' to verified members without a level role\n"
+                f"• Remove 'lvl 0' when members gain a higher level role",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error updating verify roles setting: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating the verify roles setting. Please try again later.",
+                ephemeral=True
+            )
+    
     @app_commands.command(name="loadboosterroles", description="Load existing booster roles into the database")
     @app_commands.default_permissions(administrator=True)
     async def load_booster_roles(self, interaction: discord.Interaction):

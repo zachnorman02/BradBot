@@ -229,6 +229,37 @@ class Database:
             username_info = f" ({changed_by_username})" if changed_by_username else ""
             print(f"🔧 Guild {guild_id}: Link replacement {status} by user {changed_by_user_id}{username_info}")
     
+    def get_guild_setting(self, guild_id: int, setting_name: str, default_value: str = 'true') -> str:
+        """Get a guild setting value. Returns default_value if not set."""
+        query = """
+        SELECT setting_value FROM main.guild_settings 
+        WHERE guild_id = %s 
+        AND setting_name = %s
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """
+        result = self.execute_query(query, (guild_id, setting_name))
+        if result:
+            return result[0][0]
+        return default_value
+    
+    def set_guild_setting(self, guild_id: int, setting_name: str, setting_value: str):
+        """Set a guild setting"""
+        # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
+        delete_query = """
+        DELETE FROM main.guild_settings 
+        WHERE guild_id = %s 
+        AND setting_name = %s
+        """
+        self.execute_query(delete_query, (guild_id, setting_name), fetch=False)
+        
+        # Then insert the new value
+        insert_query = """
+        INSERT INTO main.guild_settings (guild_id, setting_name, setting_value, created_at, updated_at)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """
+        self.execute_query(insert_query, (guild_id, setting_name, setting_value), fetch=False)
+    
     # Message tracking methods
     def store_message_tracking(self, bot_message_id: int, user_id: int, guild_id: int, 
                                original_url: str, fixed_url: str):
