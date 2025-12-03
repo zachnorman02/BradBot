@@ -68,6 +68,20 @@ async def on_ready():
         print(f"⚠️  Database initialization failed: {e}")
         print("   Reply notifications will not work until database is configured")
     
+    # Re-register persistent views for active polls
+    try:
+        from commands.poll_commands import PollView
+        # Get all active polls
+        active_polls = db.execute_query(
+            "SELECT id, question FROM main.polls WHERE is_active = TRUE"
+        )
+        for poll_id, question in active_polls:
+            view = PollView(poll_id, question)
+            bot.add_view(view)
+        print(f"✅ Registered {len(active_polls)} active poll view(s)")
+    except Exception as e:
+        print(f"⚠️  Failed to register poll views: {e}")
+    
     # Add command groups to the tree
     bot.tree.add_command(EmojiGroup(name="emoji", description="Emoji and sticker management commands"))
     bot.tree.add_command(BoosterGroup())

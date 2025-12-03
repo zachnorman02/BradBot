@@ -104,6 +104,8 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
     async def on_submit(self, interaction: discord.Interaction):
         """Handle response submission"""
         try:
+            print(f"[POLL] Response submission started for poll {self.poll_id} by {interaction.user}")
+            
             # Store response in database
             db.store_poll_response(
                 poll_id=self.poll_id,
@@ -111,6 +113,8 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
                 username=str(interaction.user),
                 response_text=self.response_input.value
             )
+            
+            print(f"[POLL] Response stored successfully")
             
             # Check if poll just closed due to max_responses
             poll_info = db.get_poll(self.poll_id)
@@ -148,22 +152,37 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
                     
                     return
             
+            print(f"[POLL] Sending success message")
             await interaction.response.send_message(
                 "✅ Your response has been submitted!",
                 ephemeral=True
             )
             
+            print(f"[POLL] Attempting to update poll embed")
             # Update poll embed to show response count and responses if enabled
             poll_info = db.get_poll(self.poll_id)
             if poll_info and poll_info['message_id']:
                 await update_poll_embed(self.poll_id, interaction.channel, poll_info['message_id'])
+            print(f"[POLL] Poll embed updated successfully")
                 
         except Exception as e:
-            print(f"Error storing poll response: {e}")
-            await interaction.response.send_message(
-                f"❌ {str(e)}",
-                ephemeral=True
-            )
+            print(f"[POLL ERROR] Error in response submission: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.response.send_message(
+                    f"❌ Error: {str(e)}",
+                    ephemeral=True
+                )
+            except:
+                # If we can't respond, try followup
+                try:
+                    await interaction.followup.send(
+                        f"❌ Error: {str(e)}",
+                        ephemeral=True
+                    )
+                except Exception as followup_error:
+                    print(f"[POLL ERROR] Could not send error message: {followup_error}")
 
 
 class PollView(discord.ui.View):
@@ -173,10 +192,20 @@ class PollView(discord.ui.View):
         super().__init__(timeout=None)  # Persistent view
         self.poll_id = poll_id
         self.question = question
+        
+        # Create button with unique custom_id for this poll
+        button = discord.ui.Button(
+            label="Submit Response",
+            style=discord.ButtonStyle.primary,
+            emoji="📝",
+            custom_id=f"poll_submit_{poll_id}"
+        )
+        button.callback = self.respond_button
+        self.add_item(button)
     
-    @discord.ui.button(label="Submit Response", style=discord.ButtonStyle.primary, emoji="📝")
-    async def respond_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def respond_button(self, interaction: discord.Interaction):
         """Show modal to collect user response"""
+        print(f"[POLL] Button clicked for poll {self.poll_id} by {interaction.user}")
         modal = ResponseModal(self.poll_id, self.question)
         await interaction.response.send_modal(modal)
 
