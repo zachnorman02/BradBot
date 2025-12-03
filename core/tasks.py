@@ -7,8 +7,73 @@ import asyncio
 from database import db
 
 
+async def handle_verified_role_logic(before: discord.Member, after: discord.Member):
+    """
+    Handle verified role assignment logic:
+    1. Remove unverified role when verified role is added
+    2. Give lvl 0 role if they don't have an existing lvl role
+    3. Remove lvl 0 when they gain a lvl x role
+    """
+    try:
+        # Get role changes
+        before_role_ids = {role.id for role in before.roles}
+        after_role_ids = {role.id for role in after.roles}
+        added_roles = after_role_ids - before_role_ids
+        removed_roles = before_role_ids - after_role_ids
+        
+        # Define role names (case-insensitive)
+        verified_role = discord.utils.get(after.guild.roles, name="verified")
+        unverified_role = discord.utils.get(after.guild.roles, name="unverified")
+        lvl0_role = discord.utils.get(after.guild.roles, name="lvl 0")
+        
+        if not verified_role:
+            return  # No verified role configured, skip logic
+        
+        # Check if verified role was just added
+        if verified_role.id in added_roles:
+            print(f"[VERIFIED] {after.display_name} gained verified role")
+            
+            # 1. Remove unverified role
+            if unverified_role and unverified_role in after.roles:
+                try:
+                    await after.remove_roles(unverified_role, reason="User verified - removing unverified role")
+                    print(f"[VERIFIED] Removed unverified role from {after.display_name}")
+                except Exception as e:
+                    print(f"[VERIFIED] Error removing unverified role: {e}")
+            
+            # 2. Check if they have any lvl role (lvl 1, lvl 2, etc.)
+            has_lvl_role = any(role.name.startswith("lvl ") and role.name != "lvl 0" 
+                             for role in after.roles)
+            
+            if not has_lvl_role and lvl0_role:
+                # Give them lvl 0 role
+                try:
+                    await after.add_roles(lvl0_role, reason="New verified user - assigning lvl 0")
+                    print(f"[VERIFIED] Assigned lvl 0 role to {after.display_name}")
+                except Exception as e:
+                    print(f"[VERIFIED] Error assigning lvl 0 role: {e}")
+        
+        # 3. Check if they gained a lvl x role (not lvl 0)
+        if added_roles:
+            for role_id in added_roles:
+                role = after.guild.get_role(role_id)
+                if role and role.name.startswith("lvl ") and role.name != "lvl 0":
+                    # They got a lvl x role, remove lvl 0 if they have it
+                    if lvl0_role and lvl0_role in after.roles:
+                        try:
+                            await after.remove_roles(lvl0_role, reason=f"User gained {role.name} - removing lvl 0")
+                            print(f"[VERIFIED] Removed lvl 0 from {after.display_name} (gained {role.name})")
+                        except Exception as e:
+                            print(f"[VERIFIED] Error removing lvl 0 role: {e}")
+                    break  # Only need to do this once
+        
+    except Exception as e:
+        print(f"[VERIFIED] Error in verified role logic: {e}")
+
+
 async def daily_booster_role_check(bot):
-    """Daily task to check for users who lost booster status and save their role configurations"""
+    """Daily task to check for users who lost booster status, save their role configurations,
+    and assign lvl 0 to verified users who should have it"""
     await bot.wait_until_ready()
     while not bot.is_closed():
         now = dt.datetime.now(dt.timezone.utc)
@@ -17,8 +82,15 @@ async def daily_booster_role_check(bot):
         wait_seconds = (next_run - now).total_seconds()
         await asyncio.sleep(wait_seconds)
         
+        print(f"[DAILY TASK] Running midnight checks...")
+        
         for guild in bot.guilds:
+            # Get role objects for this guild
+            verified_role = discord.utils.get(guild.roles, name="verified")
+            lvl0_role = discord.utils.get(guild.roles, name="lvl 0")
+            
             for member in guild.members:
+                # === Booster role check ===
                 # Find custom roles (only one member, not @everyone)
                 personal_roles = [role for role in member.roles if not role.is_default() and len(role.members) == 1]
                 # Check if user has custom roles but is NOT a booster (lost booster status)
@@ -57,10 +129,30 @@ async def daily_booster_role_check(bot):
                             print(f"💾 [Daily scan] Saved booster role configuration for {member.display_name} (role kept)")
                         except Exception as e:
                             print(f"Error saving role configuration for {member.display_name}: {e}")
+                
+                # === Level 0 assignment check ===
+                # Check if they have verified role but no lvl role
+                if verified_role and verified_role in member.roles and lvl0_role:
+                    # Check if they have any lvl role (including lvl 0)
+                    has_lvl_role = any(role.name.startswith("lvl ") for role in member.roles)
+                    
+                    if not has_lvl_role:
+                        # They're verified but have no level role, give them lvl 0
+                        try:
+                            await member.add_roles(lvl0_role, reason="Daily check - assigning missing lvl 0 to verified user")
+                            print(f"[DAILY TASK] Assigned lvl 0 to {member.display_name} (verified but had no level role)")
+                        except Exception as e:
+                            print(f"[DAILY TASK] Error assigning lvl 0 to {member.display_name}: {e}")
+        
+        print(f"[DAILY TASK] Midnight checks completed")
 
 
 async def on_member_update_handler(before: discord.Member, after: discord.Member):
-    """Detect when a member starts or stops boosting and auto-create/restore/remove their role"""
+    """Detect when a member starts or stops boosting and auto-create/restore/remove their role.
+    Also handle verified role assignment and level 0 role logic."""
+    
+    # Handle verified role logic
+    await handle_verified_role_logic(before, after)
     
     # Check if member just stopped boosting
     if before.premium_since and not after.premium_since:
