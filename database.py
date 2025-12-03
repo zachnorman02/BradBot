@@ -359,13 +359,17 @@ class Database:
     # Poll methods
     def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str) -> int:
         """Create a new poll and return its ID"""
+        # Get next ID (Aurora DSQL doesn't support sequences)
+        max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM main.polls"
+        next_id = self.execute_query(max_id_query)[0][0]
+        
+        # Insert with explicit ID
         query = """
-        INSERT INTO main.polls (guild_id, channel_id, creator_id, question, is_active, created_at)
-        VALUES (%s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)
-        RETURNING id
+        INSERT INTO main.polls (id, guild_id, channel_id, creator_id, question, is_active, created_at)
+        VALUES (%s, %s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)
         """
-        result = self.execute_query(query, (guild_id, channel_id, creator_id, question))
-        return result[0][0] if result else None
+        self.execute_query(query, (next_id, guild_id, channel_id, creator_id, question), fetch=False)
+        return next_id
     
     def update_poll_message_id(self, poll_id: int, message_id: int):
         """Update the message ID for a poll"""
@@ -412,12 +416,16 @@ class Database:
             """
             self.execute_query(query, (response_text, username, poll_id, user_id), fetch=False)
         else:
-            # Insert new response
+            # Get next ID (Aurora DSQL doesn't support sequences)
+            max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM main.poll_responses"
+            next_id = self.execute_query(max_id_query)[0][0]
+            
+            # Insert new response with explicit ID
             query = """
-            INSERT INTO main.poll_responses (poll_id, user_id, username, response_text, submitted_at)
-            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            INSERT INTO main.poll_responses (id, poll_id, user_id, username, response_text, submitted_at)
+            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             """
-            self.execute_query(query, (poll_id, user_id, username, response_text), fetch=False)
+            self.execute_query(query, (next_id, poll_id, user_id, username, response_text), fetch=False)
     
     def get_poll_responses(self, poll_id: int) -> list:
         """Get all responses for a poll"""
