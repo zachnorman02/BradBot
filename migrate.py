@@ -383,16 +383,30 @@ class Migration011(Migration):
         # Add show_responses column (whether to display responses in the poll embed)
         db.execute_query("""
             ALTER TABLE main.polls 
-            ADD COLUMN IF NOT EXISTS show_responses BOOLEAN DEFAULT FALSE
+            ADD COLUMN IF NOT EXISTS show_responses BOOLEAN
         """, fetch=False)
         print(f"   ✅ Added show_responses column to polls")
+        
+        # Set default value for existing rows
+        db.execute_query("""
+            UPDATE main.polls 
+            SET show_responses = FALSE 
+            WHERE show_responses IS NULL
+        """, fetch=False)
         
         # Add public_results column (whether anyone can view results or just creator+admins)
         db.execute_query("""
             ALTER TABLE main.polls 
-            ADD COLUMN IF NOT EXISTS public_results BOOLEAN DEFAULT TRUE
+            ADD COLUMN IF NOT EXISTS public_results BOOLEAN
         """, fetch=False)
         print(f"   ✅ Added public_results column to polls")
+        
+        # Set default value for existing rows
+        db.execute_query("""
+            UPDATE main.polls 
+            SET public_results = TRUE 
+            WHERE public_results IS NULL
+        """, fetch=False)
 
 # List of all migrations in order
 MIGRATIONS = [
