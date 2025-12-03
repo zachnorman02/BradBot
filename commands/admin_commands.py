@@ -360,6 +360,10 @@ class AdminGroup(app_commands.Group):
             errors = []
             
             for member in interaction.guild.members:
+                # Skip bots
+                if member.bot:
+                    continue
+                
                 # Check if they have verified role
                 if verified_role in member.roles:
                     # Check if they have any lvl role
