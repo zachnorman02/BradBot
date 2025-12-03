@@ -565,3 +565,146 @@ class PollGroup(app_commands.Group):
             await interaction.followup.send(
                 f"❌ An error occurred while generating the word cloud: {str(e)[:200]}"
             )
+    
+    @app_commands.command(name="stats", description="Generate statistics and visualizations from poll responses")
+    @app_commands.describe(poll_id="The ID of the poll")
+    async def stats(self, interaction: discord.Interaction, poll_id: int):
+        """Generate bar chart statistics showing response distribution and counts"""
+        await interaction.response.defer()
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Get poll info
+            poll_info = db.get_poll(poll_id)
+            if not poll_info:
+                await interaction.followup.send("❌ Poll not found.")
+                return
+            
+            # Check permission based on public_results setting
+            is_creator = poll_info['creator_id'] == interaction.user.id
+            has_manage_perms = interaction.user.guild_permissions.manage_messages
+            
+            # Check if user has access to the poll's channel (skip for poll creator)
+            if not is_creator:
+                try:
+                    poll_channel = interaction.guild.get_channel(poll_info['channel_id'])
+                    if not poll_channel:
+                        await interaction.followup.send(
+                            "❌ Poll channel not found."
+                        )
+                        return
+                    
+                    # Check if user can view the channel
+                    channel_perms = poll_channel.permissions_for(interaction.user)
+                    if not channel_perms.view_channel:
+                        await interaction.followup.send(
+                            "❌ You don't have access to the channel where this poll was created."
+                        )
+                        return
+                except Exception as e:
+                    print(f"Error checking channel permissions: {e}")
+                    await interaction.followup.send(
+                        "❌ Could not verify channel access."
+                    )
+                    return
+            
+            if not poll_info['public_results'] and not is_creator and not has_manage_perms:
+                await interaction.followup.send(
+                    "❌ This poll's results are only visible to the creator and admins."
+                )
+                return
+            
+            # Get responses
+            responses = db.get_poll_responses(poll_id)
+            
+            if not responses:
+                await interaction.followup.send(
+                    "❌ No responses yet. Statistics require at least one response."
+                )
+                return
+            
+            # Count response frequencies (normalize to lowercase and strip whitespace)
+            from collections import Counter
+            response_counts = Counter()
+            for r in responses:
+                # Normalize: lowercase, strip whitespace
+                normalized = r['response_text'].strip().lower()
+                response_counts[normalized] += 1
+            
+            # Get top 10 most common responses
+            top_responses = response_counts.most_common(10)
+            
+            # Create bar chart
+            fig, ax = plt.subplots(figsize=(12, 8), facecolor='white')
+            
+            labels = []
+            counts = []
+            for response_text, count in top_responses:
+                # Truncate long responses for display
+                display_text = response_text[:40]
+                if len(response_text) > 40:
+                    display_text += "..."
+                labels.append(display_text)
+                counts.append(count)
+            
+            # Create horizontal bar chart
+            bars = ax.barh(range(len(labels)), counts, color='#5865F2')
+            ax.set_yticks(range(len(labels)))
+            ax.set_yticklabels(labels)
+            ax.set_xlabel('Number of Responses', fontsize=12)
+            ax.set_title(f'Poll Response Distribution: {poll_info["question"][:50]}', fontsize=14, pad=20)
+            ax.invert_yaxis()  # Highest count at top
+            
+            # Add count labels on bars
+            for i, (bar, count) in enumerate(zip(bars, counts)):
+                width = bar.get_width()
+                ax.text(width + 0.1, bar.get_y() + bar.get_height()/2,
+                       f'{count}',
+                       ha='left', va='center', fontsize=10, fontweight='bold')
+            
+            plt.tight_layout()
+            
+            # Save to buffer
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
+            buffer.seek(0)
+            plt.close()
+            
+            # Create Discord file
+            file = discord.File(buffer, filename=f"stats_poll_{poll_id}.png")
+            
+            # Create summary embed
+            total_responses = len(responses)
+            unique_responses = len(response_counts)
+            
+            embed = discord.Embed(
+                title=f"📊 Poll Statistics - Poll #{poll_id}",
+                description=f"**Question:** {poll_info['question']}",
+                color=discord.Color.blue(),
+                timestamp=dt.datetime.now(dt.timezone.utc)
+            )
+            
+            embed.add_field(
+                name="📈 Summary",
+                value=f"**Total Responses:** {total_responses}\n**Unique Responses:** {unique_responses}\n**Most Common:** {top_responses[0][0][:50]} ({top_responses[0][1]} times)",
+                inline=False
+            )
+            
+            embed.set_image(url=f"attachment://stats_poll_{poll_id}.png")
+            embed.set_footer(text=f"Showing top {len(top_responses)} responses")
+            
+            await interaction.followup.send(embed=embed, file=file)
+            
+            print(f"📊 Generated statistics for poll {poll_id} requested by {interaction.user}")
+            
+        except Exception as e:
+            print(f"Error generating poll statistics: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(
+                f"❌ An error occurred while generating statistics: {str(e)[:200]}"
+            )
+
