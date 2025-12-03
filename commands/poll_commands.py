@@ -439,6 +439,91 @@ class PollGroup(app_commands.Group):
                 ephemeral=True
             )
     
+    @app_commands.command(name="refresh", description="Refresh a poll's button to fix interaction issues")
+    @app_commands.describe(poll_id="The ID of the poll to refresh")
+    async def refresh_poll(self, interaction: discord.Interaction, poll_id: int):
+        """Refresh a poll's button view to fix issues with old polls"""
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Get poll info
+            poll_info = db.get_poll(poll_id)
+            if not poll_info:
+                await interaction.response.send_message("❌ Poll not found.", ephemeral=True)
+                return
+            
+            # Check if user has permission (creator or manage messages)
+            if poll_info['creator_id'] != interaction.user.id and not interaction.user.guild_permissions.manage_messages:
+                await interaction.response.send_message(
+                    "❌ You don't have permission to refresh this poll.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check if poll has a message
+            if not poll_info.get('message_id'):
+                await interaction.response.send_message(
+                    "❌ This poll doesn't have an associated message.",
+                    ephemeral=True
+                )
+                return
+            
+            # Fetch the original message
+            try:
+                channel = interaction.guild.get_channel(poll_info['channel_id'])
+                if not channel:
+                    await interaction.response.send_message(
+                        "❌ Poll channel not found.",
+                        ephemeral=True
+                    )
+                    return
+                
+                message = await channel.fetch_message(poll_info['message_id'])
+                
+                # Create new view with updated button
+                if poll_info['is_active']:
+                    view = PollView(poll_id, poll_info['question'])
+                else:
+                    # Poll is closed, use disabled button
+                    view = discord.ui.View()
+                    button = discord.ui.Button(
+                        label="Poll Closed",
+                        style=discord.ButtonStyle.secondary,
+                        disabled=True
+                    )
+                    view.add_item(button)
+                
+                # Edit message with new view
+                await message.edit(view=view)
+                
+                await interaction.response.send_message(
+                    f"✅ Poll #{poll_id} has been refreshed! The button should work now.",
+                    ephemeral=True
+                )
+                
+                print(f"📊 Poll {poll_id} refreshed by {interaction.user}")
+                
+            except discord.NotFound:
+                await interaction.response.send_message(
+                    "❌ Poll message not found. It may have been deleted.",
+                    ephemeral=True
+                )
+            except Exception as e:
+                print(f"Error fetching/editing poll message: {e}")
+                await interaction.response.send_message(
+                    f"❌ Could not refresh poll message: {str(e)[:100]}",
+                    ephemeral=True
+                )
+            
+        except Exception as e:
+            print(f"Error refreshing poll: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while refreshing the poll.",
+                ephemeral=True
+            )
+    
     @app_commands.command(name="list", description="List all active polls in this server")
     @app_commands.checks.has_permissions(manage_messages=True)
     async def list_polls(self, interaction: discord.Interaction):
