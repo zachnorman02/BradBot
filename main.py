@@ -16,7 +16,7 @@ from commands import (
     BoosterGroup, 
     AdminGroup, 
     SettingsGroup,
-    clear_command,
+    PollGroup,
     tconvert_command,
     timestamp_command
 )
@@ -72,6 +72,7 @@ async def on_ready():
     bot.tree.add_command(BoosterGroup())
     bot.tree.add_command(SettingsGroup(name="settings", description="User settings and preferences"))
     bot.tree.add_command(AdminGroup(name="admin", description="Admin server management commands"))
+    bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
     
     try:
         # Sync slash commands
@@ -113,12 +114,6 @@ async def sync(ctx):
 # ============================================================================
 # STANDALONE SLASH COMMANDS  
 # ============================================================================
-        
-@bot.tree.command(name="clear", description="Delete all messages in this channel")
-async def clear(interaction: discord.Interaction):
-    """Delete all messages in the current channel"""
-    await clear_command(interaction)
-
 @bot.tree.command(name="tconvert", description="Convert between testosterone cypionate and gel")
 @app_commands.describe(
     starting_type="Type of testosterone (cypionate or gel)",

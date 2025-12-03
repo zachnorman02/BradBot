@@ -5,7 +5,8 @@ from .emoji_commands import EmojiGroup
 from .booster_commands import BoosterGroup, BoosterRoleGroup
 from .admin_commands import AdminGroup
 from .settings_commands import SettingsGroup
-from .standalone_commands import clear_command, tconvert_command, timestamp_command
+from .poll_commands import PollGroup
+from .standalone_commands import tconvert_command, timestamp_command
 
 __all__ = [
     'EmojiGroup',
@@ -13,7 +14,7 @@ __all__ = [
     'BoosterRoleGroup',
     'AdminGroup',
     'SettingsGroup',
-    'clear_command',
+    'PollGroup',
     'tconvert_command',
     'timestamp_command',
 ]

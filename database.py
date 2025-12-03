@@ -355,6 +355,123 @@ class Database:
         WHERE user_id = %s AND guild_id = %s
         """
         self.execute_query(query, (new_role_id, user_id, guild_id), fetch=False)
+    
+    # Poll methods
+    def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str) -> int:
+        """Create a new poll and return its ID"""
+        query = """
+        INSERT INTO main.polls (guild_id, channel_id, creator_id, question, is_active, created_at)
+        VALUES (%s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)
+        RETURNING id
+        """
+        result = self.execute_query(query, (guild_id, channel_id, creator_id, question))
+        return result[0][0] if result else None
+    
+    def update_poll_message_id(self, poll_id: int, message_id: int):
+        """Update the message ID for a poll"""
+        query = "UPDATE main.polls SET message_id = %s WHERE id = %s"
+        self.execute_query(query, (message_id, poll_id), fetch=False)
+    
+    def get_poll(self, poll_id: int) -> Optional[dict]:
+        """Get poll information by ID"""
+        query = """
+        SELECT id, guild_id, channel_id, creator_id, question, message_id, is_active, created_at
+        FROM main.polls WHERE id = %s
+        """
+        result = self.execute_query(query, (poll_id,))
+        if result:
+            return {
+                'id': result[0][0],
+                'guild_id': result[0][1],
+                'channel_id': result[0][2],
+                'creator_id': result[0][3],
+                'question': result[0][4],
+                'message_id': result[0][5],
+                'is_active': result[0][6],
+                'created_at': result[0][7]
+            }
+        return None
+    
+    def store_poll_response(self, poll_id: int, user_id: int, username: str, response_text: str):
+        """Store a user's response to a poll"""
+        # Check if poll is still active
+        poll = self.get_poll(poll_id)
+        if not poll or not poll['is_active']:
+            raise Exception("This poll is closed or does not exist")
+        
+        # Check if user already responded (allow updating response)
+        check_query = "SELECT id FROM main.poll_responses WHERE poll_id = %s AND user_id = %s"
+        existing = self.execute_query(check_query, (poll_id, user_id))
+        
+        if existing:
+            # Update existing response
+            query = """
+            UPDATE main.poll_responses 
+            SET response_text = %s, username = %s, submitted_at = CURRENT_TIMESTAMP
+            WHERE poll_id = %s AND user_id = %s
+            """
+            self.execute_query(query, (response_text, username, poll_id, user_id), fetch=False)
+        else:
+            # Insert new response
+            query = """
+            INSERT INTO main.poll_responses (poll_id, user_id, username, response_text, submitted_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            """
+            self.execute_query(query, (poll_id, user_id, username, response_text), fetch=False)
+    
+    def get_poll_responses(self, poll_id: int) -> list:
+        """Get all responses for a poll"""
+        query = """
+        SELECT user_id, username, response_text, submitted_at
+        FROM main.poll_responses
+        WHERE poll_id = %s
+        ORDER BY submitted_at ASC
+        """
+        results = self.execute_query(query, (poll_id,))
+        if results:
+            return [
+                {
+                    'user_id': row[0],
+                    'username': row[1],
+                    'response_text': row[2],
+                    'submitted_at': row[3]
+                }
+                for row in results
+            ]
+        return []
+    
+    def get_poll_response_count(self, poll_id: int) -> int:
+        """Get the number of responses for a poll"""
+        query = "SELECT COUNT(*) FROM main.poll_responses WHERE poll_id = %s"
+        result = self.execute_query(query, (poll_id,))
+        return result[0][0] if result else 0
+    
+    def close_poll(self, poll_id: int):
+        """Close a poll to prevent new responses"""
+        query = "UPDATE main.polls SET is_active = FALSE WHERE id = %s"
+        self.execute_query(query, (poll_id,), fetch=False)
+    
+    def get_active_polls(self, guild_id: int) -> list:
+        """Get all active polls in a guild"""
+        query = """
+        SELECT id, channel_id, creator_id, question, created_at
+        FROM main.polls
+        WHERE guild_id = %s AND is_active = TRUE
+        ORDER BY created_at DESC
+        """
+        results = self.execute_query(query, (guild_id,))
+        if results:
+            return [
+                {
+                    'id': row[0],
+                    'channel_id': row[1],
+                    'creator_id': row[2],
+                    'question': row[3],
+                    'created_at': row[4]
+                }
+                for row in results
+            ]
+        return []
 
 # Global database instance
 db = Database()

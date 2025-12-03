@@ -10,31 +10,6 @@ from conversion_helpers import ConversionType, convert_testosterone
 # ============================================================================
 # STANDALONE COMMANDS
 # ============================================================================
-
-async def clear_command(interaction: discord.Interaction):
-    """Delete all messages in the current channel"""
-    if not interaction.user.guild_permissions.manage_messages:
-        await interaction.response.send_message("❌ You need 'Manage Messages' permission to use this command.", ephemeral=True)
-        return
-    
-    if not interaction.guild.me.guild_permissions.manage_messages:
-        await interaction.response.send_message("❌ I don't have 'Manage Messages' permission to delete messages.", ephemeral=True)
-        return
-    
-    # Defer the response since this will take a while
-    await interaction.response.defer(ephemeral=True)
-    
-    # Delete all messages
-    deleted = 0
-    async for message in interaction.channel.history(limit=None):
-        try:
-            await message.delete()
-            deleted += 1
-        except Exception:
-            pass
-    await interaction.followup.send(f"Deleted {deleted} messages in this channel.", ephemeral=True)
-
-
 async def tconvert_command(
     interaction: discord.Interaction,
     starting_type: str,
