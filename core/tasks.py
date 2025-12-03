@@ -19,7 +19,6 @@ async def handle_verified_role_logic(before: discord.Member, after: discord.Memb
         before_role_ids = {role.id for role in before.roles}
         after_role_ids = {role.id for role in after.roles}
         added_roles = after_role_ids - before_role_ids
-        removed_roles = before_role_ids - after_role_ids
         
         # Define role names (case-insensitive)
         verified_role = discord.utils.get(after.guild.roles, name="verified")

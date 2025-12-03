@@ -331,3 +331,66 @@ class AdminGroup(app_commands.Group):
                 f"❌ Error executing query:\n```\n{error_msg[:1800]}\n```",
                 ephemeral=True
             )
+    
+    @app_commands.command(name="assignlvl0", description="Assign lvl 0 to all verified members without a level role")
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def assign_lvl0(self, interaction: discord.Interaction):
+        """Assign lvl 0 role to verified members who don't have any level role"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Get role objects
+            verified_role = discord.utils.get(interaction.guild.roles, name="verified")
+            lvl0_role = discord.utils.get(interaction.guild.roles, name="lvl 0")
+            
+            if not verified_role:
+                await interaction.followup.send("❌ No 'verified' role found in this server.", ephemeral=True)
+                return
+            
+            if not lvl0_role:
+                await interaction.followup.send("❌ No 'lvl 0' role found in this server.", ephemeral=True)
+                return
+            
+            # Find members who need lvl 0
+            assigned_count = 0
+            errors = []
+            
+            for member in interaction.guild.members:
+                # Check if they have verified role
+                if verified_role in member.roles:
+                    # Check if they have any lvl role
+                    has_lvl_role = any(role.name.startswith("lvl ") for role in member.roles)
+                    
+                    if not has_lvl_role:
+                        # They need lvl 0
+                        try:
+                            await member.add_roles(lvl0_role, reason=f"Manual lvl 0 assignment by {interaction.user}")
+                            assigned_count += 1
+                            print(f"[ADMIN] Assigned lvl 0 to {member.display_name}")
+                        except Exception as e:
+                            error_msg = f"{member.display_name}: {str(e)[:50]}"
+                            errors.append(error_msg)
+                            print(f"[ADMIN] Error assigning lvl 0 to {member.display_name}: {e}")
+            
+            # Build response
+            response = f"✅ Assigned lvl 0 to **{assigned_count}** member(s)"
+            
+            if errors:
+                response += f"\n\n⚠️ Failed to assign {len(errors)} member(s):"
+                for error in errors[:5]:  # Show first 5 errors
+                    response += f"\n- {error}"
+                if len(errors) > 5:
+                    response += f"\n... and {len(errors) - 5} more"
+            
+            await interaction.followup.send(response, ephemeral=True)
+            
+        except Exception as e:
+            print(f"[ADMIN] Error in assign_lvl0 command: {e}")
+            await interaction.followup.send(
+                f"❌ An error occurred: {str(e)[:200]}",
+                ephemeral=True
+            )
