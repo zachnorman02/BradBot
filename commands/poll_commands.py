@@ -12,6 +12,60 @@ matplotlib.use('Agg')  # Use non-GUI backend
 import matplotlib.pyplot as plt
 
 
+async def update_poll_embed(poll_id: int, channel, message_id: int):
+    """Helper function to update poll embed with current responses"""
+    try:
+        poll_info = db.get_poll(poll_id)
+        if not poll_info:
+            return
+        
+        message = await channel.fetch_message(message_id)
+        if not message.embeds:
+            return
+        
+        embed = message.embeds[0]
+        
+        # If show_responses is enabled, add/update responses field
+        if poll_info['show_responses']:
+            responses = db.get_poll_responses(poll_id)
+            response_count = len(responses)
+            
+            # Remove old responses field if it exists
+            for i, field in enumerate(embed.fields):
+                if field.name.startswith("📝 Responses"):
+                    embed.remove_field(i)
+                    break
+            
+            if response_count > 0:
+                # Show first few responses
+                response_preview = []
+                for i, resp in enumerate(responses[:5]):  # Show max 5
+                    preview_text = resp['response_text'][:100]
+                    if len(resp['response_text']) > 100:
+                        preview_text += "..."
+                    response_preview.append(f"**{resp['username']}**: {preview_text}")
+                
+                more_text = ""
+                if response_count > 5:
+                    more_text = f"\n*...and {response_count - 5} more*"
+                
+                embed.add_field(
+                    name=f"📝 Responses ({response_count})",
+                    value="\n\n".join(response_preview) + more_text,
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="📝 Responses (0)",
+                    value="*No responses yet*",
+                    inline=False
+                )
+        
+        await message.edit(embed=embed)
+    except Exception as e:
+        print(f"Error updating poll embed: {e}")
+
+
 class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
     """Modal for users to submit their poll responses"""
     
@@ -40,14 +94,56 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
                 response_text=self.response_input.value
             )
             
+            # Check if poll just closed due to max_responses
+            poll_info = db.get_poll(self.poll_id)
+            if not poll_info['is_active'] and poll_info['max_responses']:
+                response_count = db.get_poll_response_count(self.poll_id)
+                if response_count >= poll_info['max_responses']:
+                    await interaction.response.send_message(
+                        f"✅ Your response has been submitted!\n🔒 This poll has now closed (reached {poll_info['max_responses']} responses).",
+                        ephemeral=True
+                    )
+                    
+                    # Try to update the original message
+                    try:
+                        if poll_info['message_id']:
+                            channel = interaction.channel
+                            message = await channel.fetch_message(poll_info['message_id'])
+                            
+                            if message.embeds:
+                                embed = message.embeds[0]
+                                embed.color = discord.Color.red()
+                                embed.title = "📊 Poll (CLOSED)"
+                                
+                                # Disable the button
+                                view = discord.ui.View()
+                                button = discord.ui.Button(
+                                    label="Poll Closed",
+                                    style=discord.ButtonStyle.secondary,
+                                    disabled=True
+                                )
+                                view.add_item(button)
+                                
+                                await message.edit(embed=embed, view=view)
+                    except Exception as e:
+                        print(f"Error updating poll message after auto-close: {e}")
+                    
+                    return
+            
             await interaction.response.send_message(
                 "✅ Your response has been submitted!",
                 ephemeral=True
             )
+            
+            # Update poll embed if show_responses is enabled
+            poll_info = db.get_poll(self.poll_id)
+            if poll_info and poll_info['show_responses'] and poll_info['message_id']:
+                await update_poll_embed(self.poll_id, interaction.channel, poll_info['message_id'])
+                
         except Exception as e:
             print(f"Error storing poll response: {e}")
             await interaction.response.send_message(
-                "❌ An error occurred while submitting your response. Please try again.",
+                f"❌ {str(e)}",
                 ephemeral=True
             )
 
@@ -71,9 +167,17 @@ class PollGroup(app_commands.Group):
     """Commands for creating and managing text-response polls"""
     
     @app_commands.command(name="create", description="Create a new text-response poll")
-    @app_commands.describe(question="The poll question or prompt")
+    @app_commands.describe(
+        question="The poll question or prompt",
+        max_responses="Optional: Auto-close after this many responses",
+        duration_minutes="Optional: Auto-close after this many minutes",
+        show_responses="Show responses in the poll box (default: hidden)",
+        public_results="Allow anyone to view results (default: yes, only creator+admins if no)"
+    )
     @app_commands.checks.has_permissions(manage_messages=True)
-    async def create_poll(self, interaction: discord.Interaction, question: str):
+    async def create_poll(self, interaction: discord.Interaction, question: str, 
+                         max_responses: int = None, duration_minutes: int = None,
+                         show_responses: bool = False, public_results: bool = True):
         """Create a new poll where users can submit text responses"""
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
@@ -84,12 +188,21 @@ class PollGroup(app_commands.Group):
             if not db.connection_pool:
                 db.init_pool()
             
+            # Calculate close_at timestamp if duration provided
+            close_at = None
+            if duration_minutes:
+                close_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=duration_minutes)
+            
             # Create poll in database
             poll_id = db.create_poll(
                 guild_id=interaction.guild.id,
                 channel_id=interaction.channel.id,
                 creator_id=interaction.user.id,
-                question=question
+                question=question,
+                max_responses=max_responses,
+                close_at=close_at,
+                show_responses=show_responses,
+                public_results=public_results
             )
             
             # Create embed for the poll
@@ -101,6 +214,16 @@ class PollGroup(app_commands.Group):
             )
             embed.set_footer(text=f"Poll ID: {poll_id} • Created by {interaction.user.display_name}")
             embed.add_field(name="How to Respond", value="Click the **Submit Response** button below to share your answer!", inline=False)
+            
+            # Add auto-close info if applicable
+            auto_close_info = []
+            if max_responses:
+                auto_close_info.append(f"• Closes after **{max_responses}** responses")
+            if close_at:
+                auto_close_info.append(f"• Closes <t:{int(close_at.timestamp())}:R>")
+            
+            if auto_close_info:
+                embed.add_field(name="⏱️ Auto-Close", value="\n".join(auto_close_info), inline=False)
             
             # Create view with response button
             view = PollView(poll_id, question)
@@ -123,7 +246,6 @@ class PollGroup(app_commands.Group):
     
     @app_commands.command(name="results", description="View responses to a poll")
     @app_commands.describe(poll_id="The ID of the poll (shown in the poll's footer)")
-    @app_commands.checks.has_permissions(manage_messages=True)
     async def view_results(self, interaction: discord.Interaction, poll_id: int):
         """View all responses to a poll"""
         try:
@@ -134,13 +256,43 @@ class PollGroup(app_commands.Group):
             # Get poll info
             poll_info = db.get_poll(poll_id)
             if not poll_info:
-                await interaction.response.send_message("❌ Poll not found.", ephemeral=True)
+                await interaction.response.send_message("❌ Poll not found.")
                 return
             
-            # Check if user has permission to view (creator or manage messages)
-            if poll_info['creator_id'] != interaction.user.id and not interaction.user.guild_permissions.manage_messages:
+            # Check permission based on public_results setting
+            is_creator = poll_info['creator_id'] == interaction.user.id
+            has_manage_perms = interaction.user.guild_permissions.manage_messages
+            
+            # Check if user has access to the poll's channel (skip for poll creator)
+            if not is_creator:
+                try:
+                    poll_channel = interaction.guild.get_channel(poll_info['channel_id'])
+                    if not poll_channel:
+                        await interaction.response.send_message(
+                            "❌ Poll channel not found.",
+                            ephemeral=True
+                        )
+                        return
+                    
+                    # Check if user can view the channel
+                    channel_perms = poll_channel.permissions_for(interaction.user)
+                    if not channel_perms.view_channel:
+                        await interaction.response.send_message(
+                            "❌ You don't have access to the channel where this poll was created.",
+                            ephemeral=True
+                        )
+                        return
+                except Exception as e:
+                    print(f"Error checking channel permissions: {e}")
+                    await interaction.response.send_message(
+                        "❌ Could not verify channel access.",
+                        ephemeral=True
+                    )
+                    return
+            
+            if not poll_info['public_results'] and not is_creator and not has_manage_perms:
                 await interaction.response.send_message(
-                    "❌ You don't have permission to view these results.",
+                    "❌ This poll's results are only visible to the creator and admins.",
                     ephemeral=True
                 )
                 return
@@ -150,8 +302,7 @@ class PollGroup(app_commands.Group):
             
             if not responses:
                 await interaction.response.send_message(
-                    f"📊 **Poll Results**\n**Question:** {poll_info['question']}\n\n*No responses yet.*",
-                    ephemeral=True
+                    f"📊 **Poll Results**\n**Question:** {poll_info['question']}\n\n*No responses yet.*"
                 )
                 return
             
@@ -174,7 +325,7 @@ class PollGroup(app_commands.Group):
             if len(responses) > 25:
                 embed.set_footer(text=f"Showing first 25 of {len(responses)} responses")
             
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed)
             
         except Exception as e:
             print(f"Error viewing poll results: {e}")
@@ -290,10 +441,9 @@ class PollGroup(app_commands.Group):
     
     @app_commands.command(name="wordcloud", description="Generate a word cloud from poll responses")
     @app_commands.describe(poll_id="The ID of the poll")
-    @app_commands.checks.has_permissions(manage_messages=True)
     async def wordcloud(self, interaction: discord.Interaction, poll_id: int):
         """Generate a word cloud visualization from all poll responses"""
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
         
         try:
             # Initialize database connection if needed
@@ -303,14 +453,40 @@ class PollGroup(app_commands.Group):
             # Get poll info
             poll_info = db.get_poll(poll_id)
             if not poll_info:
-                await interaction.followup.send("❌ Poll not found.", ephemeral=True)
+                await interaction.followup.send("❌ Poll not found.")
                 return
             
-            # Check if user has permission to view (creator or manage messages)
-            if poll_info['creator_id'] != interaction.user.id and not interaction.user.guild_permissions.manage_messages:
+            # Check permission based on public_results setting
+            is_creator = poll_info['creator_id'] == interaction.user.id
+            has_manage_perms = interaction.user.guild_permissions.manage_messages
+            
+            # Check if user has access to the poll's channel (skip for poll creator)
+            if not is_creator:
+                try:
+                    poll_channel = interaction.guild.get_channel(poll_info['channel_id'])
+                    if not poll_channel:
+                        await interaction.followup.send(
+                            "❌ Poll channel not found."
+                        )
+                        return
+                    
+                    # Check if user can view the channel
+                    channel_perms = poll_channel.permissions_for(interaction.user)
+                    if not channel_perms.view_channel:
+                        await interaction.followup.send(
+                            "❌ You don't have access to the channel where this poll was created."
+                        )
+                        return
+                except Exception as e:
+                    print(f"Error checking channel permissions: {e}")
+                    await interaction.followup.send(
+                        "❌ Could not verify channel access."
+                    )
+                    return
+            
+            if not poll_info['public_results'] and not is_creator and not has_manage_perms:
                 await interaction.followup.send(
-                    "❌ You don't have permission to view this poll's data.",
-                    ephemeral=True
+                    "❌ This poll's results are only visible to the creator and admins."
                 )
                 return
             
@@ -319,8 +495,7 @@ class PollGroup(app_commands.Group):
             
             if not responses:
                 await interaction.followup.send(
-                    "❌ No responses yet. Word cloud requires at least one response.",
-                    ephemeral=True
+                    "❌ No responses yet. Word cloud requires at least one response."
                 )
                 return
             
@@ -363,7 +538,7 @@ class PollGroup(app_commands.Group):
             embed.set_image(url=f"attachment://wordcloud_poll_{poll_id}.png")
             embed.set_footer(text="Word cloud shows most frequently used words")
             
-            await interaction.followup.send(embed=embed, file=file, ephemeral=True)
+            await interaction.followup.send(embed=embed, file=file)
             
             print(f"📊 Generated word cloud for poll {poll_id} requested by {interaction.user}")
             
@@ -372,6 +547,5 @@ class PollGroup(app_commands.Group):
             import traceback
             traceback.print_exc()
             await interaction.followup.send(
-                f"❌ An error occurred while generating the word cloud: {str(e)[:200]}",
-                ephemeral=True
+                f"❌ An error occurred while generating the word cloud: {str(e)[:200]}"
             )

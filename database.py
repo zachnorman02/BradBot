@@ -357,7 +357,9 @@ class Database:
         self.execute_query(query, (new_role_id, user_id, guild_id), fetch=False)
     
     # Poll methods
-    def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str) -> int:
+    def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str, 
+                    max_responses: int = None, close_at = None, show_responses: bool = False,
+                    public_results: bool = True) -> int:
         """Create a new poll and return its ID"""
         # Get next ID (Aurora DSQL doesn't support sequences)
         max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM main.polls"
@@ -365,10 +367,12 @@ class Database:
         
         # Insert with explicit ID
         query = """
-        INSERT INTO main.polls (id, guild_id, channel_id, creator_id, question, is_active, created_at)
-        VALUES (%s, %s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)
+        INSERT INTO main.polls (id, guild_id, channel_id, creator_id, question, is_active, 
+                               max_responses, close_at, show_responses, public_results, created_at)
+        VALUES (%s, %s, %s, %s, %s, TRUE, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         """
-        self.execute_query(query, (next_id, guild_id, channel_id, creator_id, question), fetch=False)
+        self.execute_query(query, (next_id, guild_id, channel_id, creator_id, question, 
+                                  max_responses, close_at, show_responses, public_results), fetch=False)
         return next_id
     
     def update_poll_message_id(self, poll_id: int, message_id: int):
@@ -379,7 +383,8 @@ class Database:
     def get_poll(self, poll_id: int) -> Optional[dict]:
         """Get poll information by ID"""
         query = """
-        SELECT id, guild_id, channel_id, creator_id, question, message_id, is_active, created_at
+        SELECT id, guild_id, channel_id, creator_id, question, message_id, is_active, 
+               created_at, max_responses, close_at, show_responses, public_results
         FROM main.polls WHERE id = %s
         """
         result = self.execute_query(query, (poll_id,))
@@ -392,7 +397,11 @@ class Database:
                 'question': result[0][4],
                 'message_id': result[0][5],
                 'is_active': result[0][6],
-                'created_at': result[0][7]
+                'created_at': result[0][7],
+                'max_responses': result[0][8],
+                'close_at': result[0][9],
+                'show_responses': result[0][10],
+                'public_results': result[0][11]
             }
         return None
     
@@ -426,6 +435,12 @@ class Database:
             VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             """
             self.execute_query(query, (next_id, poll_id, user_id, username, response_text), fetch=False)
+            
+            # Check if poll should auto-close due to max_responses
+            if poll['max_responses']:
+                response_count = self.get_poll_response_count(poll_id)
+                if response_count >= poll['max_responses']:
+                    self.close_poll(poll_id)
     
     def get_poll_responses(self, poll_id: int) -> list:
         """Get all responses for a poll"""

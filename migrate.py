@@ -360,6 +360,40 @@ class Migration010(Migration):
         except Exception as e:
             print(f"   ⚠️  Could not grant admin access (may not exist): {e}")
 
+# Migration: Add auto-close functionality to polls
+class Migration011(Migration):
+    def __init__(self):
+        super().__init__("011", "Add max_responses, close_at, show_responses, and public_results columns to polls")
+    
+    def up(self):
+        # Add max_responses column
+        db.execute_query("""
+            ALTER TABLE main.polls 
+            ADD COLUMN IF NOT EXISTS max_responses INTEGER
+        """, fetch=False)
+        print(f"   ✅ Added max_responses column to polls")
+        
+        # Add close_at column
+        db.execute_query("""
+            ALTER TABLE main.polls 
+            ADD COLUMN IF NOT EXISTS close_at TIMESTAMP
+        """, fetch=False)
+        print(f"   ✅ Added close_at column to polls")
+        
+        # Add show_responses column (whether to display responses in the poll embed)
+        db.execute_query("""
+            ALTER TABLE main.polls 
+            ADD COLUMN IF NOT EXISTS show_responses BOOLEAN DEFAULT FALSE
+        """, fetch=False)
+        print(f"   ✅ Added show_responses column to polls")
+        
+        # Add public_results column (whether anyone can view results or just creator+admins)
+        db.execute_query("""
+            ALTER TABLE main.polls 
+            ADD COLUMN IF NOT EXISTS public_results BOOLEAN DEFAULT TRUE
+        """, fetch=False)
+        print(f"   ✅ Added public_results column to polls")
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -372,6 +406,7 @@ MIGRATIONS = [
     Migration008(),  # Update color_type based on color data
     Migration009(),  # Grant admin access to all tables
     Migration010(),  # Poll tables
+    Migration011(),  # Add auto-close functionality to polls
 ]
 
 def get_applied_migrations():

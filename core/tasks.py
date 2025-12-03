@@ -215,3 +215,70 @@ async def on_member_update_handler(before: discord.Member, after: discord.Member
                     print(f"Error creating new booster role for {after.display_name}: {e}")
         except Exception as e:
             print(f"Error checking for saved booster role: {e}")
+
+
+async def poll_auto_close_check(bot):
+    """Background task to check for polls that should auto-close based on time"""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            # Check every minute
+            await asyncio.sleep(60)
+            
+            # Initialize database if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Get all active polls with close_at times
+            query = """
+            SELECT id, guild_id, channel_id, message_id, question, close_at
+            FROM main.polls
+            WHERE is_active = TRUE AND close_at IS NOT NULL AND close_at <= CURRENT_TIMESTAMP
+            """
+            expired_polls = db.execute_query(query)
+            
+            if expired_polls:
+                for poll_data in expired_polls:
+                    poll_id, guild_id, channel_id, message_id, question, close_at = poll_data
+                    
+                    try:
+                        # Close the poll
+                        db.close_poll(poll_id)
+                        
+                        # Try to update the message to show it's closed
+                        if message_id:
+                            guild = bot.get_guild(guild_id)
+                            if guild:
+                                channel = guild.get_channel(channel_id)
+                                if channel:
+                                    try:
+                                        message = await channel.fetch_message(message_id)
+                                        
+                                        # Update embed to show closed status
+                                        if message.embeds:
+                                            embed = message.embeds[0]
+                                            embed.color = discord.Color.red()
+                                            embed.title = "📊 Poll (CLOSED)"
+                                            
+                                            # Disable the button
+                                            view = discord.ui.View()
+                                            button = discord.ui.Button(
+                                                label="Poll Closed",
+                                                style=discord.ButtonStyle.secondary,
+                                                disabled=True
+                                            )
+                                            view.add_item(button)
+                                            
+                                            await message.edit(embed=embed, view=view)
+                                    except discord.NotFound:
+                                        pass
+                                    except Exception as e:
+                                        print(f"Error updating closed poll message: {e}")
+                        
+                        print(f"⏱️ Auto-closed poll {poll_id} due to time limit")
+                    
+                    except Exception as e:
+                        print(f"Error auto-closing poll {poll_id}: {e}")
+        
+        except Exception as e:
+            print(f"Error in poll auto-close check: {e}")

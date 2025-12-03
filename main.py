@@ -24,6 +24,7 @@ from commands import (
 # Import core functionality
 from core import (
     daily_booster_role_check,
+    poll_auto_close_check,
     on_member_update_handler,
     handle_reply_notification,
     process_message_links,
@@ -83,6 +84,9 @@ async def on_ready():
     
     # Start daily booster role check task
     bot.loop.create_task(daily_booster_role_check(bot))
+    
+    # Start poll auto-close check task
+    bot.loop.create_task(poll_auto_close_check(bot))
     
 @bot.event
 async def on_message(message):
