@@ -25,10 +25,26 @@ async def update_poll_embed(poll_id: int, channel, message_id: int):
         
         embed = message.embeds[0]
         
+        # Get current response count
+        response_count = db.get_poll_response_count(poll_id)
+        
+        # Update footer to show response count
+        footer_text = embed.footer.text
+        if " • " in footer_text:
+            # Remove old response count if exists
+            parts = footer_text.split(" • ")
+            if len(parts) >= 2:
+                base_footer = f"{parts[0]} • {parts[1]}"
+            else:
+                base_footer = parts[0]
+        else:
+            base_footer = footer_text
+        
+        embed.set_footer(text=f"{base_footer} • {response_count} response{'s' if response_count != 1 else ''}")
+        
         # If show_responses is enabled, add/update responses field
         if poll_info['show_responses']:
             responses = db.get_poll_responses(poll_id)
-            response_count = len(responses)
             
             # Remove old responses field if it exists
             for i, field in enumerate(embed.fields):
@@ -135,9 +151,9 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
                 ephemeral=True
             )
             
-            # Update poll embed if show_responses is enabled
+            # Update poll embed to show response count and responses if enabled
             poll_info = db.get_poll(self.poll_id)
-            if poll_info and poll_info['show_responses'] and poll_info['message_id']:
+            if poll_info and poll_info['message_id']:
                 await update_poll_embed(self.poll_id, interaction.channel, poll_info['message_id'])
                 
         except Exception as e:
@@ -212,7 +228,7 @@ class PollGroup(app_commands.Group):
                 color=discord.Color.blue(),
                 timestamp=dt.datetime.now(dt.timezone.utc)
             )
-            embed.set_footer(text=f"Poll ID: {poll_id} • Created by {interaction.user.display_name}")
+            embed.set_footer(text=f"Poll ID: {poll_id} • Created by {interaction.user.display_name} • 0 responses")
             embed.add_field(name="How to Respond", value="Click the **Submit Response** button below to share your answer!", inline=False)
             
             # Add auto-close info if applicable
