@@ -288,6 +288,78 @@ class Migration009(Migration):
         """, fetch=False)
         print(f"   ✅ Granted admin SELECT access to all tables")
 
+# Migration: Create poll tables
+class Migration010(Migration):
+    def __init__(self):
+        super().__init__("010", "Create polls and poll_responses tables for text-response polls")
+    
+    def up(self):
+        # Create polls table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.polls (
+                id SERIAL PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                creator_id BIGINT NOT NULL,
+                question TEXT NOT NULL,
+                message_id BIGINT,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        print(f"   ✅ Created polls table")
+        
+        # Create poll_responses table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.poll_responses (
+                id SERIAL PRIMARY KEY,
+                poll_id INTEGER NOT NULL,
+                user_id BIGINT NOT NULL,
+                username TEXT NOT NULL,
+                response_text TEXT NOT NULL,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(poll_id, user_id)
+            )
+        """, fetch=False)
+        print(f"   ✅ Created poll_responses table")
+        
+        # Create indexes for better query performance
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_polls_guild_active 
+                ON main.polls(guild_id, is_active)
+            """, fetch=False)
+            print(f"   ℹ️  Index creation started asynchronously for polls table")
+        except Exception as e:
+            if "already exists" in str(e).lower():
+                print(f"   ℹ️  Polls index already exists")
+            else:
+                print(f"   ⚠️  Could not create polls index: {e}")
+        
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_poll_responses_poll_id 
+                ON main.poll_responses(poll_id)
+            """, fetch=False)
+            print(f"   ℹ️  Index creation started asynchronously for poll_responses table")
+        except Exception as e:
+            if "already exists" in str(e).lower():
+                print(f"   ℹ️  Poll responses index already exists")
+            else:
+                print(f"   ⚠️  Could not create poll_responses index: {e}")
+        
+        # Grant read access to admin user
+        try:
+            db.execute_query("""
+                GRANT SELECT ON main.polls TO admin
+            """, fetch=False)
+            db.execute_query("""
+                GRANT SELECT ON main.poll_responses TO admin
+            """, fetch=False)
+            print(f"   ✅ Granted admin SELECT access to poll tables")
+        except Exception as e:
+            print(f"   ⚠️  Could not grant admin access (may not exist): {e}")
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -299,6 +371,7 @@ MIGRATIONS = [
     Migration007(),  # Add secondary and tertiary color columns
     Migration008(),  # Update color_type based on color data
     Migration009(),  # Grant admin access to all tables
+    Migration010(),  # Poll tables
 ]
 
 def get_applied_migrations():
