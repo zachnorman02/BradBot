@@ -29,16 +29,18 @@ async def update_poll_embed(poll_id: int, channel, message_id: int):
         response_count = db.get_poll_response_count(poll_id)
         
         # Update footer to show response count
-        footer_text = embed.footer.text
+        footer_text = embed.footer.text if embed.footer else ""
         if " • " in footer_text:
-            # Remove old response count if exists
+            # Remove old response count if exists (handle both old and new formats)
             parts = footer_text.split(" • ")
+            # Take first two parts (Poll ID and Creator), ignore any existing response count
             if len(parts) >= 2:
                 base_footer = f"{parts[0]} • {parts[1]}"
             else:
-                base_footer = parts[0]
+                base_footer = parts[0] if parts else f"Poll ID: {poll_id}"
         else:
-            base_footer = footer_text
+            # Fallback if no footer or unexpected format
+            base_footer = footer_text if footer_text else f"Poll ID: {poll_id}"
         
         embed.set_footer(text=f"{base_footer} • {response_count} response{'s' if response_count != 1 else ''}")
         
