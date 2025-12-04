@@ -6,3 +6,4 @@ boto3
 wordcloud
 matplotlib
 pillow
+python-dateutil

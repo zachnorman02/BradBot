@@ -536,6 +536,103 @@ class Database:
                 for row in results
             ]
         return []
+    
+    # Reminder methods
+    def create_reminder(self, user_id: int, message: str, remind_at, guild_id: int = None, channel_id: int = None) -> int:
+        """Create a new reminder and return its ID"""
+        # Get next ID
+        max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM main.reminders"
+        next_id = self.execute_query(max_id_query)[0][0]
+        
+        # Insert reminder
+        query = """
+        INSERT INTO main.reminders (id, user_id, guild_id, channel_id, message, remind_at, created_at, is_sent)
+        VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, FALSE)
+        """
+        self.execute_query(query, (next_id, user_id, guild_id, channel_id, message, remind_at), fetch=False)
+        return next_id
+    
+    def get_pending_reminders(self):
+        """Get all reminders that are due and haven't been sent"""
+        query = """
+        SELECT id, user_id, guild_id, channel_id, message, remind_at
+        FROM main.reminders
+        WHERE is_sent = FALSE AND remind_at <= CURRENT_TIMESTAMP
+        ORDER BY remind_at ASC
+        """
+        results = self.execute_query(query)
+        if results:
+            return [
+                {
+                    'id': row[0],
+                    'user_id': row[1],
+                    'guild_id': row[2],
+                    'channel_id': row[3],
+                    'message': row[4],
+                    'remind_at': row[5]
+                }
+                for row in results
+            ]
+        return []
+    
+    def mark_reminder_sent(self, reminder_id: int):
+        """Mark a reminder as sent"""
+        query = "UPDATE main.reminders SET is_sent = TRUE WHERE id = %s"
+        self.execute_query(query, (reminder_id,), fetch=False)
+    
+    def delete_reminder(self, reminder_id: int):
+        """Delete a reminder"""
+        query = "DELETE FROM main.reminders WHERE id = %s"
+        self.execute_query(query, (reminder_id,), fetch=False)
+    
+    # Timer methods
+    def create_timer(self, user_id: int, guild_id: int, channel_id: int, label: str, end_time) -> int:
+        """Create a new timer and return its ID"""
+        # Get next ID
+        max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM main.timers"
+        next_id = self.execute_query(max_id_query)[0][0]
+        
+        # Insert timer
+        query = """
+        INSERT INTO main.timers (id, user_id, guild_id, channel_id, label, end_time, created_at, is_complete)
+        VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, FALSE)
+        """
+        self.execute_query(query, (next_id, user_id, guild_id, channel_id, label, end_time), fetch=False)
+        return next_id
+    
+    def update_timer_message_id(self, timer_id: int, message_id: int):
+        """Update the message ID for a timer"""
+        query = "UPDATE main.timers SET message_id = %s WHERE id = %s"
+        self.execute_query(query, (message_id, timer_id), fetch=False)
+    
+    def get_active_timers(self):
+        """Get all active timers"""
+        query = """
+        SELECT id, user_id, guild_id, channel_id, message_id, label, end_time
+        FROM main.timers
+        WHERE is_complete = FALSE
+        ORDER BY end_time ASC
+        """
+        results = self.execute_query(query)
+        if results:
+            return [
+                {
+                    'id': row[0],
+                    'user_id': row[1],
+                    'guild_id': row[2],
+                    'channel_id': row[3],
+                    'message_id': row[4],
+                    'label': row[5],
+                    'end_time': row[6]
+                }
+                for row in results
+            ]
+        return []
+    
+    def mark_timer_complete(self, timer_id: int):
+        """Mark a timer as complete"""
+        query = "UPDATE main.timers SET is_complete = TRUE WHERE id = %s"
+        self.execute_query(query, (timer_id,), fetch=False)
 
 # Global database instance
 db = Database()

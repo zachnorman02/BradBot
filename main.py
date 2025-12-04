@@ -17,6 +17,7 @@ from commands import (
     AdminGroup, 
     SettingsGroup,
     PollGroup,
+    UtilityGroup,
     tconvert_command,
     timestamp_command
 )
@@ -25,6 +26,8 @@ from commands import (
 from core import (
     daily_booster_role_check,
     poll_auto_close_check,
+    reminder_check,
+    timer_check,
     on_member_update_handler,
     handle_reply_notification,
     process_message_links,
@@ -88,6 +91,7 @@ async def on_ready():
     bot.tree.add_command(SettingsGroup(name="settings", description="User settings and preferences"))
     bot.tree.add_command(AdminGroup(name="admin", description="Admin server management commands"))
     bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
+    bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
     
     try:
         # Sync slash commands
@@ -101,6 +105,12 @@ async def on_ready():
     
     # Start poll auto-close check task
     bot.loop.create_task(poll_auto_close_check(bot))
+    
+    # Start reminder check task
+    bot.loop.create_task(reminder_check(bot))
+    
+    # Start timer check task
+    bot.loop.create_task(timer_check(bot))
     
 @bot.event
 async def on_message(message):

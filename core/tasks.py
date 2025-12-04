@@ -418,3 +418,171 @@ async def poll_auto_close_check(bot):
         
         except Exception as e:
             print(f"Error in poll auto-close check: {e}")
+
+
+async def reminder_check(bot):
+    """Background task to check for and send pending reminders"""
+    await bot.wait_until_ready()
+    
+    while not bot.is_closed():
+        try:
+            # Check for pending reminders every 30 seconds
+            await asyncio.sleep(30)
+            
+            # Get all pending reminders
+            pending = db.get_pending_reminders()
+            
+            for reminder in pending:
+                try:
+                    user = await bot.fetch_user(reminder['user_id'])
+                    if not user:
+                        db.mark_reminder_sent(reminder['id'])
+                        continue
+                    
+                    message = reminder['message']
+                    
+                    # Try to send in the original channel first
+                    sent = False
+                    if reminder['guild_id'] and reminder['channel_id']:
+                        guild = bot.get_guild(reminder['guild_id'])
+                        if guild:
+                            channel = guild.get_channel(reminder['channel_id'])
+                            if channel:
+                                try:
+                                    await channel.send(
+                                        f"⏰ **Reminder for {user.mention}**\n{message}"
+                                    )
+                                    sent = True
+                                except (discord.Forbidden, discord.HTTPException):
+                                    pass
+                    
+                    # Fall back to DM if channel send failed
+                    if not sent:
+                        try:
+                            guild_name = ""
+                            if reminder['guild_id']:
+                                guild = bot.get_guild(reminder['guild_id'])
+                                if guild:
+                                    guild_name = f"\n(Originally set in {guild.name})"
+                            
+                            await user.send(
+                                f"⏰ **Reminder**\n{message}{guild_name}"
+                            )
+                            sent = True
+                        except discord.Forbidden:
+                            pass
+                    
+                    # Mark as sent (even if delivery failed - we tried)
+                    db.mark_reminder_sent(reminder['id'])
+                    
+                    if sent:
+                        print(f"⏰ Sent reminder {reminder['id']} to {user}")
+                    else:
+                        print(f"⏰ Could not deliver reminder {reminder['id']} to {user} (channel and DM failed)")
+                
+                except Exception as e:
+                    print(f"Error sending reminder {reminder['id']}: {e}")
+                    # Mark as sent to avoid retry loops
+                    db.mark_reminder_sent(reminder['id'])
+        
+        except Exception as e:
+            print(f"Error in reminder check: {e}")
+            await asyncio.sleep(30)
+
+
+async def timer_check(bot):
+    """Background task to update and complete timers"""
+    await bot.wait_until_ready()
+    
+    while not bot.is_closed():
+        try:
+            # Check timers every 30 seconds
+            await asyncio.sleep(30)
+            
+            # Get all active timers
+            active_timers = db.get_active_timers()
+            now = dt.datetime.now(dt.timezone.utc)
+            
+            for timer in active_timers:
+                try:
+                    # Check if timer is complete
+                    if timer['end_time'] <= now:
+                        # Timer finished - mark complete and send notification
+                        guild = bot.get_guild(timer['guild_id'])
+                        if not guild:
+                            db.mark_timer_complete(timer['id'])
+                            continue
+                        
+                        channel = guild.get_channel(timer['channel_id'])
+                        if not channel:
+                            db.mark_timer_complete(timer['id'])
+                            continue
+                        
+                        # Update the embed to show completion
+                        if timer['message_id']:
+                            try:
+                                message = await channel.fetch_message(timer['message_id'])
+                                
+                                if message.embeds:
+                                    embed = message.embeds[0]
+                                    embed.color = discord.Color.green()
+                                    embed.clear_fields()
+                                    embed.add_field(
+                                        name="✅ Timer Complete!",
+                                        value=f"Ended <t:{int(timer['end_time'].timestamp())}:R>",
+                                        inline=False
+                                    )
+                                    embed.set_footer(text=f"Timer ID: {timer['id']} • Finished")
+                                    await message.edit(embed=embed)
+                            except discord.NotFound:
+                                pass
+                            except Exception as e:
+                                print(f"Error updating timer message: {e}")
+                        
+                        # Send completion notification
+                        try:
+                            user = await bot.fetch_user(timer['user_id'])
+                            label_text = f" ({timer['label']})" if timer['label'] else ""
+                            await channel.send(
+                                f"⏰ Timer complete! {user.mention}{label_text}"
+                            )
+                        except Exception as e:
+                            print(f"Error sending timer completion message: {e}")
+                        
+                        db.mark_timer_complete(timer['id'])
+                        print(f"⏱️ Completed timer {timer['id']}")
+                    
+                    # Timer still running - update the embed
+                    elif timer['message_id']:
+                        try:
+                            guild = bot.get_guild(timer['guild_id'])
+                            if guild:
+                                channel = guild.get_channel(timer['channel_id'])
+                                if channel:
+                                    try:
+                                        message = await channel.fetch_message(timer['message_id'])
+                                        
+                                        if message.embeds:
+                                            embed = message.embeds[0]
+                                            embed.clear_fields()
+                                            embed.add_field(
+                                                name="Ends",
+                                                value=f"<t:{int(timer['end_time'].timestamp())}:R> (<t:{int(timer['end_time'].timestamp())}:T>)",
+                                                inline=False
+                                            )
+                                            await message.edit(embed=embed)
+                                    except discord.NotFound:
+                                        # Message was deleted, mark timer complete
+                                        db.mark_timer_complete(timer['id'])
+                                    except discord.HTTPException:
+                                        # Rate limited or other HTTP error, skip this update
+                                        pass
+                        except Exception as e:
+                            print(f"Error updating timer {timer['id']}: {e}")
+                
+                except Exception as e:
+                    print(f"Error processing timer {timer.get('id', 'unknown')}: {e}")
+        
+        except Exception as e:
+            print(f"Error in timer check: {e}")
+            await asyncio.sleep(30)

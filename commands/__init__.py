@@ -6,6 +6,7 @@ from .booster_commands import BoosterGroup, BoosterRoleGroup
 from .admin_commands import AdminGroup
 from .settings_commands import SettingsGroup
 from .poll_commands import PollGroup
+from .utility_commands import UtilityGroup
 from .standalone_commands import tconvert_command, timestamp_command
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     'AdminGroup',
     'SettingsGroup',
     'PollGroup',
+    'UtilityGroup',
     'tconvert_command',
     'timestamp_command',
 ]

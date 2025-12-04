@@ -427,6 +427,69 @@ class Migration012(Migration):
             WHERE allow_multiple_responses IS NULL
         """, fetch=False)
 
+class Migration013(Migration):
+    def __init__(self):
+        super().__init__("013", "Add reminders table")
+    
+    def up(self):
+        # Create reminders table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.reminders (
+                id INTEGER PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                guild_id BIGINT,
+                channel_id BIGINT,
+                message TEXT NOT NULL,
+                remind_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_sent BOOLEAN DEFAULT FALSE
+            )
+        """, fetch=False)
+        print(f"   ✅ Created reminders table")
+        
+        # Create index for efficient querying of pending reminders
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_reminders_pending 
+                ON main.reminders(remind_at, is_sent) 
+                WHERE is_sent = FALSE
+            """, fetch=False)
+            print(f"   ✅ Created index on reminders(remind_at, is_sent)")
+        except Exception as e:
+            print(f"   ⚠️  Index creation queued: {e}")
+
+class Migration014(Migration):
+    def __init__(self):
+        super().__init__("014", "Add timers table")
+    
+    def up(self):
+        # Create timers table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.timers (
+                id INTEGER PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                guild_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                message_id BIGINT,
+                label TEXT,
+                end_time TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_complete BOOLEAN DEFAULT FALSE
+            )
+        """, fetch=False)
+        print(f"   ✅ Created timers table")
+        
+        # Create index for efficient querying of active timers
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_timers_active 
+                ON main.timers(is_complete, end_time) 
+                WHERE is_complete = FALSE
+            """, fetch=False)
+            print(f"   ✅ Created index on timers(is_complete, end_time)")
+        except Exception as e:
+            print(f"   ⚠️  Index creation queued: {e}")
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -441,6 +504,8 @@ MIGRATIONS = [
     Migration010(),  # Poll tables
     Migration011(),  # Add auto-close functionality to polls
     Migration012(),  # Add allow_multiple_responses to polls
+    Migration013(),  # Add reminders table
+    Migration014(),  # Add timers table
 ]
 
 def get_applied_migrations():
