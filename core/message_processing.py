@@ -214,7 +214,7 @@ async def send_processed_message(message: discord.Message, processed_result: dic
     
     # If original message was a reply, make the new message a reply too
     reference = message.reference
-    sent_message = await message.channel.send(processed_result['new_content'], reference=reference)
+    sent_message = await message.channel.send(processed_result['new_content'], reference=reference, silent=True)
     
     # Store message tracking for reply notifications
     if sent_message and message.guild:
