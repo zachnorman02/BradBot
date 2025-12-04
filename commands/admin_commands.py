@@ -441,8 +441,9 @@ class AdminGroup(app_commands.Group):
             )
     
     @app_commands.command(name="kickunverified", description="Kick unverified users who have been in the server for 30+ days")
+    @app_commands.describe(dry_run="Preview who would be kicked without actually kicking them")
     @app_commands.default_permissions(kick_members=True)
-    async def kick_unverified(self, interaction: discord.Interaction):
+    async def kick_unverified(self, interaction: discord.Interaction, dry_run: bool = False):
         """Kick unverified users who have been members for 30+ days and are not in a verification ticket"""
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
@@ -468,6 +469,7 @@ class AdminGroup(app_commands.Group):
             kicked_count = 0
             skipped_count = 0
             errors = []
+            kick_list = []
             
             for member in interaction.guild.members:
                 # Skip bots
@@ -494,21 +496,36 @@ class AdminGroup(app_commands.Group):
                             skipped_count += 1
                             print(f"[ADMIN] Skipped {member.display_name} (in verification ticket)")
                         else:
-                            # Kick the member
-                            try:
-                                await member.kick(reason=f"Kicked by {interaction.user}: Unverified for {days_since_join} days with no active verification ticket")
+                            # Kick the member (or add to dry run list)
+                            if dry_run:
+                                kick_list.append(f"{member.display_name} ({member.mention}) - {days_since_join} days")
                                 kicked_count += 1
-                                print(f"[ADMIN] Kicked {member.display_name} (unverified for {days_since_join} days)")
-                            except Exception as e:
-                                error_msg = f"{member.display_name}: {str(e)[:50]}"
-                                errors.append(error_msg)
-                                print(f"[ADMIN] Error kicking {member.display_name}: {e}")
+                            else:
+                                try:
+                                    await member.kick(reason=f"Kicked by {interaction.user}: Unverified for {days_since_join} days with no active verification ticket")
+                                    kicked_count += 1
+                                    print(f"[ADMIN] Kicked {member.display_name} (unverified for {days_since_join} days)")
+                                except Exception as e:
+                                    error_msg = f"{member.display_name}: {str(e)[:50]}"
+                                    errors.append(error_msg)
+                                    print(f"[ADMIN] Error kicking {member.display_name}: {e}")
             
             # Build response
-            response = f"✅ Kicked **{kicked_count}** unverified member(s) who have been in the server for 30+ days"
+            if dry_run:
+                response = f"🔍 **DRY RUN** - Preview of members who would be kicked:\n\n"
+                if kicked_count > 0:
+                    response += f"Would kick **{kicked_count}** member(s):\n"
+                    for member_info in kick_list[:10]:
+                        response += f"- {member_info}\n"
+                    if len(kick_list) > 10:
+                        response += f"\n... and {len(kick_list) - 10} more"
+                else:
+                    response += "✅ No members would be kicked"
+            else:
+                response = f"✅ Kicked **{kicked_count}** unverified member(s) who have been in the server for 30+ days"
             
             if skipped_count > 0:
-                response += f"\n🎫 Skipped **{skipped_count}** member(s) with active verification tickets"
+                response += f"\n🎫 {'Would skip' if dry_run else 'Skipped'} **{skipped_count}** member(s) with active verification tickets"
             
             if errors:
                 response += f"\n\n⚠️ Failed to kick {len(errors)} member(s):"
