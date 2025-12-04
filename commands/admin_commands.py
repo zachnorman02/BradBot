@@ -439,3 +439,90 @@ class AdminGroup(app_commands.Group):
                 f"❌ An error occurred: {str(e)[:200]}",
                 ephemeral=True
             )
+    
+    @app_commands.command(name="kickunverified", description="Kick unverified users who have been in the server for 30+ days")
+    @app_commands.default_permissions(kick_members=True)
+    async def kick_unverified(self, interaction: discord.Interaction):
+        """Kick unverified users who have been members for 30+ days and are not in a verification ticket"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            import datetime as dt
+            
+            # Get role objects
+            unverified_role = discord.utils.get(interaction.guild.roles, name="unverified")
+            
+            if not unverified_role:
+                await interaction.followup.send("❌ No 'unverified' role found in this server.", ephemeral=True)
+                return
+            
+            # Find the verification category
+            verification_category = discord.utils.get(interaction.guild.categories, name="verification")
+            
+            # Count eligible members to kick
+            now = dt.datetime.now(dt.timezone.utc)
+            kicked_count = 0
+            skipped_count = 0
+            errors = []
+            
+            for member in interaction.guild.members:
+                # Skip bots
+                if member.bot:
+                    continue
+                
+                # Check if they have unverified role
+                if unverified_role in member.roles and member.joined_at:
+                    days_since_join = (now - member.joined_at).days
+                    
+                    if days_since_join >= 30:
+                        # Check if they're in a verification ticket
+                        in_verification_ticket = False
+                        
+                        if verification_category:
+                            for channel in verification_category.channels:
+                                if isinstance(channel, discord.TextChannel) and channel.name.startswith("ticket-"):
+                                    permissions = channel.permissions_for(member)
+                                    if permissions.read_messages:
+                                        in_verification_ticket = True
+                                        break
+                        
+                        if in_verification_ticket:
+                            skipped_count += 1
+                            print(f"[ADMIN] Skipped {member.display_name} (in verification ticket)")
+                        else:
+                            # Kick the member
+                            try:
+                                await member.kick(reason=f"Kicked by {interaction.user}: Unverified for {days_since_join} days with no active verification ticket")
+                                kicked_count += 1
+                                print(f"[ADMIN] Kicked {member.display_name} (unverified for {days_since_join} days)")
+                            except Exception as e:
+                                error_msg = f"{member.display_name}: {str(e)[:50]}"
+                                errors.append(error_msg)
+                                print(f"[ADMIN] Error kicking {member.display_name}: {e}")
+            
+            # Build response
+            response = f"✅ Kicked **{kicked_count}** unverified member(s) who have been in the server for 30+ days"
+            
+            if skipped_count > 0:
+                response += f"\n🎫 Skipped **{skipped_count}** member(s) with active verification tickets"
+            
+            if errors:
+                response += f"\n\n⚠️ Failed to kick {len(errors)} member(s):"
+                for error in errors[:5]:
+                    response += f"\n- {error}"
+                if len(errors) > 5:
+                    response += f"\n... and {len(errors) - 5} more"
+            
+            await interaction.followup.send(response, ephemeral=True)
+            
+        except Exception as e:
+            print(f"[ADMIN] Error in kick_unverified command: {e}")
+            await interaction.followup.send(
+                f"❌ An error occurred: {str(e)[:200]}",
+                ephemeral=True
+            )
+

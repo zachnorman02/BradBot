@@ -154,6 +154,39 @@ async def daily_booster_role_check(bot):
                             print(f"[DAILY TASK] Assigned lvl 0 to {member.display_name} (verified but had no level role)")
                         except Exception as e:
                             print(f"[DAILY TASK] Error assigning lvl 0 to {member.display_name}: {e}")
+                
+                # === Unverified user kick check ===
+                # Kick unverified users after 30 days unless they're in a verification ticket
+                unverified_role = discord.utils.get(guild.roles, name="unverified")
+                if not member.bot and unverified_role and unverified_role in member.roles:
+                    # Check how long they've been a member
+                    if member.joined_at:
+                        days_since_join = (now - member.joined_at).days
+                        
+                        if days_since_join >= 30:
+                            # Check if they're in a verification ticket
+                            in_verification_ticket = False
+                            
+                            # Find the "verification" category
+                            verification_category = discord.utils.get(guild.categories, name="verification")
+                            
+                            if verification_category:
+                                # Check all ticket channels in the verification category
+                                for channel in verification_category.channels:
+                                    if isinstance(channel, discord.TextChannel) and channel.name.startswith("ticket-"):
+                                        # Check if member has access to this channel
+                                        permissions = channel.permissions_for(member)
+                                        if permissions.read_messages:
+                                            in_verification_ticket = True
+                                            break
+                            
+                            # Kick if not in a verification ticket
+                            if not in_verification_ticket:
+                                try:
+                                    await member.kick(reason=f"Unverified for {days_since_join} days with no active verification ticket")
+                                    print(f"[DAILY TASK] Kicked {member.display_name} (unverified for {days_since_join} days, no ticket)")
+                                except Exception as e:
+                                    print(f"[DAILY TASK] Error kicking {member.display_name}: {e}")
         
         print(f"[DAILY TASK] Midnight checks completed")
 
