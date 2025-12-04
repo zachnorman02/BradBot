@@ -156,13 +156,15 @@ class Database:
                 self.release_connection(conn)
     
     # User preference methods
-    def get_user_reply_notifications(self, user_id: int, guild_id: int) -> bool:
-        """Get user's reply notification preference. Defaults to True if not set."""
+    def get_user_reply_notifications(self, user_id: int, guild_id: Optional[int]) -> bool:
+        """Get user's reply notification preference. Defaults to True if not set.
+        guild_id=None checks global setting.
+        """
         query = """
         SELECT setting_value FROM main.user_settings 
         WHERE entity_type = 'user' 
         AND entity_id = %s 
-        AND guild_id = %s 
+        AND guild_id IS NOT DISTINCT FROM %s 
         AND setting_name = 'reply_notifications'
         ORDER BY updated_at DESC
         LIMIT 1
@@ -172,14 +174,14 @@ class Database:
             return result[0][0].lower() == 'true'
         return True  # Default: notifications enabled
     
-    def set_user_reply_notifications(self, user_id: int, guild_id: int, enabled: bool):
-        """Set user's reply notification preference"""
+    def set_user_reply_notifications(self, user_id: int, guild_id: Optional[int], enabled: bool):
+        """Set user's reply notification preference. guild_id=None sets global setting."""
         # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
         delete_query = """
         DELETE FROM main.user_settings 
         WHERE entity_type = 'user' 
         AND entity_id = %s 
-        AND guild_id = %s 
+        AND guild_id IS NOT DISTINCT FROM %s 
         AND setting_name = 'reply_notifications'
         """
         self.execute_query(delete_query, (user_id, guild_id), fetch=False)

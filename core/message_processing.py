@@ -57,7 +57,14 @@ async def handle_reply_notification(message: discord.Message, bot: discord.Clien
         if original_user_id and guild_id:
             # Don't ping if the replier is the original poster
             if message.author.id != original_user_id:
-                # Check if user has reply notifications enabled
+                # Check global setting first (guild_id = None), then fall back to server-specific
+                global_notifications = db.get_user_reply_notifications(original_user_id, None)
+                
+                # If global setting exists and is disabled, skip notification
+                if global_notifications is not None and not global_notifications:
+                    return
+                
+                # Check server-specific setting
                 notifications_enabled = db.get_user_reply_notifications(original_user_id, guild_id)
                 
                 if notifications_enabled:

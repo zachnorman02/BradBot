@@ -46,3 +46,38 @@ class SettingsGroup(app_commands.Group):
                 "❌ An error occurred while updating your notification preference. Please try again later.",
                 ephemeral=True
             )
+    
+    @app_commands.command(name="notifyall", description="Toggle reply notifications globally across all servers")
+    @app_commands.describe(enabled="Enable or disable reply notifications in all servers")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="Enable notifications in all servers", value=1),
+        app_commands.Choice(name="Disable notifications in all servers", value=0)
+    ])
+    async def notify_all(self, interaction: discord.Interaction, enabled: int):
+        """Toggle reply notification preferences globally across all servers"""
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Update global user preference (guild_id = None means global)
+            db.set_user_reply_notifications(
+                user_id=interaction.user.id,
+                guild_id=None,  # None = global setting
+                enabled=bool(enabled)
+            )
+            
+            status = "**enabled** ✅" if enabled else "**disabled** 🔕"
+            await interaction.response.send_message(
+                f"Global reply notifications {status}\n"
+                f"You will {'now' if enabled else 'no longer'} be pinged when someone replies to your fixed links "
+                f"**in any server**.\n\n"
+                f"{'Per-server settings are overridden by this global setting.' if not enabled else 'This global setting takes precedence. You can still use `/settings notify` to disable notifications in specific servers.'}",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error updating global notification preference: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating your notification preference. Please try again later.",
+                ephemeral=True
+            )
