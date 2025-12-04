@@ -15,6 +15,10 @@ async def handle_verified_role_logic(before: discord.Member, after: discord.Memb
     3. Remove lvl 0 when they gain a lvl x role
     """
     try:
+        # Skip bots
+        if after.bot:
+            return
+        
         # Check if verified role automation is enabled for this guild
         verify_enabled = db.get_guild_setting(after.guild.id, 'verify_roles_enabled', 'true')
         if verify_enabled.lower() != 'true':
@@ -138,8 +142,8 @@ async def daily_booster_role_check(bot):
                             print(f"Error saving role configuration for {member.display_name}: {e}")
                 
                 # === Level 0 assignment check ===
-                # Check if they have verified role but no lvl role
-                if verify_enabled.lower() == 'true' and verified_role and verified_role in member.roles and lvl0_role:
+                # Check if they have verified role but no lvl role (skip bots)
+                if not member.bot and verify_enabled.lower() == 'true' and verified_role and verified_role in member.roles and lvl0_role:
                     # Check if they have any lvl role (including lvl 0)
                     has_lvl_role = any(role.name.startswith("lvl ") for role in member.roles)
                     

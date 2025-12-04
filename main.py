@@ -128,6 +128,17 @@ async def sync(ctx):
     except Exception as e:
         await ctx.send(f"Failed to sync: {e}")
 
+@bot.command()
+@commands.is_owner()
+async def clearcmds(ctx):
+    """Clear all global commands and resync - use this to remove stale commands"""
+    try:
+        bot.tree.clear_commands(guild=None)
+        await bot.tree.sync()
+        await ctx.send("✅ Cleared all global commands and resynced")
+    except Exception as e:
+        await ctx.send(f"Failed to clear commands: {e}")
+
 
 # ============================================================================
 # STANDALONE SLASH COMMANDS  
