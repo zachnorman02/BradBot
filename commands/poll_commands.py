@@ -107,12 +107,21 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
             print(f"[POLL] Response submission started for poll {self.poll_id} by {interaction.user}")
             
             # Store response in database
-            db.store_poll_response(
-                poll_id=self.poll_id,
-                user_id=interaction.user.id,
-                username=str(interaction.user),
-                response_text=self.response_input.value
-            )
+            try:
+                db.store_poll_response(
+                    poll_id=self.poll_id,
+                    user_id=interaction.user.id,
+                    username=str(interaction.user),
+                    response_text=self.response_input.value
+                )
+            except Exception as e:
+                if "already submitted" in str(e):
+                    await interaction.response.send_message(
+                        "❌ You have already submitted a response to this poll and multiple responses are not allowed.",
+                        ephemeral=True
+                    )
+                    return
+                raise
             
             print(f"[POLL] Response stored successfully")
             
@@ -219,12 +228,14 @@ class PollGroup(app_commands.Group):
         max_responses="Optional: Auto-close after this many responses",
         duration_minutes="Optional: Auto-close after this many minutes",
         show_responses="Show responses in the poll box (default: hidden)",
-        public_results="Allow anyone to view results (default: yes, only creator+admins if no)"
+        public_results="Allow anyone to view results (default: yes, only creator+admins if no)",
+        allow_multiple="Allow users to submit multiple responses (default: yes)"
     )
     @app_commands.checks.has_permissions(manage_messages=True)
     async def create_poll(self, interaction: discord.Interaction, question: str, 
                          max_responses: int = None, duration_minutes: int = None,
-                         show_responses: bool = False, public_results: bool = True):
+                         show_responses: bool = False, public_results: bool = True,
+                         allow_multiple: bool = True):
         """Create a new poll where users can submit text responses"""
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
@@ -249,7 +260,8 @@ class PollGroup(app_commands.Group):
                 max_responses=max_responses,
                 close_at=close_at,
                 show_responses=show_responses,
-                public_results=public_results
+                public_results=public_results,
+                allow_multiple_responses=allow_multiple
             )
             
             # Create embed for the poll
@@ -261,6 +273,16 @@ class PollGroup(app_commands.Group):
             )
             embed.set_footer(text=f"Poll ID: {poll_id} • Created by {interaction.user.display_name} • 0 responses")
             embed.add_field(name="How to Respond", value="Click the **Submit Response** button below to share your answer!", inline=False)
+            
+            # Add poll settings info
+            poll_settings = []
+            if not allow_multiple:
+                poll_settings.append("🔒 One response per person")
+            if not public_results:
+                poll_settings.append("🔐 Results visible to creator & admins only")
+            
+            if poll_settings:
+                embed.add_field(name="⚙️ Settings", value="\n".join(poll_settings), inline=False)
             
             # Add auto-close info if applicable
             auto_close_info = []

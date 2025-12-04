@@ -392,7 +392,7 @@ class Database:
     # Poll methods
     def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str, 
                     max_responses: int = None, close_at = None, show_responses: bool = False,
-                    public_results: bool = True) -> int:
+                    public_results: bool = True, allow_multiple_responses: bool = True) -> int:
         """Create a new poll and return its ID"""
         # Get next ID (Aurora DSQL doesn't support sequences)
         max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM main.polls"
@@ -401,11 +401,13 @@ class Database:
         # Insert with explicit ID
         query = """
         INSERT INTO main.polls (id, guild_id, channel_id, creator_id, question, is_active, 
-                               max_responses, close_at, show_responses, public_results, created_at)
-        VALUES (%s, %s, %s, %s, %s, TRUE, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                               max_responses, close_at, show_responses, public_results, 
+                               allow_multiple_responses, created_at)
+        VALUES (%s, %s, %s, %s, %s, TRUE, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         """
         self.execute_query(query, (next_id, guild_id, channel_id, creator_id, question, 
-                                  max_responses, close_at, show_responses, public_results), fetch=False)
+                                  max_responses, close_at, show_responses, public_results,
+                                  allow_multiple_responses), fetch=False)
         return next_id
     
     def update_poll_message_id(self, poll_id: int, message_id: int):
@@ -417,7 +419,8 @@ class Database:
         """Get poll information by ID"""
         query = """
         SELECT id, guild_id, channel_id, creator_id, question, message_id, is_active, 
-               created_at, max_responses, close_at, show_responses, public_results
+               created_at, max_responses, close_at, show_responses, public_results,
+               allow_multiple_responses
         FROM main.polls WHERE id = %s
         """
         result = self.execute_query(query, (poll_id,))
@@ -434,7 +437,8 @@ class Database:
                 'max_responses': result[0][8],
                 'close_at': result[0][9],
                 'show_responses': result[0][10],
-                'public_results': result[0][11]
+                'public_results': result[0][11],
+                'allow_multiple_responses': result[0][12]
             }
         return None
     
@@ -445,11 +449,15 @@ class Database:
         if not poll or not poll['is_active']:
             raise Exception("This poll is closed or does not exist")
         
-        # Check if user already responded (allow updating response)
+        # Check if user already responded
         check_query = "SELECT id FROM main.poll_responses WHERE poll_id = %s AND user_id = %s"
         existing = self.execute_query(check_query, (poll_id, user_id))
         
         if existing:
+            # Check if multiple responses are allowed
+            if not poll.get('allow_multiple_responses', True):
+                raise Exception("You have already submitted a response to this poll")
+            
             # Update existing response
             query = """
             UPDATE main.poll_responses 

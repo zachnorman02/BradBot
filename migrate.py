@@ -408,6 +408,25 @@ class Migration011(Migration):
             WHERE public_results IS NULL
         """, fetch=False)
 
+class Migration012(Migration):
+    def __init__(self):
+        super().__init__("012", "Add allow_multiple_responses column to polls")
+    
+    def up(self):
+        # Add allow_multiple_responses column
+        db.execute_query("""
+            ALTER TABLE main.polls 
+            ADD COLUMN IF NOT EXISTS allow_multiple_responses BOOLEAN
+        """, fetch=False)
+        print(f"   ✅ Added allow_multiple_responses column to polls")
+        
+        # Set default value for existing rows (allow multiple by default for backwards compatibility)
+        db.execute_query("""
+            UPDATE main.polls 
+            SET allow_multiple_responses = TRUE 
+            WHERE allow_multiple_responses IS NULL
+        """, fetch=False)
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -421,6 +440,7 @@ MIGRATIONS = [
     Migration009(),  # Grant admin access to all tables
     Migration010(),  # Poll tables
     Migration011(),  # Add auto-close functionality to polls
+    Migration012(),  # Add allow_multiple_responses to polls
 ]
 
 def get_applied_migrations():
