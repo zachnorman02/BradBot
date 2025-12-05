@@ -3,8 +3,8 @@ Standalone utility commands and their helpers
 """
 import discord
 from discord import app_commands
-from timestamp_helpers import TimestampStyle, create_discord_timestamp, format_timestamp_examples
-from conversion_helpers import ConversionType, convert_testosterone
+from utils.timestamp_helpers import TimestampStyle, create_discord_timestamp, format_timestamp_examples
+from utils.conversion_helpers import ConversionType, convert_testosterone
 
 
 # ============================================================================

@@ -193,6 +193,43 @@ class Database:
         """
         self.execute_query(insert_query, (user_id, guild_id, 'true' if enabled else 'false'), fetch=False)
     
+    def get_user_setting(self, user_id: int, guild_id: Optional[int], setting_name: str, default_value: bool = True) -> bool:
+        """Get a user setting. Defaults to default_value if not set.
+        guild_id=None checks global setting.
+        """
+        query = """
+        SELECT setting_value FROM main.user_settings 
+        WHERE entity_type = 'user' 
+        AND entity_id = %s 
+        AND guild_id IS NOT DISTINCT FROM %s 
+        AND setting_name = %s
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """
+        result = self.execute_query(query, (user_id, guild_id, setting_name))
+        if result:
+            return result[0][0].lower() == 'true'
+        return default_value
+    
+    def set_user_setting(self, user_id: int, guild_id: Optional[int], setting_name: str, enabled: bool):
+        """Set a user setting. guild_id=None sets global setting."""
+        # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
+        delete_query = """
+        DELETE FROM main.user_settings 
+        WHERE entity_type = 'user' 
+        AND entity_id = %s 
+        AND guild_id IS NOT DISTINCT FROM %s 
+        AND setting_name = %s
+        """
+        self.execute_query(delete_query, (user_id, guild_id, setting_name), fetch=False)
+        
+        # Then insert the new value
+        insert_query = """
+        INSERT INTO main.user_settings (entity_type, entity_id, guild_id, setting_name, setting_value, created_at, updated_at)
+        VALUES ('user', %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """
+        self.execute_query(insert_query, (user_id, guild_id, setting_name, 'true' if enabled else 'false'), fetch=False)
+    
     # Guild settings methods
     def get_guild_link_replacement_enabled(self, guild_id: int) -> bool:
         """Get whether link replacement is enabled for a guild. Defaults to True."""

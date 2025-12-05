@@ -5,7 +5,7 @@ import discord
 import re
 from database import db
 from helpers import is_url_in_code_block, get_embedez_link, fix_amp_links
-from websites import websites, get_site_name
+from utils.websites import websites, get_site_name
 
 
 # List of sites that support EmbedEZ (Instagram handled separately)
@@ -38,10 +38,21 @@ async def handle_reply_notification(message: discord.Message, bot: discord.Clien
             # This is just a reply ping message, don't create another ping
             return
         
+        # Check if reply pings are enabled for this guild
+        guild_id = message.guild.id if message.guild else None
+        if guild_id:
+            reply_pings_enabled = db.get_guild_setting(guild_id, 'reply_pings_enabled', 'true').lower() == 'true'
+            if not reply_pings_enabled:
+                return  # Feature disabled for this guild
+            
+            # Check if members can send pings in this guild
+            member_send_pings_enabled = db.get_guild_setting(guild_id, 'member_send_pings_enabled', 'true').lower() == 'true'
+            if not member_send_pings_enabled:
+                return  # Members can't trigger pings in this guild
+        
         # Look up the original user from message tracking
         user_data = db.get_message_original_user(replied_message.id)
         original_user_id = None
-        guild_id = message.guild.id if message.guild else None
         
         if user_data:
             # Found in tracking database
@@ -57,6 +68,21 @@ async def handle_reply_notification(message: discord.Message, bot: discord.Clien
         if original_user_id and guild_id:
             # Don't ping if the replier is the original poster
             if message.author.id != original_user_id:
+                # Check if the replier has opted out of sending pings
+                # Check global setting first (guild_id = None), then fall back to server-specific
+                global_send_pings = db.get_user_setting(message.author.id, None, 'send_reply_pings', True)
+                
+                # If global setting exists and is disabled, skip notification
+                if not global_send_pings:
+                    return
+                
+                # Check server-specific setting for the replier
+                send_pings_enabled = db.get_user_setting(message.author.id, guild_id, 'send_reply_pings', True)
+                
+                if not send_pings_enabled:
+                    return
+                
+                # Now check if the original poster wants to receive notifications
                 # Check global setting first (guild_id = None), then fall back to server-specific
                 global_notifications = db.get_user_reply_notifications(original_user_id, None)
                 

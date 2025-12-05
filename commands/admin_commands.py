@@ -90,6 +90,170 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
     
+    @app_commands.command(name="boosterroles", description="Toggle automatic booster role creation/restoration for this server")
+    @app_commands.describe(enabled="Enable or disable automatic booster role management")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="Enable booster role automation", value=1),
+        app_commands.Choice(name="Disable booster role automation", value=0)
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def booster_roles(self, interaction: discord.Interaction, enabled: int):
+        """Toggle booster role automation for the server (requires administrator permission)"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Update guild setting
+            db.set_guild_setting(
+                guild_id=interaction.guild.id,
+                setting_name='booster_roles_enabled',
+                setting_value='true' if enabled else 'false'
+            )
+            
+            status = "**enabled** ✅" if enabled else "**disabled** 🔕"
+            await interaction.response.send_message(
+                f"Booster role automation {status}\n"
+                f"The bot will {'now automatically' if enabled else 'no longer'}:\n"
+                f"• Create/restore custom roles when members start boosting\n"
+                f"• Save role configurations when members stop boosting\n"
+                f"• Manage booster role persistence",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error updating booster roles setting: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating the booster roles setting. Please try again later.",
+                ephemeral=True
+            )
+    
+    @app_commands.command(name="unverifiedkicks", description="Toggle automatic 30-day unverified user kicks for this server")
+    @app_commands.describe(enabled="Enable or disable automatic unverified user kicks")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="Enable unverified kicks", value=1),
+        app_commands.Choice(name="Disable unverified kicks", value=0)
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def unverified_kicks(self, interaction: discord.Interaction, enabled: int):
+        """Toggle automatic unverified user kicks for the server (requires administrator permission)"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Update guild setting
+            db.set_guild_setting(
+                guild_id=interaction.guild.id,
+                setting_name='unverified_kicks_enabled',
+                setting_value='true' if enabled else 'false'
+            )
+            
+            status = "**enabled** ✅" if enabled else "**disabled** 🔕"
+            await interaction.response.send_message(
+                f"Unverified user kicks {status}\n"
+                f"The bot will {'now automatically' if enabled else 'no longer'}:\n"
+                f"• Kick users with 'unverified' role after 30 days\n"
+                f"• Skip users in active verification tickets\n"
+                f"• Run checks daily at midnight UTC",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error updating unverified kicks setting: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating the unverified kicks setting. Please try again later.",
+                ephemeral=True
+            )
+    
+    @app_commands.command(name="replypings", description="Toggle reply ping notifications for this server")
+    @app_commands.describe(enabled="Enable or disable reply ping notifications")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="Enable reply pings", value=1),
+        app_commands.Choice(name="Disable reply pings", value=0)
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def reply_pings(self, interaction: discord.Interaction, enabled: int):
+        """Toggle reply ping notifications for the server (requires administrator permission)"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Update guild setting
+            db.set_guild_setting(
+                guild_id=interaction.guild.id,
+                setting_name='reply_pings_enabled',
+                setting_value='true' if enabled else 'false'
+            )
+            
+            status = "**enabled** ✅" if enabled else "**disabled** 🔕"
+            await interaction.response.send_message(
+                f"Reply ping notifications {status}\n"
+                f"The bot will {'now' if enabled else 'no longer'} send ping notifications when:\n"
+                f"• Someone replies to a bot message\n"
+                f"• The original user has reply notifications enabled\n"
+                f"• The replier is not the original user\n\n"
+                f"ℹ️ Users can still control their own notification preferences with `/settings notify` and `/settings sendpings`",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error updating reply pings setting: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating the reply pings setting. Please try again later.",
+                ephemeral=True
+            )
+    
+    @app_commands.command(name="membersendpings", description="Toggle whether members' replies can trigger pings in this server")
+    @app_commands.describe(enabled="Enable or disable members sending reply pings")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="Enable (members can trigger pings)", value=1),
+        app_commands.Choice(name="Disable (members can't trigger pings)", value=0)
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def member_send_pings(self, interaction: discord.Interaction, enabled: int):
+        """Toggle whether members can trigger reply pings in this server (requires administrator permission)"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Update guild setting
+            db.set_guild_setting(
+                guild_id=interaction.guild.id,
+                setting_name='member_send_pings_enabled',
+                setting_value='true' if enabled else 'false'
+            )
+            
+            status = "**enabled** ✅" if enabled else "**disabled** 🔕"
+            await interaction.response.send_message(
+                f"Members sending reply pings {status}\n"
+                f"Members in this server {'can now' if enabled else 'can no longer'} trigger ping notifications when replying to bot messages.\n\n"
+                f"ℹ️ Individual users can still control whether they send pings with `/settings sendpings`\n"
+                f"⚠️ This setting overrides individual user preferences when disabled",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error updating member send pings setting: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating the member send pings setting. Please try again later.",
+                ephemeral=True
+            )
+    
     @app_commands.command(name="loadboosterroles", description="Load existing booster roles into the database")
     @app_commands.default_permissions(administrator=True)
     async def load_booster_roles(self, interaction: discord.Interaction):
