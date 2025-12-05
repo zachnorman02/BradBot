@@ -3,7 +3,12 @@ Database migration manager for BradBot
 Tracks and applies database schema changes automatically
 """
 import os
+import sys
 from datetime import datetime
+
+# Add parent directory to path so we can import database module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from database import db
 
 class Migration:
