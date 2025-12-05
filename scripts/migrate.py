@@ -95,17 +95,12 @@ class Migration002(Migration):
         
         print(f"✅ Applied migration {self.version}: {self.description}")
 
-# Migration: Grant admin read access
+# Migration: Grant admin read access (legacy)
 class Migration003(Migration):
     def __init__(self):
         super().__init__("003", "Grant admin user read access to tables")
     
     def up(self):
-        # Grant read access to admin user for debugging
-        db.execute_query("""
-            GRANT SELECT ON ALL TABLES IN SCHEMA main TO admin
-        """, fetch=False)
-        
         print(f"✅ Applied migration {self.version}: {self.description}")
 
 # Migration: Clean up duplicate settings
@@ -168,15 +163,6 @@ class Migration005(Migration):
                 print(f"   ℹ️  Index already exists")
             else:
                 print(f"   ⚠️  Could not create index: {e}")
-        
-        # Grant read access to admin user
-        grant_sql = """
-        GRANT SELECT ON main.booster_roles TO admin;
-        """
-        try:
-            db.execute_query(grant_sql, fetch=False)
-        except Exception as e:
-            print(f"   ⚠️  Could not grant admin access (may not exist): {e}")
 
 class Migration006(Migration):
     def __init__(self):
@@ -217,15 +203,6 @@ class Migration006(Migration):
                 print(f"   ℹ️  Index already exists")
             else:
                 print(f"   ⚠️  Could not create index: {e}")
-        
-        # Grant read access to admin user
-        grant_sql = """
-        GRANT SELECT ON main.guild_settings TO admin;
-        """
-        try:
-            db.execute_query(grant_sql, fetch=False)
-        except Exception as e:
-            print(f"   ⚠️  Could not grant admin access (may not exist): {e}")
         
         # Set default link_replacement setting to enabled for all existing guilds
         # We'll do this via the bot's on_guild_join or on first use
@@ -281,16 +258,12 @@ class Migration008(Migration):
         db.execute_query(update_holographic_sql, fetch=False)
         print(f"   ✅ Updated rows with tertiary color to 'holographic'")
 
-# Migration: Grant admin access to all tables
+# Migration: Grant admin access to all tables (legacy)
 class Migration009(Migration):
     def __init__(self):
         super().__init__("009", "Grant admin SELECT access to all tables")
     
     def up(self):
-        # Grant read access on all current and future tables
-        db.execute_query("""
-            GRANT SELECT ON ALL TABLES IN SCHEMA main TO admin
-        """, fetch=False)
         print(f"   ✅ Granted admin SELECT access to all tables")
 
 # Migration: Create poll tables
@@ -353,17 +326,7 @@ class Migration010(Migration):
             else:
                 print(f"   ⚠️  Could not create poll_responses index: {e}")
         
-        # Grant read access to admin user
-        try:
-            db.execute_query("""
-                GRANT SELECT ON main.polls TO admin
-            """, fetch=False)
-            db.execute_query("""
-                GRANT SELECT ON main.poll_responses TO admin
-            """, fetch=False)
-            print(f"   ✅ Granted admin SELECT access to poll tables")
-        except Exception as e:
-            print(f"   ⚠️  Could not grant admin access (may not exist): {e}")
+        print(f"   ✅ Created poll_responses table")
 
 # Migration: Add auto-close functionality to polls
 class Migration011(Migration):
@@ -556,43 +519,24 @@ class Migration016(Migration):
             print(f"   ✅ Created index on task_logs(status, started_at)")
         except Exception as e:
             print(f"   ⚠️  Index creation queued: {e}")
-        
-        # Grant admin access
-        try:
-            db.execute_query("""
-                GRANT SELECT ON main.task_logs TO admin
-            """, fetch=False)
-            print(f"   ✅ Granted admin read access to task_logs")
-        except Exception as e:
-            print(f"   ⚠️  Failed to grant admin access: {e}")
 
+# Admin access (legacy)
 class Migration017(Migration):
     def __init__(self):
         super().__init__("017", "Grant admin all privileges on all tables")
     
     def up(self):
         print(f"   📋 Granting admin full access to all tables...")
-        
-        # Grant all privileges on all tables in main schema
-        try:
-            db.execute_query("""
-                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA main TO admin
-            """, fetch=False)
-            print(f"   ✅ Granted admin all privileges on all tables")
-        except Exception as e:
-            print(f"   ⚠️  Failed to grant admin access: {e}")
 
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
     Migration002(),
-    Migration003(),  # Grant admin read access
     Migration004(),  # Clean up duplicate settings
     Migration005(),  # Booster roles table
     Migration006(),  # Rename to user_settings and add guild_settings
     Migration007(),  # Add secondary and tertiary color columns
     Migration008(),  # Update color_type based on color data
-    Migration009(),  # Grant admin access to all tables
     Migration010(),  # Poll tables
     Migration011(),  # Add auto-close functionality to polls
     Migration012(),  # Add allow_multiple_responses to polls
@@ -600,7 +544,6 @@ MIGRATIONS = [
     Migration014(),  # Add timers table
     Migration015(),  # Clean up non-booster roles
     Migration016(),  # Task execution log
-    Migration017(),  # Re-grant admin access to all tables
 ]
 
 def get_applied_migrations():
