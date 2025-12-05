@@ -124,6 +124,23 @@ class InstagramProfileLink(SimpleWebsiteLink):
                     return True
         return False
 
+# Handles TikTok profile URLs, strips tracking params but does not replace domain
+class TikTokProfileLink(SimpleWebsiteLink):
+    name = "TikTok"
+    routes = [
+        r"https?://(?:www\.)?tiktok\.com/@[\w.-]+/?(?:\?.*)?$"
+    ]
+    replacement = "tiktok.com"
+    
+    def is_valid(self) -> bool:
+        """Check if URL matches profile route but NOT video/photo routes."""
+        for route in self.routes:
+            if re.match(route, self.url, re.IGNORECASE):
+                # Exclude URLs that have /video/, /photo/ paths (those are posts, not profiles)
+                if not re.search(r'/(video|photo)/', self.url, re.IGNORECASE):
+                    return True
+        return False
+
 class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
@@ -360,6 +377,7 @@ websites = [
     TwitterLink,
     InstagramLink,
     InstagramProfileLink,
+    TikTokProfileLink,
     TikTokLink,
     RedditLink,
     YouTubeLink,

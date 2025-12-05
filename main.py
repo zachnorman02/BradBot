@@ -97,7 +97,7 @@ async def on_ready():
         print(f"⚠️  Failed to register poll views: {e}")
     
     # Add command groups to the tree
-    bot.tree.add_command(EmojiGroup(name="emoji", description="Emoji and sticker management commands"))
+    bot.tree.add_command(EmojiGroup(bot))
     bot.tree.add_command(BoosterGroup())
     bot.tree.add_command(SettingsGroup(name="settings", description="User settings and preferences"))
     bot.tree.add_command(AdminGroup(name="admin", description="Admin server management commands"))
