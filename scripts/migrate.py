@@ -495,6 +495,22 @@ class Migration014(Migration):
         except Exception as e:
             print(f"   ⚠️  Index creation queued: {e}")
 
+# Migration: Clean up non-booster roles
+class Migration015(Migration):
+    def __init__(self):
+        super().__init__("015", "Delete booster roles without icon hash (likely not real booster roles)")
+    
+    def up(self):
+        print(f"   🗑️  Deleting booster roles without icon hash...")
+        
+        # Delete roles that don't have an icon hash (likely permission roles, not booster roles)
+        db.execute_query("""
+            DELETE FROM main.booster_roles
+            WHERE icon_hash IS NULL
+        """, fetch=False)
+        
+        print(f"   ✅ Deleted non-booster roles from database")
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -511,6 +527,7 @@ MIGRATIONS = [
     Migration012(),  # Add allow_multiple_responses to polls
     Migration013(),  # Add reminders table
     Migration014(),  # Add timers table
+    Migration015(),  # Clean up non-booster roles
 ]
 
 def get_applied_migrations():

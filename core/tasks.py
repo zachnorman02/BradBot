@@ -260,14 +260,22 @@ async def handle_booster_started(member: discord.Member):
 async def _check_booster_roles_for_guild(guild: discord.Guild):
     """Check and save booster roles for non-boosters in a guild"""
     for member in guild.members:
+        # Skip bots
+        if member.bot:
+            continue
+        
         # Find custom roles (only one member, not @everyone)
         personal_roles = [role for role in member.roles if not role.is_default() and len(role.members) == 1]
         
         # Check if user has custom roles but is NOT a booster (lost booster status)
         if personal_roles and not member.premium_since:
-            for role in personal_roles:
+            # Only save if they have a booster role in the database (meaning they were previously a booster)
+            existing_role = db.get_booster_role(member.id, guild.id)
+            if existing_role:
+                # Use the highest personal role by position
+                role = max(personal_roles, key=lambda r: r.position)
                 if await _save_booster_role(member, role):
-                    print(f"💾 [Daily scan] Saved booster role configuration for {member.display_name}")
+                    print(f"💾 [Daily scan] Updated booster role configuration for {member.display_name}")
 
 
 async def _check_verified_roles_for_guild(guild: discord.Guild, verified_role, lvl0_role):
