@@ -528,7 +528,7 @@ class Migration016(Migration):
                 started_at TIMESTAMP NOT NULL,
                 completed_at TIMESTAMP,
                 status VARCHAR(20) NOT NULL,
-                details JSONB,
+                details TEXT,
                 error_message TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
