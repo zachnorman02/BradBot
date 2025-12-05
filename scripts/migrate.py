@@ -522,7 +522,7 @@ class Migration016(Migration):
         # Create task_logs table
         db.execute_query("""
             CREATE TABLE IF NOT EXISTS main.task_logs (
-                id SERIAL PRIMARY KEY,
+                id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                 task_name VARCHAR(100) NOT NULL,
                 guild_id BIGINT,
                 started_at TIMESTAMP NOT NULL,
