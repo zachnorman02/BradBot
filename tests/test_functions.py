@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the functions we want to test
-from helpers import is_url_in_code_block, fix_amp_links
+from utils.helpers import is_url_in_code_block, fix_amp_links
 
 def test_code_block_detection():
     """Test the code block URL detection function"""

@@ -4,7 +4,7 @@ Message processing logic for link replacement and reply notifications
 import discord
 import re
 from database import db
-from helpers import is_url_in_code_block, get_embedez_link, fix_amp_links
+from utils.helpers import is_url_in_code_block, get_embedez_link, fix_amp_links
 from utils.websites import websites, get_site_name
 
 
