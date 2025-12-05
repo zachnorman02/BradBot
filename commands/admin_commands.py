@@ -3,6 +3,7 @@ Admin command group for server and database management
 """
 import discord
 from discord import app_commands
+import datetime as dt
 from database import db
 
 
@@ -537,6 +538,80 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
     
+    @app_commands.command(name="tasklogs", description="View recent automated task execution logs (BOT OWNER ONLY)")
+    @app_commands.describe(
+        task_name="Filter by task name (optional)",
+        limit="Number of logs to show (default: 10)"
+    )
+    async def view_task_logs(self, interaction: discord.Interaction, task_name: str = None, limit: int = 10):
+        """View recent automated task execution logs (BOT OWNER ONLY)"""
+        # Check if user is the bot owner
+        app_info = await interaction.client.application_info()
+        if interaction.user.id != app_info.owner.id:
+            await interaction.response.send_message(
+                "❌ This command is restricted to the bot owner only.",
+                ephemeral=True
+            )
+            return
+        
+        # Defer response since query might take time
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Get task logs
+            logs = db.get_recent_task_logs(task_name=task_name, limit=min(limit, 50))
+            
+            if not logs:
+                await interaction.followup.send("📋 No task logs found.", ephemeral=True)
+                return
+            
+            # Format logs
+            response = f"📋 **Recent Task Logs** ({len(logs)} entries)\n"
+            if task_name:
+                response += f"Filtered by: `{task_name}`\n"
+            response += "\n"
+            
+            for log in logs:
+                status_emoji = "✅" if log['status'] == 'success' else "❌" if log['status'] == 'error' else "⏳"
+                duration = ""
+                if log['completed_at']:
+                    delta = log['completed_at'] - log['started_at']
+                    duration = f" ({delta.total_seconds():.1f}s)"
+                
+                response += f"{status_emoji} **{log['task_name']}**{duration}\n"
+                response += f"   Started: <t:{int(log['started_at'].timestamp())}:f>\n"
+                
+                if log['guild_id']:
+                    response += f"   Guild: {log['guild_id']}\n"
+                
+                if log['details']:
+                    details_str = str(log['details'])[:100]
+                    response += f"   Details: {details_str}\n"
+                
+                if log['error_message']:
+                    error_str = log['error_message'][:100]
+                    response += f"   Error: {error_str}\n"
+                
+                response += "\n"
+                
+                # Check message length
+                if len(response) > 1800:
+                    response += "... (output truncated)"
+                    break
+            
+            await interaction.followup.send(response, ephemeral=True)
+            
+        except Exception as e:
+            print(f"Error viewing task logs: {e}")
+            await interaction.followup.send(
+                f"❌ Error retrieving task logs: {str(e)[:100]}",
+                ephemeral=True
+            )
+    
     @app_commands.command(name="assignlvl0", description="Assign lvl 0 to all verified members without a level role")
     @app_commands.checks.has_permissions(manage_roles=True)
     async def assign_lvl0(self, interaction: discord.Interaction):
@@ -616,8 +691,6 @@ class AdminGroup(app_commands.Group):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            import datetime as dt
-            
             # Get role objects
             unverified_role = discord.utils.get(interaction.guild.roles, name="unverified")
             

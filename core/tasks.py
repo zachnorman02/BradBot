@@ -354,38 +354,76 @@ async def daily_maintenance_check(bot):
         
         print(f"[DAILY TASK] Running midnight checks...")
         
-        for guild in bot.guilds:
-            # Get role objects for this guild
-            verified_role = discord.utils.get(guild.roles, name="verified")
-            lvl0_role = discord.utils.get(guild.roles, name="lvl 0")
-            unverified_role = discord.utils.get(guild.roles, name="unverified")
-            verification_category = discord.utils.get(guild.categories, name="verification")
-            
-            # Check guild automation settings
-            booster_roles_enabled = db.get_guild_setting(guild.id, 'booster_roles_enabled', 'true').lower() == 'true'
-            verify_enabled = db.get_guild_setting(guild.id, 'verify_roles_enabled', 'true').lower() == 'true'
-            unverified_kicks_enabled = db.get_guild_setting(guild.id, 'unverified_kicks_enabled', 'true').lower() == 'true'
-            
-            # Debug logging
-            print(f"[DAILY TASK] Guild: {guild.name}")
-            print(f"[DAILY TASK] - Roles: verified={verified_role is not None}, lvl0={lvl0_role is not None}, unverified={unverified_role is not None}")
-            print(f"[DAILY TASK] - Settings: booster_roles={booster_roles_enabled}, verify_roles={verify_enabled}, unverified_kicks={unverified_kicks_enabled}")
-            
-            if unverified_role:
-                unverified_count = len([m for m in guild.members if not m.bot and unverified_role in m.roles])
-                print(f"[DAILY TASK] - Unverified members: {unverified_count}")
-            
-            # Run enabled checks
-            if booster_roles_enabled:
-                await _check_booster_roles_for_guild(guild)
-            
-            if verify_enabled:
-                await _check_verified_roles_for_guild(guild, verified_role, lvl0_role)
-            
-            if unverified_kicks_enabled:
-                await _check_unverified_kicks_for_guild(guild, unverified_role, verification_category, now)
+        # Log task start
+        log_id = db.log_task_start('daily_maintenance', details={'guild_count': len(bot.guilds)})
         
-        print(f"[DAILY TASK] Midnight checks completed")
+        try:
+            guild_results = []
+            
+            for guild in bot.guilds:
+                guild_log_id = db.log_task_start('daily_maintenance_guild', guild_id=guild.id)
+                
+                try:
+                    # Get role objects for this guild
+                    verified_role = discord.utils.get(guild.roles, name="verified")
+                    lvl0_role = discord.utils.get(guild.roles, name="lvl 0")
+                    unverified_role = discord.utils.get(guild.roles, name="unverified")
+                    verification_category = discord.utils.get(guild.categories, name="verification")
+                    
+                    # Check guild automation settings
+                    booster_roles_enabled = db.get_guild_setting(guild.id, 'booster_roles_enabled', 'true').lower() == 'true'
+                    verify_enabled = db.get_guild_setting(guild.id, 'verify_roles_enabled', 'true').lower() == 'true'
+                    unverified_kicks_enabled = db.get_guild_setting(guild.id, 'unverified_kicks_enabled', 'true').lower() == 'true'
+                    
+                    # Debug logging
+                    print(f"[DAILY TASK] Guild: {guild.name}")
+                    print(f"[DAILY TASK] - Roles: verified={verified_role is not None}, lvl0={lvl0_role is not None}, unverified={unverified_role is not None}")
+                    print(f"[DAILY TASK] - Settings: booster_roles={booster_roles_enabled}, verify_roles={verify_enabled}, unverified_kicks={unverified_kicks_enabled}")
+                    
+                    unverified_count = 0
+                    if unverified_role:
+                        unverified_count = len([m for m in guild.members if not m.bot and unverified_role in m.roles])
+                        print(f"[DAILY TASK] - Unverified members: {unverified_count}")
+                    
+                    # Run enabled checks
+                    if booster_roles_enabled:
+                        await _check_booster_roles_for_guild(guild)
+                    
+                    if verify_enabled:
+                        await _check_verified_roles_for_guild(guild, verified_role, lvl0_role)
+                    
+                    if unverified_kicks_enabled:
+                        await _check_unverified_kicks_for_guild(guild, unverified_role, verification_category, now)
+                    
+                    # Log guild success
+                    db.log_task_complete(guild_log_id, 'success', details={
+                        'booster_roles_enabled': booster_roles_enabled,
+                        'verify_enabled': verify_enabled,
+                        'unverified_kicks_enabled': unverified_kicks_enabled,
+                        'unverified_count': unverified_count
+                    })
+                    
+                    guild_results.append({'guild_id': guild.id, 'status': 'success'})
+                    
+                except Exception as e:
+                    print(f"[DAILY TASK] Error processing guild {guild.name}: {e}")
+                    db.log_task_complete(guild_log_id, 'error', error_message=str(e))
+                    guild_results.append({'guild_id': guild.id, 'status': 'error', 'error': str(e)})
+            
+            print(f"[DAILY TASK] Midnight checks completed")
+            
+            # Log overall task completion
+            success_count = sum(1 for r in guild_results if r['status'] == 'success')
+            error_count = sum(1 for r in guild_results if r['status'] == 'error')
+            db.log_task_complete(log_id, 'success', details={
+                'guilds_processed': len(guild_results),
+                'guilds_success': success_count,
+                'guilds_error': error_count
+            })
+            
+        except Exception as e:
+            print(f"[DAILY TASK] Fatal error in maintenance check: {e}")
+            db.log_task_complete(log_id, 'error', error_message=str(e))
 
 
 # ============================================================================

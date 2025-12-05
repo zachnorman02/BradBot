@@ -22,6 +22,9 @@ from commands import (
     timestamp_command
 )
 
+# Import poll views
+from commands.poll_commands import PollView
+
 # Import core functionality
 from core import (
     daily_booster_role_check,
@@ -73,7 +76,6 @@ async def on_ready():
     
     # Re-register persistent views for active polls
     try:
-        from commands.poll_commands import PollView
         # Get all active polls
         active_polls = db.execute_query(
             "SELECT id, question FROM main.polls WHERE is_active = TRUE"

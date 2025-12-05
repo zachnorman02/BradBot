@@ -3,6 +3,7 @@ Helper utility functions for message processing
 """
 import re
 from typing import Optional
+from urllib.parse import quote
 
 
 def is_url_in_code_block(content: str, url: str) -> bool:
@@ -102,7 +103,6 @@ async def get_embedez_link(url: str) -> Optional[str]:
     """
     # EmbedEZ format: https://embedez.io/embed?url=<encoded_url>
     try:
-        from urllib.parse import quote
         encoded_url = quote(url, safe='')
         return f'https://embedez.io/embed?url={encoded_url}'
     except Exception:

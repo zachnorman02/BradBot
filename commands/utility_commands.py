@@ -5,7 +5,9 @@ import discord
 from discord import app_commands
 import datetime as dt
 import asyncio
+import re
 from typing import Optional
+from dateutil import parser
 from database import db
 
 
@@ -191,7 +193,6 @@ class UtilityGroup(app_commands.Group):
         duration = duration.strip().lower()
         
         # Extract number and unit
-        import re
         match = re.match(r'^(\d+)([smhd])$', duration)
         if not match:
             return None
@@ -210,9 +211,6 @@ class UtilityGroup(app_commands.Group):
     
     def _parse_datetime(self, time_str: str, timezone_offset: int = 0) -> Optional[dt.datetime]:
         """Parse a date/time string into a UTC datetime object"""
-        import re
-        from dateutil import parser
-        
         time_str = time_str.strip().lower()
         now = dt.datetime.now(dt.timezone.utc)
         

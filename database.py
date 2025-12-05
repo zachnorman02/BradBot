@@ -3,6 +3,7 @@ Database connection and utilities for BradBot
 Supports Aurora DSQL with IAM authentication
 """
 import os
+import json
 import boto3
 import psycopg2
 from psycopg2 import pool
@@ -670,6 +671,62 @@ class Database:
         """Mark a timer as complete"""
         query = "UPDATE main.timers SET is_complete = TRUE WHERE id = %s"
         self.execute_query(query, (timer_id,), fetch=False)
+    
+    # Task logging methods
+    def log_task_start(self, task_name: str, guild_id: Optional[int] = None, details: Optional[dict] = None) -> int:
+        """Log the start of an automated task. Returns the log ID."""
+        query = """
+        INSERT INTO main.task_logs (task_name, guild_id, started_at, status, details)
+        VALUES (%s, %s, CURRENT_TIMESTAMP, 'running', %s)
+        RETURNING id
+        """
+        result = self.execute_query(query, (task_name, guild_id, json.dumps(details) if details else None))
+        return result[0][0] if result else None
+    
+    def log_task_complete(self, log_id: int, status: str = 'success', details: Optional[dict] = None, error_message: Optional[str] = None):
+        """Log the completion of an automated task."""
+        query = """
+        UPDATE main.task_logs 
+        SET completed_at = CURRENT_TIMESTAMP, status = %s, details = %s, error_message = %s
+        WHERE id = %s
+        """
+        self.execute_query(query, (status, json.dumps(details) if details else None, error_message, log_id), fetch=False)
+    
+    def get_recent_task_logs(self, task_name: Optional[str] = None, limit: int = 50):
+        """Get recent task logs, optionally filtered by task name."""
+        if task_name:
+            query = """
+            SELECT id, task_name, guild_id, started_at, completed_at, status, details, error_message
+            FROM main.task_logs
+            WHERE task_name = %s
+            ORDER BY started_at DESC
+            LIMIT %s
+            """
+            results = self.execute_query(query, (task_name, limit))
+        else:
+            query = """
+            SELECT id, task_name, guild_id, started_at, completed_at, status, details, error_message
+            FROM main.task_logs
+            ORDER BY started_at DESC
+            LIMIT %s
+            """
+            results = self.execute_query(query, (limit,))
+        
+        if results:
+            return [
+                {
+                    'id': row[0],
+                    'task_name': row[1],
+                    'guild_id': row[2],
+                    'started_at': row[3],
+                    'completed_at': row[4],
+                    'status': row[5],
+                    'details': json.loads(row[6]) if row[6] else None,
+                    'error_message': row[7]
+                }
+                for row in results
+            ]
+        return []
 
 # Global database instance
 db = Database()

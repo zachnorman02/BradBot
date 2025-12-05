@@ -2,6 +2,7 @@
 Allows fixing links from various websites.
 """
 import re
+import asyncio
 from typing import Optional
 
 __all__ = ('WebsiteLink', 'websites', 'fix_link', 'get_site_name')
@@ -392,7 +393,6 @@ def fix_link(url: str) -> Optional[str]:
         website = website_class.if_valid(url)
         if website:
             # Since render is async, we need to handle it properly
-            import asyncio
             try:
                 # If we're already in an async context, use the existing loop
                 loop = asyncio.get_running_loop()

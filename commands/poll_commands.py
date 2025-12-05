@@ -6,6 +6,8 @@ from discord import app_commands
 from database import db
 import datetime as dt
 import io
+import traceback
+from collections import Counter
 from wordcloud import WordCloud
 import matplotlib
 matplotlib.use('Agg')  # Use non-GUI backend
@@ -176,7 +178,6 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
                 
         except Exception as e:
             print(f"[POLL ERROR] Error in response submission: {e}")
-            import traceback
             traceback.print_exc()
             try:
                 await interaction.response.send_message(
@@ -698,7 +699,6 @@ class PollGroup(app_commands.Group):
             
         except Exception as e:
             print(f"Error generating word cloud: {e}")
-            import traceback
             traceback.print_exc()
             await interaction.followup.send(
                 f"❌ An error occurred while generating the word cloud: {str(e)[:200]}"
@@ -765,7 +765,6 @@ class PollGroup(app_commands.Group):
                 return
             
             # Count response frequencies (normalize to lowercase and strip whitespace)
-            from collections import Counter
             response_counts = Counter()
             for r in responses:
                 # Normalize: lowercase, strip whitespace
@@ -840,7 +839,6 @@ class PollGroup(app_commands.Group):
             
         except Exception as e:
             print(f"Error generating poll statistics: {e}")
-            import traceback
             traceback.print_exc()
             await interaction.followup.send(
                 f"❌ An error occurred while generating statistics: {str(e)[:200]}"

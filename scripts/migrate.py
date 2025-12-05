@@ -511,6 +511,61 @@ class Migration015(Migration):
         
         print(f"   ✅ Deleted non-booster roles from database")
 
+# Migration: Task execution log table
+class Migration016(Migration):
+    def __init__(self):
+        super().__init__("016", "Create task_logs table for tracking automated task execution")
+    
+    def up(self):
+        print(f"   📋 Creating task_logs table...")
+        
+        # Create task_logs table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.task_logs (
+                id SERIAL PRIMARY KEY,
+                task_name VARCHAR(100) NOT NULL,
+                guild_id BIGINT,
+                started_at TIMESTAMP NOT NULL,
+                completed_at TIMESTAMP,
+                status VARCHAR(20) NOT NULL,
+                details JSONB,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        print(f"   ✅ Created task_logs table")
+        
+        # Create indexes for efficient querying
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_task_logs_task_name 
+                ON main.task_logs(task_name, started_at DESC)
+            """, fetch=False)
+            print(f"   ✅ Created index on task_logs(task_name, started_at)")
+            
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_task_logs_guild 
+                ON main.task_logs(guild_id, started_at DESC)
+            """, fetch=False)
+            print(f"   ✅ Created index on task_logs(guild_id, started_at)")
+            
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_task_logs_status 
+                ON main.task_logs(status, started_at DESC)
+            """, fetch=False)
+            print(f"   ✅ Created index on task_logs(status, started_at)")
+        except Exception as e:
+            print(f"   ⚠️  Index creation queued: {e}")
+        
+        # Grant admin access
+        try:
+            db.execute_query("""
+                GRANT SELECT ON main.task_logs TO bradbot_admin
+            """, fetch=False)
+            print(f"   ✅ Granted admin read access to task_logs")
+        except Exception as e:
+            print(f"   ⚠️  Failed to grant admin access: {e}")
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -528,6 +583,7 @@ MIGRATIONS = [
     Migration013(),  # Add reminders table
     Migration014(),  # Add timers table
     Migration015(),  # Clean up non-booster roles
+    Migration016(),  # Task execution log
 ]
 
 def get_applied_migrations():
