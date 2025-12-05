@@ -4,6 +4,7 @@ Supports Aurora DSQL with IAM authentication
 """
 import os
 import json
+import time
 import boto3
 import psycopg2
 from psycopg2 import pool
@@ -675,13 +676,15 @@ class Database:
     # Task logging methods
     def log_task_start(self, task_name: str, guild_id: Optional[int] = None, details: Optional[dict] = None) -> int:
         """Log the start of an automated task. Returns the log ID."""
+        # Generate timestamp-based ID (microseconds since epoch)
+        log_id = int(time.time() * 1_000_000)
+        
         query = """
-        INSERT INTO main.task_logs (task_name, guild_id, started_at, status, details)
-        VALUES (%s, %s, CURRENT_TIMESTAMP, 'running', %s)
-        RETURNING id
+        INSERT INTO main.task_logs (id, task_name, guild_id, started_at, status, details)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP, 'running', %s)
         """
-        result = self.execute_query(query, (task_name, guild_id, json.dumps(details) if details else None))
-        return result[0][0] if result else None
+        self.execute_query(query, (log_id, task_name, guild_id, json.dumps(details) if details else None), fetch=False)
+        return log_id
     
     def log_task_complete(self, log_id: int, status: str = 'success', details: Optional[dict] = None, error_message: Optional[str] = None):
         """Log the completion of an automated task."""

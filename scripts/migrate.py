@@ -519,15 +519,10 @@ class Migration016(Migration):
     def up(self):
         print(f"   📋 Creating task_logs table...")
         
-        # Create sequence for ID
-        db.execute_query("""
-            CREATE SEQUENCE IF NOT EXISTS main.task_logs_id_seq
-        """, fetch=False)
-        
-        # Create task_logs table
+        # Create task_logs table (no auto-increment, IDs generated in code)
         db.execute_query("""
             CREATE TABLE IF NOT EXISTS main.task_logs (
-                id INTEGER PRIMARY KEY DEFAULT nextval('main.task_logs_id_seq'),
+                id BIGINT PRIMARY KEY,
                 task_name VARCHAR(100) NOT NULL,
                 guild_id BIGINT,
                 started_at TIMESTAMP NOT NULL,
