@@ -730,6 +730,93 @@ class Database:
                 for row in results
             ]
         return []
+    
+    # Saved emoji/sticker methods
+    def save_emoji(self, name: str, image_data: bytes, animated: bool, saved_by_user_id: int, 
+                   saved_from_guild_id: Optional[int] = None, notes: Optional[str] = None,
+                   is_sticker: bool = False, sticker_description: Optional[str] = None) -> int:
+        """Save an emoji or sticker to the database. Returns the emoji ID."""
+        # Generate timestamp-based ID
+        emoji_id = int(time.time() * 1_000_000)
+        
+        query = """
+        INSERT INTO main.saved_emojis (id, name, image_data, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, notes)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        self.execute_query(query, (emoji_id, name, image_data, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, notes), fetch=False)
+        return emoji_id
+    
+    def get_saved_emoji(self, emoji_id: int):
+        """Get a saved emoji or sticker by ID."""
+        query = """
+        SELECT id, name, image_data, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, created_at, notes
+        FROM main.saved_emojis
+        WHERE id = %s
+        """
+        results = self.execute_query(query, (emoji_id,))
+        if results:
+            row = results[0]
+            return {
+                'id': row[0],
+                'name': row[1],
+                'image_data': row[2],
+                'animated': row[3],
+                'is_sticker': row[4],
+                'sticker_description': row[5],
+                'saved_by_user_id': row[6],
+                'saved_from_guild_id': row[7],
+                'created_at': row[8],
+                'notes': row[9]
+            }
+        return None
+    
+    def search_saved_emojis(self, search_term: Optional[str] = None, limit: int = 25, only_stickers: bool = False, only_emojis: bool = False):
+        """Search saved emojis/stickers by name."""
+        conditions = []
+        params = []
+        
+        if search_term:
+            conditions.append("name ILIKE %s")
+            params.append(f'%{search_term}%')
+        
+        if only_stickers:
+            conditions.append("is_sticker = TRUE")
+        elif only_emojis:
+            conditions.append("is_sticker = FALSE")
+        
+        where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+        params.append(limit)
+        
+        query = f"""
+        SELECT id, name, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, created_at, notes
+        FROM main.saved_emojis
+        {where_clause}
+        ORDER BY created_at DESC
+        LIMIT %s
+        """
+        results = self.execute_query(query, tuple(params))
+        
+        if results:
+            return [
+                {
+                    'id': row[0],
+                    'name': row[1],
+                    'animated': row[2],
+                    'is_sticker': row[3],
+                    'sticker_description': row[4],
+                    'saved_by_user_id': row[5],
+                    'saved_from_guild_id': row[6],
+                    'created_at': row[7],
+                    'notes': row[8]
+                }
+                for row in results
+            ]
+        return []
+    
+    def delete_saved_emoji(self, emoji_id: int):
+        """Delete a saved emoji."""
+        query = "DELETE FROM main.saved_emojis WHERE id = %s"
+        self.execute_query(query, (emoji_id,), fetch=False)
 
 # Global database instance
 db = Database()

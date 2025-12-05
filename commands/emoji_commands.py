@@ -6,6 +6,7 @@ from discord import app_commands
 import aiohttp
 import io
 import re
+from database import db
 
 
 def check_emoji_permissions(interaction: discord.Interaction) -> str | None:
@@ -120,8 +121,362 @@ async def create_emoji_or_sticker_with_overwrite(
             return f"❌ Failed to create emoji: {e}"
 
 
+class SavedEmojiGroup(app_commands.Group):
+    """Commands for managing saved emojis in the database"""
+    
+    def __init__(self, bot):
+        super().__init__(name="saved", description="Manage saved emojis/stickers")
+        self.bot = bot
+    
+    @app_commands.command(name="save", description="Save an emoji or sticker to the database for later use")
+    @app_commands.describe(
+        item="The emoji or sticker name to save (not needed if message_link provided)",
+        is_sticker="Whether to save a sticker instead of emoji (default: False)",
+        name="Optional: custom name for the saved item",
+        notes="Optional: notes about this item",
+        message_link="Optional: Discord message link to extract emojis/stickers from"
+    )
+    async def save_emoji(self, interaction: discord.Interaction, item: str = None, is_sticker: bool = False, name: str = None, notes: str = None, message_link: str = None):
+        """Save an emoji or sticker to the database"""
+        # Check permissions
+        permission_check = check_emoji_permissions(interaction)
+        if permission_check:
+            await interaction.response.send_message(permission_check, ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Validate inputs
+        if not item and not message_link:
+            await interaction.followup.send("❌ Please provide either an emoji/sticker or a message link.", ephemeral=True)
+            return
+        
+        # Handle message link input
+        if message_link:
+            parsed = parse_message_link(message_link)
+            if not parsed:
+                await interaction.followup.send("❌ Invalid message link format.", ephemeral=True)
+                return
+            
+            guild_id, channel_id, message_id = parsed
+            
+            # Fetch the message
+            try:
+                guild = self.bot.get_guild(int(guild_id))
+                if not guild:
+                    await interaction.followup.send("❌ Cannot access that guild.", ephemeral=True)
+                    return
+                
+                channel = guild.get_channel(int(channel_id))
+                if not channel:
+                    await interaction.followup.send("❌ Cannot access that channel.", ephemeral=True)
+                    return
+                
+                message = await channel.fetch_message(int(message_id))
+            except Exception as e:
+                await interaction.followup.send(f"❌ Error fetching message: {str(e)[:200]}", ephemeral=True)
+                return
+            
+            # Extract emojis from message content
+            emoji_pattern = r'<(a?):(\w+):(\d+)>'
+            emoji_matches = re.findall(emoji_pattern, message.content)
+            
+            saved_items = []
+            errors = []
+            
+            # Save emojis from message content
+            for match in emoji_matches:
+                is_animated = match[0] == 'a'
+                emoji_name = match[1]
+                emoji_id = match[2]
+                
+                try:
+                    # Download emoji
+                    ext = 'gif' if is_animated else 'png'
+                    url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url) as resp:
+                            if resp.status != 200:
+                                errors.append(f"Failed to download emoji {emoji_name}")
+                                continue
+                            image_data = await resp.read()
+                    
+                    # Save to database
+                    saved_id = db.save_emoji(
+                        name=emoji_name,
+                        image_data=image_data,
+                        animated=is_animated,
+                        saved_by_user_id=interaction.user.id,
+                        saved_from_guild_id=interaction.guild.id if interaction.guild else None,
+                        notes=notes,
+                        is_sticker=False
+                    )
+                    
+                    saved_items.append(f"😀 {emoji_name} (ID: {saved_id})")
+                except Exception as e:
+                    errors.append(f"Error saving {emoji_name}: {str(e)[:100]}")
+            
+            # Save stickers from message
+            for sticker in message.stickers:
+                try:
+                    image_data = await sticker.read()
+                    
+                    saved_id = db.save_emoji(
+                        name=sticker.name,
+                        image_data=image_data,
+                        animated=False,
+                        saved_by_user_id=interaction.user.id,
+                        saved_from_guild_id=interaction.guild.id if interaction.guild else None,
+                        notes=notes,
+                        is_sticker=True,
+                        sticker_description=sticker.description
+                    )
+                    
+                    saved_items.append(f"🎫 {sticker.name} (ID: {saved_id})")
+                except Exception as e:
+                    errors.append(f"Error saving sticker {sticker.name}: {str(e)[:100]}")
+            
+            # Build response
+            if not saved_items and not errors:
+                await interaction.followup.send("❌ No emojis or stickers found in that message.", ephemeral=True)
+                return
+            
+            response = ""
+            if saved_items:
+                response += f"✅ Saved {len(saved_items)} item(s):\n" + "\n".join(saved_items)
+            
+            if errors:
+                response += f"\n\n⚠️ Errors ({len(errors)}):\n" + "\n".join(errors[:5])
+                if len(errors) > 5:
+                    response += f"\n... and {len(errors) - 5} more errors"
+            
+            await interaction.followup.send(response[:2000], ephemeral=True)
+            return
+        
+        # Original save logic for direct emoji/sticker input
+        if is_sticker:
+            # Find sticker by name
+            sticker = discord.utils.get(interaction.guild.stickers, name=item)
+            
+            if not sticker:
+                await interaction.followup.send(f"❌ No sticker found with name: `{item}`", ephemeral=True)
+                return
+            
+            # Download sticker
+            try:
+                image_data = await sticker.read()
+                
+                # Save to database
+                saved_id = db.save_emoji(
+                    name=name or sticker.name,
+                    image_data=image_data,
+                    animated=False,  # Stickers are not animated in the same way
+                    saved_by_user_id=interaction.user.id,
+                    saved_from_guild_id=interaction.guild.id if interaction.guild else None,
+                    notes=notes,
+                    is_sticker=True,
+                    sticker_description=sticker.description
+                )
+                
+                await interaction.followup.send(
+                    f"✅ Saved sticker `{name or sticker.name}` (ID: {saved_id})\n"
+                    f"Use `/emoji saved load {saved_id}` to add it to a server later.",
+                    ephemeral=True
+                )
+            except Exception as e:
+                await interaction.followup.send(f"❌ Error saving sticker: {str(e)[:200]}", ephemeral=True)
+        else:
+            # Parse emoji
+            emoji_pattern = r'<(a?):(\w+):(\d+)>'
+            match = re.match(emoji_pattern, item)
+            
+            if not match:
+                await interaction.followup.send("❌ Please provide a custom emoji (e.g., :emoji_name:) or use is_sticker=True for stickers.", ephemeral=True)
+                return
+            
+            is_animated = match.group(1) == 'a'
+            emoji_name = match.group(2)
+            emoji_id = match.group(3)
+            
+            # Use provided name or default to emoji name
+            save_name = name or emoji_name
+            
+            # Download emoji
+            ext = 'gif' if is_animated else 'png'
+            url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
+            
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as resp:
+                        if resp.status != 200:
+                            await interaction.followup.send("❌ Failed to download emoji.", ephemeral=True)
+                            return
+                        image_data = await resp.read()
+                
+                # Save to database
+                saved_id = db.save_emoji(
+                    name=save_name,
+                    image_data=image_data,
+                    animated=is_animated,
+                    saved_by_user_id=interaction.user.id,
+                    saved_from_guild_id=interaction.guild.id if interaction.guild else None,
+                    notes=notes,
+                    is_sticker=False
+                )
+                
+                await interaction.followup.send(
+                    f"✅ Saved emoji `{save_name}` (ID: {saved_id})\n"
+                    f"Use `/emoji saved load {saved_id}` to add it to a server later.",
+                    ephemeral=True
+                )
+            except Exception as e:
+                await interaction.followup.send(f"❌ Error saving emoji: {str(e)[:200]}", ephemeral=True)
+    
+    @app_commands.command(name="load", description="Load a saved emoji/sticker and add it to this server")
+    @app_commands.describe(
+        search="Emoji/sticker ID or name to search for",
+        force_type="Force loading as emoji or sticker (default: use saved type)",
+        replace_existing="Replace existing emoji if name conflicts (default: True)"
+    )
+    @app_commands.choices(force_type=[
+        app_commands.Choice(name="Use saved type", value="auto"),
+        app_commands.Choice(name="Force as emoji", value="emoji"),
+        app_commands.Choice(name="Force as sticker", value="sticker")
+    ])
+    async def load_emoji(self, interaction: discord.Interaction, search: str, force_type: str = "auto", replace_existing: bool = True):
+        """Load a saved emoji/sticker from the database"""
+        # Check permissions
+        permission_check = check_emoji_permissions(interaction)
+        if permission_check:
+            await interaction.response.send_message(permission_check, ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Try to get emoji by ID first
+        emoji_data = None
+        if search.isdigit():
+            emoji_data = db.get_saved_emoji(int(search))
+        
+        # If not found by ID, search by name
+        if not emoji_data:
+            results = db.search_saved_emojis(search, limit=1)
+            if results:
+                emoji_data = results[0]
+        
+        if not emoji_data:
+            await interaction.followup.send(f"❌ No saved emoji/sticker found matching: `{search}`", ephemeral=True)
+            return
+        
+        # Determine if loading as sticker or emoji
+        create_sticker = emoji_data['is_sticker']
+        if force_type == "emoji":
+            create_sticker = False
+        elif force_type == "sticker":
+            create_sticker = True
+        
+        # Load the image data
+        image_data = emoji_data['image_data']
+        name = emoji_data['name']
+        
+        # Create emoji or sticker
+        result = await create_emoji_or_sticker_with_overwrite(
+            interaction.guild,
+            name,
+            image_data,
+            f"saved emoji {emoji_data['id']}",
+            create_sticker,
+            replace_existing
+        )
+        
+        await interaction.followup.send(result, ephemeral=True)
+    
+    @app_commands.command(name="list", description="List saved emojis and stickers")
+    @app_commands.describe(
+        search="Optional: search term to filter results",
+        filter_type="Filter by type (default: all)"
+    )
+    @app_commands.choices(filter_type=[
+        app_commands.Choice(name="All", value="all"),
+        app_commands.Choice(name="Emojis only", value="emoji"),
+        app_commands.Choice(name="Stickers only", value="sticker")
+    ])
+    async def list_saved_emojis(self, interaction: discord.Interaction, search: str = None, filter_type: str = "all"):
+        """List all saved emojis/stickers"""
+        # Check permissions
+        permission_check = check_emoji_permissions(interaction)
+        if permission_check:
+            await interaction.response.send_message(permission_check, ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Get filtering options
+        only_stickers = filter_type == "sticker"
+        only_emojis = filter_type == "emoji"
+        
+        # Search database
+        results = db.search_saved_emojis(search or "", limit=50, only_stickers=only_stickers, only_emojis=only_emojis)
+        
+        if not results:
+            await interaction.followup.send("No saved emojis/stickers found.", ephemeral=True)
+            return
+        
+        # Build response
+        response = f"**Saved Emojis/Stickers** ({len(results)} found):\n\n"
+        
+        for emoji in results:
+            emoji_type = "🎫" if emoji['is_sticker'] else "😀"
+            response += f"{emoji_type} **{emoji['name']}** (ID: `{emoji['id']}`)\n"
+            if emoji.get('notes'):
+                response += f"   _Notes: {emoji['notes'][:50]}_\n"
+            
+            # Prevent message from getting too long
+            if len(response) > 1800:
+                response += "... (list truncated)"
+                break
+        
+        await interaction.followup.send(response, ephemeral=True)
+    
+    @app_commands.command(name="delete", description="Delete a saved emoji from database (bot owner only)")
+    @app_commands.describe(
+        emoji_id="ID of the emoji to delete"
+    )
+    async def delete_saved_emoji(self, interaction: discord.Interaction, emoji_id: int):
+        """Delete a saved emoji from the database"""
+        # Check if user is bot owner
+        app_info = await interaction.client.application_info()
+        if interaction.user.id != app_info.owner.id:
+            await interaction.response.send_message(
+                "❌ This command is restricted to the bot owner only.",
+                ephemeral=True
+            )
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Check if emoji exists
+        emoji_data = db.get_saved_emoji(emoji_id)
+        if not emoji_data:
+            await interaction.followup.send(f"❌ No saved emoji found with ID: {emoji_id}", ephemeral=True)
+            return
+        
+        # Delete emoji
+        db.delete_saved_emoji(emoji_id)
+        await interaction.followup.send(f"✅ Deleted saved emoji: `{emoji_data['name']}` (ID: {emoji_id})", ephemeral=True)
+
+
 class EmojiGroup(app_commands.Group):
     """Emoji and sticker management commands"""
+    
+    def __init__(self, bot):
+        super().__init__(name="emoji", description="Emoji and sticker management")
+        self.bot = bot
+        
+        # Create subgroups
+        self.saved = SavedEmojiGroup(bot)
+        self.add_command(self.saved)
     
     @app_commands.command(name="copy", description="Copy custom emoji(s) from a message")
     @app_commands.describe(
@@ -212,7 +567,7 @@ class EmojiGroup(app_commands.Group):
                 break
         
         await interaction.followup.send("\n".join(results), ephemeral=True)
-
+    
     @app_commands.command(name="upload", description="Upload a custom emoji from an image URL")
     @app_commands.describe(
         name="Name for the new emoji/sticker", 
@@ -295,14 +650,14 @@ class EmojiGroup(app_commands.Group):
         except Exception as e:
             await interaction.response.send_message(f"❌ An unexpected error occurred: {e}", ephemeral=True)
 
-    @app_commands.command(name="image", description="Copy an image from a message attachment as an emoji or sticker")
+    @app_commands.command(name="from_attachment", description="Create emoji/sticker from a message attachment")
     @app_commands.describe(
         message_link="Link to the message containing the image",
         name="Name for the new emoji/sticker",
         which="Optional: image number(s) to copy if there are multiple (e.g. 2 or 1,3). Default: first image",
         create_sticker="Create as a sticker instead of an emoji (default: False)"
     )
-    async def from_message(self, interaction: discord.Interaction, message_link: str, name: str, which: str = None, create_sticker: bool = False):
+    async def from_attachment(self, interaction: discord.Interaction, message_link: str, name: str, which: str = None, create_sticker: bool = False):
         # Check permissions
         permission_check = check_emoji_permissions(interaction)
         if permission_check:
@@ -407,12 +762,12 @@ class EmojiGroup(app_commands.Group):
         
         await interaction.followup.send("\n".join(results), ephemeral=True)
 
-    @app_commands.command(name="delete", description="Delete an existing emoji or sticker")
+    @app_commands.command(name="remove", description="Remove an emoji or sticker from this server")
     @app_commands.describe(
-        name="Name of the emoji/sticker to delete",
-        is_sticker="Whether to delete a sticker instead of emoji (default: False)"
+        name="Name of the emoji/sticker to remove",
+        is_sticker="Whether to remove a sticker instead of emoji (default: False)"
     )
-    async def delete(self, interaction: discord.Interaction, name: str, is_sticker: bool = False):
+    async def remove(self, interaction: discord.Interaction, name: str, is_sticker: bool = False):
         # Check permissions
         permission_check = check_emoji_permissions(interaction)
         if permission_check:

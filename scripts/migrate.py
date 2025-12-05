@@ -528,6 +528,40 @@ class Migration017(Migration):
     def up(self):
         print(f"   📋 Granting admin full access to all tables...")
 
+class Migration018(Migration):
+    def __init__(self):
+        super().__init__("018", "Create saved_emojis table for storing emojis and stickers")
+    
+    def up(self):
+        print(f"   📋 Creating saved_emojis table...")
+        
+        # Create saved_emojis table (supports both emojis and stickers)
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.saved_emojis (
+                id BIGINT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                image_data BYTEA NOT NULL,
+                animated BOOLEAN DEFAULT FALSE,
+                is_sticker BOOLEAN DEFAULT FALSE,
+                sticker_description TEXT,
+                saved_by_user_id BIGINT NOT NULL,
+                saved_from_guild_id BIGINT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                notes TEXT
+            )
+        """, fetch=False)
+        print(f"   ✅ Created saved_emojis table")
+        
+        # Create index on name for searching
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_saved_emojis_name 
+                ON main.saved_emojis(name)
+            """, fetch=False)
+            print(f"   ✅ Created index on saved_emojis(name)")
+        except Exception as e:
+            print(f"   ⚠️  Index creation queued: {e}")
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -544,6 +578,7 @@ MIGRATIONS = [
     Migration014(),  # Add timers table
     Migration015(),  # Clean up non-booster roles
     Migration016(),  # Task execution log
+    Migration018(),  # Saved emojis
 ]
 
 def get_applied_migrations():
