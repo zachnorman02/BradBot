@@ -35,7 +35,7 @@ jobs:
           echo "Stopping bot to run migrations..." &&
           sudo systemctl stop bradbot &&
           echo "Running database migrations with service environment..." &&
-          sudo -u ubuntu bash -c "cd /home/ubuntu/bradbot && source venv/bin/activate && export DB_HOST=ontgcoj4pznoqbq4aznk64mehy.dsql.us-east-1.on.aws DB_PORT=5432 DB_NAME=postgres DB_USER=bradbotrole USE_IAM_AUTH=true AWS_REGION=us-east-1 && python migrate.py migrate" &&
+          sudo -u ubuntu bash -c "cd /home/ubuntu/bradbot && source venv/bin/activate && export DB_HOST=ontgcoj4pznoqbq4aznk64mehy.dsql.us-east-1.on.aws DB_PORT=5432 DB_NAME=postgres DB_USER=bradbotrole USE_IAM_AUTH=true AWS_REGION=us-east-1 && python scripts/migrate.py migrate" &&
           echo "Starting bot..." &&
           sudo systemctl start bradbot &&
           sleep 3 &&
