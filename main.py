@@ -70,6 +70,15 @@ async def on_ready():
         # Test the connection with a simple query
         result = db.execute_query("SELECT 1")
         print(f"✅ Database connected successfully")
+        
+        # Grant admin permissions on all tables
+        try:
+            db.execute_query("""
+                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA main TO admin
+            """, fetch=False)
+            print(f"✅ Granted admin privileges on all tables")
+        except Exception as perm_error:
+            print(f"⚠️  Could not grant admin privileges: {perm_error}")
     except Exception as e:
         print(f"⚠️  Database initialization failed: {e}")
         print("   Reply notifications will not work until database is configured")

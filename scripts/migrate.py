@@ -535,23 +535,23 @@ class Migration016(Migration):
         """, fetch=False)
         print(f"   ✅ Created task_logs table")
         
-        # Create indexes for efficient querying
+        # Create indexes for efficient querying (without sort order - not supported)
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_task_logs_task_name 
-                ON main.task_logs(task_name, started_at DESC)
+                ON main.task_logs(task_name, started_at)
             """, fetch=False)
             print(f"   ✅ Created index on task_logs(task_name, started_at)")
             
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_task_logs_guild 
-                ON main.task_logs(guild_id, started_at DESC)
+                ON main.task_logs(guild_id, started_at)
             """, fetch=False)
             print(f"   ✅ Created index on task_logs(guild_id, started_at)")
             
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_task_logs_status 
-                ON main.task_logs(status, started_at DESC)
+                ON main.task_logs(status, started_at)
             """, fetch=False)
             print(f"   ✅ Created index on task_logs(status, started_at)")
         except Exception as e:
@@ -560,9 +560,25 @@ class Migration016(Migration):
         # Grant admin access
         try:
             db.execute_query("""
-                GRANT SELECT ON main.task_logs TO bradbot_admin
+                GRANT SELECT ON main.task_logs TO admin
             """, fetch=False)
             print(f"   ✅ Granted admin read access to task_logs")
+        except Exception as e:
+            print(f"   ⚠️  Failed to grant admin access: {e}")
+
+class Migration017(Migration):
+    def __init__(self):
+        super().__init__("017", "Grant admin all privileges on all tables")
+    
+    def up(self):
+        print(f"   📋 Granting admin full access to all tables...")
+        
+        # Grant all privileges on all tables in main schema
+        try:
+            db.execute_query("""
+                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA main TO admin
+            """, fetch=False)
+            print(f"   ✅ Granted admin all privileges on all tables")
         except Exception as e:
             print(f"   ⚠️  Failed to grant admin access: {e}")
 
@@ -584,6 +600,7 @@ MIGRATIONS = [
     Migration014(),  # Add timers table
     Migration015(),  # Clean up non-booster roles
     Migration016(),  # Task execution log
+    Migration017(),  # Re-grant admin access to all tables
 ]
 
 def get_applied_migrations():
