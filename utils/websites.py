@@ -171,9 +171,9 @@ class TikTokLink(SimpleWebsiteLink):
     """TikTok link handler."""
     name = "TikTok"
     routes = [
-        r"https?://(?:www\.|a\.|d\.|vm\.)?(tiktok\.com)/@([\w-]+)/(video|photo)/([\w-]+)",
-        r"https?://(?:www\.|a\.|d\.|vm\.)?(tiktok\.com)/(t|embed)/([\w-]+)",
-        r"https?://(?:www\.|a\.|d\.|vm\.)?(tiktok\.com)/([\w-]+)"
+        r"https?://(?:www\.|a\.|d\.|vm\.|vt\.)?(tiktok\.com)/@([\w-]+)/(video|photo)/([\w-]+)",
+        r"https?://(?:www\.|a\.|d\.|vm\.|vt\.)?(tiktok\.com)/(t|embed)/([\w-]+)",
+        r"https?://(?:www\.|a\.|d\.|vm\.|vt\.)?(tiktok\.com)/([\w-]+)"
     ]
     replacement = "a.tnktok.com"
 
@@ -197,7 +197,7 @@ class YouTubeLink(SimpleWebsiteLink):
         r"https?://(?:www\.)?(youtube\.com|youtu\.be)/shorts/([\w-]+)",
         r"https?://(?:www\.)?(youtube\.com|youtu\.be)/([\w-]+)"
     ]
-    replacement = "koutube.com"
+    replacement = "youtube.com"
     
     def _clean_tracking_params(self, url: str) -> str:
         # Only keep 'v' and 't' query parameters, remove others

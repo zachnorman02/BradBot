@@ -6,22 +6,24 @@ from typing import Optional
 from urllib.parse import quote
 
 
-def is_url_in_code_block(content: str, url: str) -> bool:
+def is_url_suppressed(content: str, url: str) -> bool:
     """
-    Check if a URL is inside a code block (single or triple backticks).
+    Check if a URL should be ignored (wrapped in backticks `, ```, or angle brackets <>).
     
     Args:
         content: The message content
         url: The URL to check
         
     Returns:
-        True if the URL is in a code block, False otherwise
+        True if the URL should be ignored, False otherwise
     """
     url_start = content.find(url)
     if url_start == -1:
         return False
     
-    # Check for triple backtick code blocks first
+    url_end = url_start + len(url)
+    
+    # Check for triple backtick code blocks ```URL```
     triple_blocks = []
     i = 0
     while i < len(content):
@@ -36,32 +38,60 @@ def is_url_in_code_block(content: str, url: str) -> bool:
     
     # Check if URL is in any triple backtick block
     for start, end in triple_blocks:
-        if start <= url_start < end:
+        if start < url_start < end:
             return True
     
-    # Check for single backtick code blocks (inline code)
-    # Remove triple backtick blocks temporarily to avoid conflicts
-    temp_content = content
-    for start, end in reversed(triple_blocks):
-        temp_content = temp_content[:start] + ' ' * (end - start) + temp_content[end:]
+    # Check for angle brackets <URL>
+    # Look backwards for '<'
+    has_opening_angle = False
+    for i in range(url_start - 1, -1, -1):
+        if content[i] == '<':
+            has_opening_angle = True
+            break
+        elif content[i] in (' ', '\n', '\t'):
+            continue
+        else:
+            break
     
-    # Adjust URL position for the temporary content
-    temp_url_start = temp_content.find(url)
-    if temp_url_start == -1:
-        return False
+    # Look forwards for '>'
+    has_closing_angle = False
+    for i in range(url_end, len(content)):
+        if content[i] == '>':
+            has_closing_angle = True
+            break
+        elif content[i] in (' ', '\n', '\t'):
+            continue
+        else:
+            break
     
-    # Find all single backtick pairs
-    backticks = []
-    for i, char in enumerate(temp_content):
-        if char == '`':
-            backticks.append(i)
+    if has_opening_angle and has_closing_angle:
+        return True
     
-    # Check if URL is between any pair of backticks
-    for i in range(0, len(backticks) - 1, 2):
-        if i + 1 < len(backticks):
-            start, end = backticks[i], backticks[i + 1]
-            if start <= temp_url_start < end:
-                return True
+    # Check for single backticks `URL`
+    # Look backwards for '`'
+    has_opening_backtick = False
+    for i in range(url_start - 1, -1, -1):
+        if content[i] == '`':
+            has_opening_backtick = True
+            break
+        elif content[i] in (' ', '\n', '\t'):
+            continue
+        else:
+            break
+    
+    # Look forwards for '`'
+    has_closing_backtick = False
+    for i in range(url_end, len(content)):
+        if content[i] == '`':
+            has_closing_backtick = True
+            break
+        elif content[i] in (' ', '\n', '\t'):
+            continue
+        else:
+            break
+    
+    if has_opening_backtick and has_closing_backtick:
+        return True
     
     return False
 

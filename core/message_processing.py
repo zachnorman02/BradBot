@@ -4,7 +4,7 @@ Message processing logic for link replacement and reply notifications
 import discord
 import re
 from database import db
-from utils.helpers import is_url_in_code_block, get_embedez_link, fix_amp_links
+from utils.helpers import is_url_suppressed, get_embedez_link, fix_amp_links
 from utils.websites import websites, get_site_name
 
 
@@ -134,8 +134,8 @@ async def process_message_links(message: discord.Message) -> dict | None:
     url_pattern = re.compile(r'https?://[^\s<>()]+')
     urls = url_pattern.findall(message.content)
     
-    # Filter out URLs that are in code blocks
-    urls = [url for url in urls if not is_url_in_code_block(message.content, url)]
+    # Filter out URLs that are suppressed (in backticks or angle brackets)
+    urls = [url for url in urls if not is_url_suppressed(message.content, url)]
     
     if not urls:
         return None
