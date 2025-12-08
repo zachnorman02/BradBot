@@ -99,13 +99,10 @@ async def on_ready():
     # Add command groups to the tree
     bot.tree.add_command(EmojiGroup(bot))
     bot.tree.add_command(BoosterGroup())
-    # Settings are added via Cog below
+    bot.tree.add_command(SettingsGroup())
     bot.tree.add_command(AdminGroup(name="admin", description="Admin server management commands"))
     bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
     bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
-    
-    # Add Settings Cog
-    await bot.add_cog(SettingsGroup(bot))
     
     try:
         # Sync slash commands

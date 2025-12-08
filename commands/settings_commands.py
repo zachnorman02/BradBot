@@ -160,19 +160,15 @@ class SettingsView(discord.ui.View):
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 
-class SettingsGroup(commands.Cog):
-    """Settings commands as a Cog"""
+class SettingsGroup(app_commands.Group):
+    """User settings and preferences"""
     
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
-        # Set the callback for the top-level /settings command
-        self.settings_group.callback = self.settings_callback
+    def __init__(self):
+        super().__init__(name="settings", description="User settings and preferences")
     
-    # Declare the group at class level
-    settings_group = app_commands.Group(name="settings", description="User settings and preferences")
-    
-    async def settings_callback(self, interaction: discord.Interaction):
-        """Open interactive settings menu when /settings is called without subcommands"""
+    @app_commands.command(name="menu", description="Open your settings menu")
+    async def settings_menu(self, interaction: discord.Interaction):
+        """Open interactive settings menu"""
         try:
             # Initialize database connection if needed
             if not db.connection_pool:
@@ -195,7 +191,7 @@ class SettingsGroup(commands.Cog):
             )
     
     # Subcommand: /settings sendpings
-    @settings_group.command(name="sendpings", description="Toggle whether your replies trigger pings to the original poster")
+    @app_commands.command(name="sendpings", description="Toggle whether your replies trigger pings to the original poster")
     @app_commands.describe(
         enabled="Enable or disable sending pings when you reply",
         all_servers="Apply to all servers (default: current server only)"
@@ -245,7 +241,7 @@ class SettingsGroup(commands.Cog):
             )
     
     # Subcommand: /settings notify
-    @settings_group.command(name="notify", description="Toggle reply notifications when someone replies to your fixed links")
+    @app_commands.command(name="notify", description="Toggle reply notifications when someone replies to your fixed links")
     @app_commands.describe(
         enabled="Enable or disable reply notifications",
         all_servers="Apply to all servers (default: current server only)"
