@@ -934,7 +934,6 @@ class Database:
         # Table for role configurations (which roles have conditional assignment)
         config_query = """
         CREATE TABLE IF NOT EXISTS main.conditional_role_configs (
-            id SERIAL PRIMARY KEY,
             guild_id BIGINT NOT NULL,
             role_id BIGINT NOT NULL,
             role_name VARCHAR(100),
@@ -942,7 +941,7 @@ class Database:
             deferral_role_ids BIGINT[] DEFAULT '{}',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(guild_id, role_id)
+            PRIMARY KEY(guild_id, role_id)
         )
         """
         self.execute_query(config_query, fetch=False)
@@ -1012,7 +1011,7 @@ class Database:
     def get_conditional_role_config(self, guild_id: int, role_id: int):
         """Get a specific conditional role configuration."""
         query = """
-        SELECT id, role_id, role_name, blocking_role_ids, deferral_role_ids, created_at, updated_at
+        SELECT role_id, role_name, blocking_role_ids, deferral_role_ids, created_at, updated_at
         FROM main.conditional_role_configs
         WHERE guild_id = %s AND role_id = %s
         """
@@ -1021,20 +1020,19 @@ class Database:
         if result:
             row = result[0]
             return {
-                'id': row[0],
-                'role_id': row[1],
-                'role_name': row[2],
-                'blocking_role_ids': row[3] or [],
-                'deferral_role_ids': row[4] or [],
-                'created_at': row[5],
-                'updated_at': row[6]
+                'role_id': row[0],
+                'role_name': row[1],
+                'blocking_role_ids': row[2] or [],
+                'deferral_role_ids': row[3] or [],
+                'created_at': row[4],
+                'updated_at': row[5]
             }
         return None
     
     def get_all_conditional_role_configs(self, guild_id: int):
         """Get all conditional role configurations for a guild."""
         query = """
-        SELECT id, role_id, role_name, blocking_role_ids, deferral_role_ids, created_at, updated_at
+        SELECT role_id, role_name, blocking_role_ids, deferral_role_ids, created_at, updated_at
         FROM main.conditional_role_configs
         WHERE guild_id = %s
         ORDER BY role_name
@@ -1044,13 +1042,12 @@ class Database:
         if results:
             return [
                 {
-                    'id': row[0],
-                    'role_id': row[1],
-                    'role_name': row[2],
-                    'blocking_role_ids': row[3] or [],
-                    'deferral_role_ids': row[4] or [],
-                    'created_at': row[5],
-                    'updated_at': row[6]
+                    'role_id': row[0],
+                    'role_name': row[1],
+                    'blocking_role_ids': row[2] or [],
+                    'deferral_role_ids': row[3] or [],
+                    'created_at': row[4],
+                    'updated_at': row[5]
                 }
                 for row in results
             ]
