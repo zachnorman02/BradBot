@@ -448,7 +448,36 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
         for added_role_id in added_role_ids:
             config = db.get_conditional_role_config(after.guild.id, added_role_id)
             if not config:
-                continue  # Not a conditional role, skip
+                # Not a conditional role being added, but check if it's a DEFERRAL role
+                # that should remove any conditional roles the user has
+                for check_config in all_configs:
+                    conditional_role_id = check_config['role_id']
+                    deferral_role_ids = check_config.get('deferral_role_ids', [])
+                    
+                    # If the added role is a deferral role for this conditional role
+                    if added_role_id in deferral_role_ids and conditional_role_id in after_role_ids:
+                        # User now has both the conditional role AND a deferral role
+                        # Remove the conditional role
+                        conditional_role = after.guild.get_role(conditional_role_id)
+                        if conditional_role:
+                            try:
+                                await after.remove_roles(conditional_role, reason=f"User acquired deferral role, removing conditional role")
+                                
+                                # Mark as deferred
+                                added_deferral_role = after.guild.get_role(added_role_id)
+                                deferral_name = added_deferral_role.name if added_deferral_role else str(added_role_id)
+                                
+                                db.mark_conditional_role_eligible(
+                                    after.guild.id,
+                                    after.id,
+                                    conditional_role_id,
+                                    notes=f"Deferred: has deferral role(s): {deferral_name}"
+                                )
+                                
+                                print(f"[CONDITIONAL ROLE] Removed {conditional_role.name} from {after.display_name} (gained deferral role: {deferral_name})")
+                            except Exception as e:
+                                print(f"[CONDITIONAL ROLE] Error removing conditional role after deferral role added: {e}")
+                continue  # Not a conditional role being added, skip normal processing
             
             deferral_role_ids = config.get('deferral_role_ids', [])
             if not deferral_role_ids:
