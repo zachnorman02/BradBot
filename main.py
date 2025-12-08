@@ -102,6 +102,13 @@ async def on_ready():
         result = db.execute_query("SELECT 1")
         print(f"✅ Database connected successfully")
         
+        # Initialize all database tables
+        try:
+            db.init_conditional_roles_tables()
+            print(f"✅ Initialized conditional roles tables")
+        except Exception as table_error:
+            print(f"⚠️  Could not initialize conditional roles tables: {table_error}")
+        
         # Grant admin permissions on all tables
         try:
             db.execute_query("""

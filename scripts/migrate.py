@@ -562,6 +562,43 @@ class Migration018(Migration):
         except Exception as e:
             print(f"   ⚠️  Index creation queued: {e}")
 
+class Migration019(Migration):
+    def __init__(self):
+        super().__init__("019", "Create conditional role assignment tables")
+    
+    def up(self):
+        print(f"   📋 Creating conditional role assignment tables...")
+        
+        # Create role configurations table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.conditional_role_configs (
+                guild_id BIGINT NOT NULL,
+                role_id BIGINT NOT NULL,
+                role_name VARCHAR(100),
+                blocking_role_ids TEXT,
+                deferral_role_ids TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(guild_id, role_id)
+            )
+        """, fetch=False)
+        print(f"   ✅ Created conditional_role_configs table")
+        
+        # Create eligibility tracking table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.conditional_role_eligibility (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                role_id BIGINT NOT NULL,
+                eligible BOOLEAN DEFAULT TRUE,
+                marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                marked_by_user_id BIGINT,
+                notes TEXT,
+                PRIMARY KEY (guild_id, user_id, role_id)
+            )
+        """, fetch=False)
+        print(f"   ✅ Created conditional_role_eligibility table")
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -578,7 +615,9 @@ MIGRATIONS = [
     Migration014(),  # Add timers table
     Migration015(),  # Clean up non-booster roles
     Migration016(),  # Task execution log
-    Migration018(),  # Saved emojis
+    Migration017(),  # Role assignment rules
+    Migration018(),  # Saved emojis table
+    Migration019(),  # Conditional role assignment tables
 ]
 
 def get_applied_migrations():
