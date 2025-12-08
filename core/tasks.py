@@ -547,8 +547,8 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
                     conditional_role_id
                 )
                 
-                if not eligibility or not eligibility.get('eligible'):
-                    continue  # User not eligible, skip
+                if not eligibility:
+                    continue  # User not tracked for deferral, skip
                 
                 # Check if user already has the conditional role
                 if conditional_role_id in after_role_ids:

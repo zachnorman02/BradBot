@@ -1074,13 +1074,12 @@ class Database:
     # Eligibility management
     def mark_conditional_role_eligible(self, guild_id: int, user_id: int, role_id: int, 
                                        marked_by_user_id: int = None, notes: str = None):
-        """Mark a user as eligible for a conditional role."""
+        """Mark a user as deferred for a conditional role (tracks them in eligibility table)."""
         query = """
-        INSERT INTO main.conditional_role_eligibility (guild_id, user_id, role_id, eligible, marked_at, marked_by_user_id, notes)
-        VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP, %s, %s)
+        INSERT INTO main.conditional_role_eligibility (guild_id, user_id, role_id, marked_at, marked_by_user_id, notes)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, %s)
         ON CONFLICT (guild_id, user_id, role_id) 
         DO UPDATE SET 
-            eligible = TRUE,
             marked_at = CURRENT_TIMESTAMP,
             marked_by_user_id = EXCLUDED.marked_by_user_id,
             notes = EXCLUDED.notes
@@ -1093,28 +1092,27 @@ class Database:
         self.execute_query(query, (guild_id, user_id, role_id), fetch=False)
     
     def is_conditional_role_eligible(self, guild_id: int, user_id: int, role_id: int) -> bool:
-        """Check if a user is eligible for a conditional role."""
+        """Check if a user is tracked for deferred conditional role (presence in table = deferred)."""
         query = """
-        SELECT eligible FROM main.conditional_role_eligibility 
+        SELECT 1 FROM main.conditional_role_eligibility 
         WHERE guild_id = %s AND user_id = %s AND role_id = %s
         """
         result = self.execute_query(query, (guild_id, user_id, role_id))
-        return bool(result and result[0][0])
+        return bool(result)
     
     def get_conditional_role_eligibility(self, guild_id: int, user_id: int, role_id: int):
         """Get eligibility details for a user and conditional role."""
         query = """
-        SELECT eligible, marked_at, marked_by_user_id, notes
+        SELECT marked_at, marked_by_user_id, notes
         FROM main.conditional_role_eligibility
         WHERE guild_id = %s AND user_id = %s AND role_id = %s
         """
         result = self.execute_query(query, (guild_id, user_id, role_id))
         if result:
             return {
-                'eligible': result[0][0],
-                'marked_at': result[0][1],
-                'marked_by_user_id': result[0][2],
-                'notes': result[0][3]
+                'marked_at': result[0][0],
+                'marked_by_user_id': result[0][1],
+                'notes': result[0][2]
             }
         return None
     

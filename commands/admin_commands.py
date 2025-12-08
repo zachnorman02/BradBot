@@ -1217,7 +1217,7 @@ class AdminToolsGroup(app_commands.Group):
                                 member.id,
                                 conditional_role_id
                             )
-                            is_eligible = eligibility and eligibility.get('eligible')
+                            is_deferred = bool(eligibility)  # If in table, they're deferred
                             
                             conditional_role = interaction.guild.get_role(conditional_role_id)
                             role_name = conditional_role.name if conditional_role else f"Role {conditional_role_id}"
@@ -1233,8 +1233,8 @@ class AdminToolsGroup(app_commands.Group):
                                     except Exception as e:
                                         results['errors'].append(f"Failed to remove {role_name} from {member.mention}: {e}")
                             
-                            # Logic 2: User is eligible, has no deferral roles, and doesn't have conditional role - GRANT IT
-                            elif is_eligible and not has_deferral_role and not has_conditional_role and deferral_role_ids:
+                            # Logic 2: User is deferred, has no deferral roles, and doesn't have conditional role - GRANT IT
+                            elif is_deferred and not has_deferral_role and not has_conditional_role and deferral_role_ids:
                                 action_desc = f"Grant {role_name} to {member.mention} (eligible, deferral criteria met)"
                                 results['granted'].append(action_desc)
                                 
