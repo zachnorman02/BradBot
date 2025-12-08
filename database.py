@@ -937,8 +937,8 @@ class Database:
             guild_id BIGINT NOT NULL,
             role_id BIGINT NOT NULL,
             role_name VARCHAR(100),
-            blocking_role_ids BIGINT[] DEFAULT '{}',
-            deferral_role_ids BIGINT[] DEFAULT '{}',
+            blocking_role_ids TEXT,
+            deferral_role_ids TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY(guild_id, role_id)
@@ -950,7 +950,7 @@ class Database:
         try:
             alter_query = """
             ALTER TABLE main.conditional_role_configs 
-            ADD COLUMN IF NOT EXISTS deferral_role_ids BIGINT[] DEFAULT '{}'
+            ADD COLUMN IF NOT EXISTS deferral_role_ids TEXT
             """
             self.execute_query(alter_query, fetch=False)
         except Exception as e:
@@ -987,6 +987,10 @@ class Database:
         blocking_role_ids = blocking_role_ids or []
         deferral_role_ids = deferral_role_ids or []
         
+        # Convert lists to comma-separated strings
+        blocking_str = ','.join(str(rid) for rid in blocking_role_ids) if blocking_role_ids else ''
+        deferral_str = ','.join(str(rid) for rid in deferral_role_ids) if deferral_role_ids else ''
+        
         query = """
         INSERT INTO main.conditional_role_configs (guild_id, role_id, role_name, blocking_role_ids, deferral_role_ids, updated_at)
         VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
@@ -997,7 +1001,7 @@ class Database:
             deferral_role_ids = EXCLUDED.deferral_role_ids,
             updated_at = CURRENT_TIMESTAMP
         """
-        self.execute_query(query, (guild_id, role_id, role_name, blocking_role_ids, deferral_role_ids), fetch=False)
+        self.execute_query(query, (guild_id, role_id, role_name, blocking_str, deferral_str), fetch=False)
     
     def remove_conditional_role_config(self, guild_id: int, role_id: int):
         """Remove a conditional role configuration and all associated eligibility records."""
@@ -1019,11 +1023,18 @@ class Database:
         
         if result:
             row = result[0]
+            # Parse comma-separated strings back to lists of ints
+            blocking_str = row[2] or ''
+            deferral_str = row[3] or ''
+            
+            blocking_ids = [int(rid) for rid in blocking_str.split(',') if rid] if blocking_str else []
+            deferral_ids = [int(rid) for rid in deferral_str.split(',') if rid] if deferral_str else []
+            
             return {
                 'role_id': row[0],
                 'role_name': row[1],
-                'blocking_role_ids': row[2] or [],
-                'deferral_role_ids': row[3] or [],
+                'blocking_role_ids': blocking_ids,
+                'deferral_role_ids': deferral_ids,
                 'created_at': row[4],
                 'updated_at': row[5]
             }
@@ -1040,17 +1051,24 @@ class Database:
         results = self.execute_query(query, (guild_id,))
         
         if results:
-            return [
-                {
+            configs = []
+            for row in results:
+                # Parse comma-separated strings back to lists of ints
+                blocking_str = row[2] or ''
+                deferral_str = row[3] or ''
+                
+                blocking_ids = [int(rid) for rid in blocking_str.split(',') if rid] if blocking_str else []
+                deferral_ids = [int(rid) for rid in deferral_str.split(',') if rid] if deferral_str else []
+                
+                configs.append({
                     'role_id': row[0],
                     'role_name': row[1],
-                    'blocking_role_ids': row[2] or [],
-                    'deferral_role_ids': row[3] or [],
+                    'blocking_role_ids': blocking_ids,
+                    'deferral_role_ids': deferral_ids,
                     'created_at': row[4],
                     'updated_at': row[5]
-                }
-                for row in results
-            ]
+                })
+            return configs
         return []
     
     # Eligibility management
