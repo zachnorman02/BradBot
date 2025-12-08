@@ -131,7 +131,7 @@ async def on_ready():
     bot.tree.add_command(EmojiGroup(bot))
     bot.tree.add_command(BoosterGroup())
     bot.tree.add_command(SettingsGroup())
-    bot.tree.add_command(AdminGroup(name="admin", description="Admin server management commands"))
+    bot.tree.add_command(AdminGroup())
     bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
     bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
     

@@ -203,68 +203,22 @@ class AdminSettingsView(ui.View):
         db.set_guild_setting(self.guild_id, 'auto_ban_single_server', 'true' if new_value else 'false')
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="🔄 Refresh Panel", style=discord.ButtonStyle.blurple, row=2)
+    async def refresh_panel(self, interaction: discord.Interaction, button: ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 
-class AdminGroup(app_commands.Group):
-    """Admin commands for database management"""
+class AdminToggleGroup(app_commands.Group):
+    """Toggle server automation features"""
     
-    @app_commands.command(name="menu", description="Open server settings menu")
-    @app_commands.default_permissions(administrator=True)
-    async def admin_menu(self, interaction: discord.Interaction):
-        """Open interactive admin settings menu"""
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
-            return
-        
-        try:
-            if not db.connection_pool:
-                db.init_pool()
-            
-            view = AdminSettingsView(interaction.guild.id)
-            await interaction.response.send_message(
-                embed=view.get_embed(),
-                view=view,
-                ephemeral=True
-            )
-        except Exception as e:
-            print(f"Error opening admin menu: {e}")
-            await interaction.response.send_message(
-                "❌ An error occurred while opening the admin menu.",
-                ephemeral=True
-            )
-    
-    @app_commands.command(name="panel", description="Create a persistent server settings panel in this channel")
-    @app_commands.default_permissions(administrator=True)
-    async def admin_panel(self, interaction: discord.Interaction):
-        """Create a persistent admin settings panel in the channel"""
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
-            return
-        
-        try:
-            if not db.connection_pool:
-                db.init_pool()
-            
-            view = AdminSettingsView(interaction.guild.id, persistent=True)
-            
-            # Send the persistent panel to the channel
-            await interaction.channel.send(
-                embed=view.get_embed(),
-                view=view
-            )
-            
-            # Confirm to the admin
-            await interaction.response.send_message(
-                "✅ Persistent admin panel created! Anyone with administrator permissions can use it.",
-                ephemeral=True
-            )
-        except Exception as e:
-            print(f"Error creating admin panel: {e}")
-            await interaction.response.send_message(
-                "❌ An error occurred while creating the admin panel.",
-                ephemeral=True
-            )
-    
+    def __init__(self):
+        super().__init__(name="toggle", description="Toggle server automation features")
+
     @app_commands.command(name="linkreplacement", description="Toggle automatic link replacement for this server")
     @app_commands.describe(enabled="Enable or disable automatic link replacement")
     @app_commands.choices(enabled=[
@@ -593,7 +547,14 @@ class AdminGroup(app_commands.Group):
                 "❌ An error occurred while updating the member send pings setting. Please try again later.",
                 ephemeral=True
             )
+
+
+class AdminToolsGroup(app_commands.Group):
+    """Database and role management tools"""
     
+    def __init__(self):
+        super().__init__(name="tools", description="Database and role management tools")
+
     @app_commands.command(name="loadboosterroles", description="Load existing booster roles into the database")
     @app_commands.default_permissions(administrator=True)
     async def load_booster_roles(self, interaction: discord.Interaction):
@@ -807,150 +768,14 @@ class AdminGroup(app_commands.Group):
                 f"❌ An error occurred while saving the booster role: {str(e)[:100]}",
                 ephemeral=True
             )
+
+
+class AdminMaintenanceGroup(app_commands.Group):
+    """Server maintenance and moderation tools"""
     
-    @app_commands.command(name="sql", description="Execute a SQL query (BOT OWNER ONLY)")
-    @app_commands.describe(query="The SQL query to execute")
-    async def execute_sql(self, interaction: discord.Interaction, query: str):
-        """Execute a SQL query on the database (BOT OWNER ONLY)"""
-        # Check if user is the bot owner
-        app_info = await interaction.client.application_info()
-        if interaction.user.id != app_info.owner.id:
-            await interaction.response.send_message(
-                "❌ This command is restricted to the bot owner only.",
-                ephemeral=True
-            )
-            return
-        
-        # Defer response since query might take time
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            # Initialize database connection if needed
-            if not db.connection_pool:
-                db.init_pool()
-            
-            # Log the query execution
-            print(f"🔍 SQL Query executed by {interaction.user} (ID: {interaction.user.id}):")
-            print(f"   Query: {query}")
-            
-            # Determine if this is a SELECT query or a modification query
-            is_select = query.strip().upper().startswith('SELECT')
-            
-            if is_select:
-                # Execute SELECT query and fetch results
-                results = db.execute_query(query)
-                
-                if not results:
-                    await interaction.followup.send("✅ Query executed successfully. No results returned.", ephemeral=True)
-                    return
-                
-                # Format results as a table
-                response = f"✅ Query returned {len(results)} row(s):\n```\n"
-                
-                # Limit output to prevent message from being too long
-                max_rows = 20
-                for i, row in enumerate(results[:max_rows]):
-                    response += f"{i+1}. {row}\n"
-                
-                if len(results) > max_rows:
-                    response += f"... and {len(results) - max_rows} more row(s)\n"
-                
-                response += "```"
-                
-                # Discord message limit is 2000 characters
-                if len(response) > 1900:
-                    response = response[:1900] + "\n...\n```\n⚠️ Output truncated due to length"
-                
-                await interaction.followup.send(response, ephemeral=True)
-            else:
-                # Execute modification query (INSERT, UPDATE, DELETE, etc.)
-                db.execute_query(query, fetch=False)
-                await interaction.followup.send("✅ Query executed successfully.", ephemeral=True)
-            
-            print(f"   ✅ Query completed successfully")
-            
-        except Exception as e:
-            error_msg = str(e)
-            print(f"   ❌ Query failed: {error_msg}")
-            await interaction.followup.send(
-                f"❌ Error executing query:\n```\n{error_msg[:1800]}\n```",
-                ephemeral=True
-            )
-    
-    @app_commands.command(name="tasklogs", description="View recent automated task execution logs (BOT OWNER ONLY)")
-    @app_commands.describe(
-        task_name="Filter by task name (optional)",
-        limit="Number of logs to show (default: 10)"
-    )
-    async def view_task_logs(self, interaction: discord.Interaction, task_name: str = None, limit: int = 10):
-        """View recent automated task execution logs (BOT OWNER ONLY)"""
-        # Check if user is the bot owner
-        app_info = await interaction.client.application_info()
-        if interaction.user.id != app_info.owner.id:
-            await interaction.response.send_message(
-                "❌ This command is restricted to the bot owner only.",
-                ephemeral=True
-            )
-            return
-        
-        # Defer response since query might take time
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            # Initialize database connection if needed
-            if not db.connection_pool:
-                db.init_pool()
-            
-            # Get task logs
-            logs = db.get_recent_task_logs(task_name=task_name, limit=min(limit, 50))
-            
-            if not logs:
-                await interaction.followup.send("📋 No task logs found.", ephemeral=True)
-                return
-            
-            # Format logs
-            response = f"📋 **Recent Task Logs** ({len(logs)} entries)\n"
-            if task_name:
-                response += f"Filtered by: `{task_name}`\n"
-            response += "\n"
-            
-            for log in logs:
-                status_emoji = "✅" if log['status'] == 'success' else "❌" if log['status'] == 'error' else "⏳"
-                duration = ""
-                if log['completed_at']:
-                    delta = log['completed_at'] - log['started_at']
-                    duration = f" ({delta.total_seconds():.1f}s)"
-                
-                response += f"{status_emoji} **{log['task_name']}**{duration}\n"
-                response += f"   Started: <t:{int(log['started_at'].timestamp())}:f>\n"
-                
-                if log['guild_id']:
-                    response += f"   Guild: {log['guild_id']}\n"
-                
-                if log['details']:
-                    details_str = str(log['details'])[:100]
-                    response += f"   Details: {details_str}\n"
-                
-                if log['error_message']:
-                    error_str = log['error_message'][:100]
-                    response += f"   Error: {error_str}\n"
-                
-                response += "\n"
-                
-                # Check message length
-                if len(response) > 1800:
-                    response += "... (output truncated)"
-                    break
-            
-            await interaction.followup.send(response, ephemeral=True)
-            
-        except Exception as e:
-            print(f"Error viewing task logs: {e}")
-            await interaction.followup.send(
-                f"❌ Error retrieving task logs: {str(e)[:100]}",
-                ephemeral=True
-            )
-    
+    def __init__(self):
+        super().__init__(name="maintenance", description="Server maintenance and moderation tools")
+
     @app_commands.command(name="assignlvl0", description="Assign lvl 0 to all verified members without a level role")
     @app_commands.checks.has_permissions(manage_roles=True)
     async def assign_lvl0(self, interaction: discord.Interaction):
@@ -1119,3 +944,221 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
 
+
+
+class AdminGroup(app_commands.Group):
+    """Admin commands for server management"""
+    
+    def __init__(self):
+        super().__init__(name="admin", description="Admin server management commands")
+        
+        # Add subgroups
+        self.toggle = AdminToggleGroup()
+        self.tools = AdminToolsGroup()
+        self.maintenance = AdminMaintenanceGroup()
+        
+        self.add_command(self.toggle)
+        self.add_command(self.tools)
+        self.add_command(self.maintenance)
+    
+    @app_commands.command(name="menu", description="Open server settings menu")
+    @app_commands.default_permissions(administrator=True)
+    async def admin_menu(self, interaction: discord.Interaction):
+        """Open interactive admin settings menu"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+            
+            view = AdminSettingsView(interaction.guild.id)
+            await interaction.response.send_message(
+                embed=view.get_embed(),
+                view=view,
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error opening admin menu: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while opening the admin menu.",
+                ephemeral=True
+            )
+    
+    @app_commands.command(name="panel", description="Create a persistent server settings panel in this channel")
+    @app_commands.default_permissions(administrator=True)
+    async def admin_panel(self, interaction: discord.Interaction):
+        """Create a persistent admin settings panel in the channel"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+            
+            view = AdminSettingsView(interaction.guild.id, persistent=True)
+            
+            # Send the persistent panel to the channel
+            await interaction.channel.send(
+                embed=view.get_embed(),
+                view=view
+            )
+            
+            # Confirm to the admin
+            await interaction.response.send_message(
+                "✅ Persistent admin panel created! Anyone with administrator permissions can use it.",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error creating admin panel: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while creating the admin panel.",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="sql", description="Execute a SQL query (BOT OWNER ONLY)")
+    @app_commands.describe(query="The SQL query to execute")
+    async def execute_sql(self, interaction: discord.Interaction, query: str):
+        """Execute a SQL query on the database (BOT OWNER ONLY)"""
+        # Check if user is the bot owner
+        app_info = await interaction.client.application_info()
+        if interaction.user.id != app_info.owner.id:
+            await interaction.response.send_message(
+                "❌ This command is restricted to the bot owner only.",
+                ephemeral=True
+            )
+            return
+        
+        # Defer response since query might take time
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Log the query execution
+            print(f"🔍 SQL Query executed by {interaction.user} (ID: {interaction.user.id}):")
+            print(f"   Query: {query}")
+            
+            # Determine if this is a SELECT query or a modification query
+            is_select = query.strip().upper().startswith('SELECT')
+            
+            if is_select:
+                # Execute SELECT query and fetch results
+                results = db.execute_query(query)
+                
+                if not results:
+                    await interaction.followup.send("✅ Query executed successfully. No results returned.", ephemeral=True)
+                    return
+                
+                # Format results as a table
+                response = f"✅ Query returned {len(results)} row(s):\n```\n"
+                
+                # Limit output to prevent message from being too long
+                max_rows = 20
+                for i, row in enumerate(results[:max_rows]):
+                    response += f"{i+1}. {row}\n"
+                
+                if len(results) > max_rows:
+                    response += f"... and {len(results) - max_rows} more row(s)\n"
+                
+                response += "```"
+                
+                # Discord message limit is 2000 characters
+                if len(response) > 1900:
+                    response = response[:1900] + "\n...\n```\n⚠️ Output truncated due to length"
+                
+                await interaction.followup.send(response, ephemeral=True)
+            else:
+                # Execute modification query (INSERT, UPDATE, DELETE, etc.)
+                db.execute_query(query, fetch=False)
+                await interaction.followup.send("✅ Query executed successfully.", ephemeral=True)
+            
+            print(f"   ✅ Query completed successfully")
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"   ❌ Query failed: {error_msg}")
+            await interaction.followup.send(
+                f"❌ Error executing query:\n```\n{error_msg[:1800]}\n```",
+                ephemeral=True
+            )
+    
+
+    @app_commands.command(name="tasklogs", description="View recent automated task execution logs (BOT OWNER ONLY)")
+    @app_commands.describe(
+        task_name="Filter by task name (optional)",
+        limit="Number of logs to show (default: 10)"
+    )
+    async def view_task_logs(self, interaction: discord.Interaction, task_name: str = None, limit: int = 10):
+        """View recent automated task execution logs (BOT OWNER ONLY)"""
+        # Check if user is the bot owner
+        app_info = await interaction.client.application_info()
+        if interaction.user.id != app_info.owner.id:
+            await interaction.response.send_message(
+                "❌ This command is restricted to the bot owner only.",
+                ephemeral=True
+            )
+            return
+        
+        # Defer response since query might take time
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Get task logs
+            logs = db.get_recent_task_logs(task_name=task_name, limit=min(limit, 50))
+            
+            if not logs:
+                await interaction.followup.send("📋 No task logs found.", ephemeral=True)
+                return
+            
+            # Format logs
+            response = f"📋 **Recent Task Logs** ({len(logs)} entries)\n"
+            if task_name:
+                response += f"Filtered by: `{task_name}`\n"
+            response += "\n"
+            
+            for log in logs:
+                status_emoji = "✅" if log['status'] == 'success' else "❌" if log['status'] == 'error' else "⏳"
+                duration = ""
+                if log['completed_at']:
+                    delta = log['completed_at'] - log['started_at']
+                    duration = f" ({delta.total_seconds():.1f}s)"
+                
+                response += f"{status_emoji} **{log['task_name']}**{duration}\n"
+                response += f"   Started: <t:{int(log['started_at'].timestamp())}:f>\n"
+                
+                if log['guild_id']:
+                    response += f"   Guild: {log['guild_id']}\n"
+                
+                if log['details']:
+                    details_str = str(log['details'])[:100]
+                    response += f"   Details: {details_str}\n"
+                
+                if log['error_message']:
+                    error_str = log['error_message'][:100]
+                    response += f"   Error: {error_str}\n"
+                
+                response += "\n"
+                
+                # Check message length
+                if len(response) > 1800:
+                    response += "... (output truncated)"
+                    break
+            
+            await interaction.followup.send(response, ephemeral=True)
+            
+        except Exception as e:
+            print(f"Error viewing task logs: {e}")
+            await interaction.followup.send(
+                f"❌ Error retrieving task logs: {str(e)[:100]}",
+                ephemeral=True
+            )
+    
