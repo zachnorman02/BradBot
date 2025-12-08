@@ -993,6 +993,14 @@ class AdminToolsGroup(app_commands.Group):
         
         await interaction.response.defer(ephemeral=True)
         
+        action_value = action.value
+        
+        # Actions that require a user parameter
+        user_required_actions = ["mark", "unmark", "check", "assign"]
+        if action_value in user_required_actions and not user:
+            await interaction.followup.send(f"❌ Please specify a user for the {action_value} action.", ephemeral=True)
+            return
+        
         try:
             if not db.connection_pool:
                 db.init_pool()
@@ -1004,7 +1012,7 @@ class AdminToolsGroup(app_commands.Group):
             # CONFIGURATION ACTIONS
             # ================================================================
             
-            if action.value == "list_configs":
+            if action_value == "list_configs":
                 configs = db.get_all_conditional_role_configs(interaction.guild.id)
                 
                 if not configs:
@@ -1044,7 +1052,7 @@ class AdminToolsGroup(app_commands.Group):
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
             
-            elif action.value == "configure":
+            elif action_value == "configure":
                 if not role:
                     await interaction.followup.send("❌ Please specify a role to configure.", ephemeral=True)
                     return
@@ -1107,7 +1115,7 @@ class AdminToolsGroup(app_commands.Group):
                 await interaction.followup.send("\n".join(response_parts), ephemeral=True)
                 return
             
-            elif action.value == "remove_config":
+            elif action_value == "remove_config":
                 if not role:
                     await interaction.followup.send("❌ Please specify a role to remove configuration for.", ephemeral=True)
                     return
@@ -1125,7 +1133,7 @@ class AdminToolsGroup(app_commands.Group):
             # ELIGIBILITY ACTIONS
             # ================================================================
             
-            elif action.value == "list_eligible":
+            elif action_value == "list_eligible":
                 if not role:
                     await interaction.followup.send("❌ Please specify a role to list eligible users for.", ephemeral=True)
                     return
@@ -1194,17 +1202,17 @@ class AdminToolsGroup(app_commands.Group):
                 )
                 return
             
-            if action.value == "mark":
+            if action_value == "mark":
                 db.mark_conditional_role_eligible(interaction.guild.id, user.id, role.id, interaction.user.id)
                 await interaction.followup.send(f"✅ Marked {user.mention} as eligible for {role.mention}.", ephemeral=True)
                 return
             
-            elif action.value == "unmark":
+            elif action_value == "unmark":
                 db.unmark_conditional_role_eligible(interaction.guild.id, user.id, role.id)
                 await interaction.followup.send(f"✅ Removed eligibility for {user.mention} to receive {role.mention}.", ephemeral=True)
                 return
             
-            elif action.value == "check":
+            elif action_value == "check":
                 is_eligible = db.is_conditional_role_eligible(interaction.guild.id, user.id, role.id)
                 
                 if is_eligible:
@@ -1213,7 +1221,7 @@ class AdminToolsGroup(app_commands.Group):
                     await interaction.followup.send(f"❌ {user.mention} is NOT eligible for {role.mention}.", ephemeral=True)
                 return
             
-            elif action.value == "assign":
+            elif action_value == "assign":
                 # Check eligibility
                 is_eligible = db.is_conditional_role_eligible(interaction.guild.id, user.id, role.id)
                 
