@@ -1101,6 +1101,23 @@ class Database:
         result = self.execute_query(query, (guild_id, user_id, role_id))
         return bool(result and result[0][0])
     
+    def get_conditional_role_eligibility(self, guild_id: int, user_id: int, role_id: int):
+        """Get eligibility details for a user and conditional role."""
+        query = """
+        SELECT eligible, marked_at, marked_by_user_id, notes
+        FROM main.conditional_role_eligibility
+        WHERE guild_id = %s AND user_id = %s AND role_id = %s
+        """
+        result = self.execute_query(query, (guild_id, user_id, role_id))
+        if result:
+            return {
+                'eligible': result[0][0],
+                'marked_at': result[0][1],
+                'marked_by_user_id': result[0][2],
+                'notes': result[0][3]
+            }
+        return None
+    
     def get_conditional_role_eligible_users(self, guild_id: int, role_id: int):
         """Get all users eligible for a specific conditional role."""
         query = """
