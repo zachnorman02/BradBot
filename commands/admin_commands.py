@@ -983,7 +983,8 @@ class AdminToolsGroup(app_commands.Group):
         role: discord.Role = None,
         blocking_roles: str = None,
         deferral_roles: str = None,
-        user: discord.Member = None
+        user: discord.Member = None,
+        dry_run: bool = False
     ):
         """Manage conditional role assignments with eligibility tracking and blocking roles"""
         if not interaction.guild:
@@ -1300,8 +1301,6 @@ class AdminToolsGroup(app_commands.Group):
             
             # check-all action - run all conditional role checks
             elif action_value == "check_all":
-                dry_run = kwargs.get('dry_run', False)
-                
                 # Get all guild members and configs
                 configs = db.get_all_conditional_role_configs(interaction.guild.id)
                 if not configs:
