@@ -12,9 +12,10 @@ from database import db
 class AdminSettingsView(ui.View):
     """Interactive admin settings view with toggle buttons"""
     
-    def __init__(self, guild_id: int):
-        super().__init__(timeout=180)
+    def __init__(self, guild_id: int, persistent: bool = False):
+        super().__init__(timeout=None if persistent else 180)
         self.guild_id = guild_id
+        self.persistent = persistent
         self.update_buttons()
     
     def get_embed(self) -> discord.Embed:
@@ -117,6 +118,9 @@ class AdminSettingsView(ui.View):
     
     @ui.button(label="🔗 Link Replacement", style=discord.ButtonStyle.gray, row=0)
     async def toggle_link_replacement(self, interaction: discord.Interaction, button: ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return
         current = db.get_guild_setting(self.guild_id, 'link_replacement_enabled', 'true').lower() == 'true'
         new_value = not current
         db.set_guild_link_replacement(self.guild_id, new_value, interaction.user.id, str(interaction.user))
@@ -125,6 +129,9 @@ class AdminSettingsView(ui.View):
     
     @ui.button(label="✅ Verify Roles", style=discord.ButtonStyle.gray, row=0)
     async def toggle_verify_roles(self, interaction: discord.Interaction, button: ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return
         current = db.get_guild_setting(self.guild_id, 'verify_roles_enabled', 'true').lower() == 'true'
         new_value = not current
         db.set_guild_setting(self.guild_id, 'verify_roles_enabled', 'true' if new_value else 'false')
@@ -133,6 +140,9 @@ class AdminSettingsView(ui.View):
     
     @ui.button(label="💎 Booster Roles", style=discord.ButtonStyle.gray, row=0)
     async def toggle_booster_roles(self, interaction: discord.Interaction, button: ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return
         current = db.get_guild_setting(self.guild_id, 'booster_roles_enabled', 'true').lower() == 'true'
         new_value = not current
         db.set_guild_setting(self.guild_id, 'booster_roles_enabled', 'true' if new_value else 'false')
@@ -141,6 +151,9 @@ class AdminSettingsView(ui.View):
     
     @ui.button(label="👢 Unverified Kicks", style=discord.ButtonStyle.gray, row=1)
     async def toggle_unverified_kicks(self, interaction: discord.Interaction, button: ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return
         current = db.get_guild_setting(self.guild_id, 'unverified_kicks_enabled', 'false').lower() == 'true'
         new_value = not current
         db.set_guild_setting(self.guild_id, 'unverified_kicks_enabled', 'true' if new_value else 'false')
@@ -149,6 +162,9 @@ class AdminSettingsView(ui.View):
     
     @ui.button(label="🔔 Reply Pings", style=discord.ButtonStyle.gray, row=1)
     async def toggle_reply_pings(self, interaction: discord.Interaction, button: ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return
         current = db.get_guild_setting(self.guild_id, 'reply_pings_enabled', 'true').lower() == 'true'
         new_value = not current
         db.set_guild_setting(self.guild_id, 'reply_pings_enabled', 'true' if new_value else 'false')
@@ -157,6 +173,9 @@ class AdminSettingsView(ui.View):
     
     @ui.button(label="📤 Member Send Pings", style=discord.ButtonStyle.gray, row=1)
     async def toggle_member_send_pings(self, interaction: discord.Interaction, button: ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return
         current = db.get_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true').lower() == 'true'
         new_value = not current
         db.set_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true' if new_value else 'false')
@@ -165,6 +184,9 @@ class AdminSettingsView(ui.View):
     
     @ui.button(label="🦵 Auto-Kick Singles", style=discord.ButtonStyle.gray, row=2)
     async def toggle_auto_kick_single(self, interaction: discord.Interaction, button: ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return
         current = db.get_guild_setting(self.guild_id, 'auto_kick_single_server', 'false').lower() == 'true'
         new_value = not current
         db.set_guild_setting(self.guild_id, 'auto_kick_single_server', 'true' if new_value else 'false')
@@ -173,6 +195,9 @@ class AdminSettingsView(ui.View):
     
     @ui.button(label="🔨 Auto-Ban Singles", style=discord.ButtonStyle.gray, row=2)
     async def toggle_auto_ban_single(self, interaction: discord.Interaction, button: ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return
         current = db.get_guild_setting(self.guild_id, 'auto_ban_single_server', 'false').lower() == 'true'
         new_value = not current
         db.set_guild_setting(self.guild_id, 'auto_ban_single_server', 'true' if new_value else 'false')
@@ -205,6 +230,38 @@ class AdminGroup(app_commands.Group):
             print(f"Error opening admin menu: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while opening the admin menu.",
+                ephemeral=True
+            )
+    
+    @app_commands.command(name="panel", description="Create a persistent server settings panel in this channel")
+    @app_commands.default_permissions(administrator=True)
+    async def admin_panel(self, interaction: discord.Interaction):
+        """Create a persistent admin settings panel in the channel"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+            
+            view = AdminSettingsView(interaction.guild.id, persistent=True)
+            
+            # Send the persistent panel to the channel
+            await interaction.channel.send(
+                embed=view.get_embed(),
+                view=view
+            )
+            
+            # Confirm to the admin
+            await interaction.response.send_message(
+                "✅ Persistent admin panel created! Anyone with administrator permissions can use it.",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error creating admin panel: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while creating the admin panel.",
                 ephemeral=True
             )
     
