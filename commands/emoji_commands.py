@@ -376,8 +376,10 @@ class SavedEmojiGroup(app_commands.Group):
         elif force_type == "sticker":
             create_sticker = True
         
-        # Load the image data
+        # Load the image data and convert memoryview to bytes
         image_data = emoji_data['image_data']
+        if isinstance(image_data, memoryview):
+            image_data = bytes(image_data)
         name = emoji_data['name']
         
         # Create emoji or sticker
