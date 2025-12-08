@@ -35,6 +35,10 @@ async def handle_reply_notification(message: discord.Message, bot: discord.Clien
         if replied_message.author != bot.user:
             return
         
+        # Don't ping if the replier is also the bot (bot replying to itself)
+        if message.author == bot.user:
+            return
+        
         # Check if the bot's message is just a reply ping notification
         # Reply ping messages start with "-# " and contain only a mention
         bot_message_content = replied_message.content.strip()

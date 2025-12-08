@@ -165,14 +165,14 @@ class SettingsGroup(commands.Cog):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # Set the callback for the top-level /settings command
+        self.settings_group.callback = self.settings_callback
     
     # Declare the group at class level
     settings_group = app_commands.Group(name="settings", description="User settings and preferences")
     
-    # Top-level /settings command (outside the group)
-    @app_commands.command(name="settings", description="Open your settings menu")
-    async def settings_command(self, interaction: discord.Interaction):
-        """Open interactive settings menu"""
+    async def settings_callback(self, interaction: discord.Interaction):
+        """Open interactive settings menu when /settings is called without subcommands"""
         try:
             # Initialize database connection if needed
             if not db.connection_pool:
