@@ -3,12 +3,174 @@ Admin command group for server and database management
 """
 import discord
 from discord import app_commands
+from discord.ext import commands
+from discord import ui
 import datetime as dt
 from database import db
 
 
+class AdminSettingsView(ui.View):
+    """Interactive admin settings view with toggle buttons"""
+    
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=180)
+        self.guild_id = guild_id
+        self.update_buttons()
+    
+    def get_embed(self) -> discord.Embed:
+        """Generate the settings display embed"""
+        # Fetch current settings
+        link_replacement = db.get_guild_setting(self.guild_id, 'link_replacement_enabled', 'true').lower() == 'true'
+        verify_roles = db.get_guild_setting(self.guild_id, 'verify_roles_enabled', 'true').lower() == 'true'
+        booster_roles = db.get_guild_setting(self.guild_id, 'booster_roles_enabled', 'true').lower() == 'true'
+        unverified_kicks = db.get_guild_setting(self.guild_id, 'unverified_kicks_enabled', 'false').lower() == 'true'
+        reply_pings = db.get_guild_setting(self.guild_id, 'reply_pings_enabled', 'true').lower() == 'true'
+        member_send_pings = db.get_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true').lower() == 'true'
+        
+        embed = discord.Embed(
+            title="⚙️ Server Settings",
+            description="Toggle server automation and features",
+            color=discord.Color.blue()
+        )
+        
+        embed.add_field(
+            name="🔗 Link Replacement",
+            value=f"{'🟢 Enabled' if link_replacement else '🔴 Disabled'}",
+            inline=True
+        )
+        embed.add_field(
+            name="✅ Verify Roles",
+            value=f"{'🟢 Enabled' if verify_roles else '🔴 Disabled'}",
+            inline=True
+        )
+        embed.add_field(
+            name="💎 Booster Roles",
+            value=f"{'🟢 Enabled' if booster_roles else '🔴 Disabled'}",
+            inline=True
+        )
+        embed.add_field(
+            name="👢 Unverified Kicks",
+            value=f"{'🟢 Enabled' if unverified_kicks else '🔴 Disabled'}",
+            inline=True
+        )
+        embed.add_field(
+            name="🔔 Reply Pings",
+            value=f"{'🟢 Enabled' if reply_pings else '🔴 Disabled'}",
+            inline=True
+        )
+        embed.add_field(
+            name="📤 Member Send Pings",
+            value=f"{'🟢 Enabled' if member_send_pings else '🔴 Disabled'}",
+            inline=True
+        )
+        
+        embed.set_footer(text="Click buttons to toggle settings")
+        return embed
+    
+    def update_buttons(self):
+        """Update button styles based on current settings"""
+        link_replacement = db.get_guild_setting(self.guild_id, 'link_replacement_enabled', 'true').lower() == 'true'
+        verify_roles = db.get_guild_setting(self.guild_id, 'verify_roles_enabled', 'true').lower() == 'true'
+        booster_roles = db.get_guild_setting(self.guild_id, 'booster_roles_enabled', 'true').lower() == 'true'
+        unverified_kicks = db.get_guild_setting(self.guild_id, 'unverified_kicks_enabled', 'false').lower() == 'true'
+        reply_pings = db.get_guild_setting(self.guild_id, 'reply_pings_enabled', 'true').lower() == 'true'
+        member_send_pings = db.get_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true').lower() == 'true'
+        
+        # Update button children
+        self.children[0].style = discord.ButtonStyle.green if link_replacement else discord.ButtonStyle.gray
+        self.children[0].label = "🔗 Link Replacement " + ("✓" if link_replacement else "✗")
+        
+        self.children[1].style = discord.ButtonStyle.green if verify_roles else discord.ButtonStyle.gray
+        self.children[1].label = "✅ Verify Roles " + ("✓" if verify_roles else "✗")
+        
+        self.children[2].style = discord.ButtonStyle.green if booster_roles else discord.ButtonStyle.gray
+        self.children[2].label = "💎 Booster Roles " + ("✓" if booster_roles else "✗")
+        
+        self.children[3].style = discord.ButtonStyle.green if unverified_kicks else discord.ButtonStyle.gray
+        self.children[3].label = "👢 Unverified Kicks " + ("✓" if unverified_kicks else "✗")
+        
+        self.children[4].style = discord.ButtonStyle.green if reply_pings else discord.ButtonStyle.gray
+        self.children[4].label = "🔔 Reply Pings " + ("✓" if reply_pings else "✗")
+        
+        self.children[5].style = discord.ButtonStyle.green if member_send_pings else discord.ButtonStyle.gray
+        self.children[5].label = "📤 Member Send Pings " + ("✓" if member_send_pings else "✗")
+    
+    @ui.button(label="🔗 Link Replacement", style=discord.ButtonStyle.gray, row=0)
+    async def toggle_link_replacement(self, interaction: discord.Interaction, button: ui.Button):
+        current = db.get_guild_setting(self.guild_id, 'link_replacement_enabled', 'true').lower() == 'true'
+        new_value = not current
+        db.set_guild_link_replacement(self.guild_id, new_value, interaction.user.id, str(interaction.user))
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="✅ Verify Roles", style=discord.ButtonStyle.gray, row=0)
+    async def toggle_verify_roles(self, interaction: discord.Interaction, button: ui.Button):
+        current = db.get_guild_setting(self.guild_id, 'verify_roles_enabled', 'true').lower() == 'true'
+        new_value = not current
+        db.set_guild_setting(self.guild_id, 'verify_roles_enabled', 'true' if new_value else 'false')
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="💎 Booster Roles", style=discord.ButtonStyle.gray, row=0)
+    async def toggle_booster_roles(self, interaction: discord.Interaction, button: ui.Button):
+        current = db.get_guild_setting(self.guild_id, 'booster_roles_enabled', 'true').lower() == 'true'
+        new_value = not current
+        db.set_guild_setting(self.guild_id, 'booster_roles_enabled', 'true' if new_value else 'false')
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="👢 Unverified Kicks", style=discord.ButtonStyle.gray, row=1)
+    async def toggle_unverified_kicks(self, interaction: discord.Interaction, button: ui.Button):
+        current = db.get_guild_setting(self.guild_id, 'unverified_kicks_enabled', 'false').lower() == 'true'
+        new_value = not current
+        db.set_guild_setting(self.guild_id, 'unverified_kicks_enabled', 'true' if new_value else 'false')
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="🔔 Reply Pings", style=discord.ButtonStyle.gray, row=1)
+    async def toggle_reply_pings(self, interaction: discord.Interaction, button: ui.Button):
+        current = db.get_guild_setting(self.guild_id, 'reply_pings_enabled', 'true').lower() == 'true'
+        new_value = not current
+        db.set_guild_setting(self.guild_id, 'reply_pings_enabled', 'true' if new_value else 'false')
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="📤 Member Send Pings", style=discord.ButtonStyle.gray, row=1)
+    async def toggle_member_send_pings(self, interaction: discord.Interaction, button: ui.Button):
+        current = db.get_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true').lower() == 'true'
+        new_value = not current
+        db.set_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true' if new_value else 'false')
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+
 class AdminGroup(app_commands.Group):
     """Admin commands for database management"""
+    
+    @app_commands.command(name="menu", description="Open server settings menu")
+    @app_commands.default_permissions(administrator=True)
+    async def admin_menu(self, interaction: discord.Interaction):
+        """Open interactive admin settings menu"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+            
+            view = AdminSettingsView(interaction.guild.id)
+            await interaction.response.send_message(
+                embed=view.get_embed(),
+                view=view,
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error opening admin menu: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while opening the admin menu.",
+                ephemeral=True
+            )
     
     @app_commands.command(name="linkreplacement", description="Toggle automatic link replacement for this server")
     @app_commands.describe(enabled="Enable or disable automatic link replacement")
