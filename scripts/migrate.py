@@ -663,6 +663,56 @@ class Migration021(Migration):
             print(f"   ⚠️  Failed to delete eligible column: {e}")
 
 
+class Migration022(Migration):
+    """Remove eligible column from conditional_role_eligibility (Aurora DSQL compatible)"""
+    
+    def __init__(self):
+        super().__init__("022", "Remove eligible column from conditional_role_eligibility table (table recreation)")
+    
+    def up(self):
+        """Delete the eligible column since we track eligibility by presence in the table"""
+        try:
+            # Aurora DSQL doesn't support DROP COLUMN, so we need to recreate the table
+            # Create new table without eligible column
+            db.execute_query("""
+                CREATE TABLE IF NOT EXISTS main.conditional_role_eligibility_new (
+                    guild_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    role_id BIGINT NOT NULL,
+                    marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    marked_by_user_id BIGINT,
+                    notes TEXT,
+                    PRIMARY KEY (guild_id, user_id, role_id)
+                )
+            """, fetch=False)
+            print(f"   ✅ Created new conditional_role_eligibility table structure")
+            
+            # Copy data from old table to new table
+            db.execute_query("""
+                INSERT INTO main.conditional_role_eligibility_new 
+                (guild_id, user_id, role_id, marked_at, marked_by_user_id, notes)
+                SELECT guild_id, user_id, role_id, marked_at, marked_by_user_id, notes
+                FROM main.conditional_role_eligibility
+            """, fetch=False)
+            print(f"   ✅ Migrated data to new table")
+            
+            # Drop old table
+            db.execute_query("""
+                DROP TABLE main.conditional_role_eligibility
+            """, fetch=False)
+            print(f"   ✅ Dropped old table")
+            
+            # Rename new table to original name
+            db.execute_query("""
+                ALTER TABLE main.conditional_role_eligibility_new 
+                RENAME TO conditional_role_eligibility
+            """, fetch=False)
+            print(f"   ✅ Renamed table - eligible column removed")
+            
+        except Exception as e:
+            print(f"   ⚠️  Failed to migrate table structure: {e}")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -683,7 +733,8 @@ MIGRATIONS = [
     Migration018(),  # Saved emojis table
     Migration019(),  # Conditional role assignment tables
     Migration020(),  # Add manually removed users to eligibility
-    Migration021(),  # Remove eligible column from conditional_role_eligibility
+    Migration021(),  # Attempt to remove eligible column
+    Migration022(),  # Remove eligible column from conditional_role_eligibility
 ]
 
 def get_applied_migrations():
