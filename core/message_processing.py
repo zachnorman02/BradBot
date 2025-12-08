@@ -23,6 +23,10 @@ async def handle_reply_notification(message: discord.Message, bot: discord.Clien
     if not message.reference:
         return
     
+    # Check for :s at the beginning to suppress ping for this specific message
+    if message.content and message.content.startswith(':s'):
+        return
+    
     try:
         # Get the message being replied to
         replied_message = await message.channel.fetch_message(message.reference.message_id)

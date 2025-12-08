@@ -125,7 +125,7 @@ class SavedEmojiGroup(app_commands.Group):
     """Commands for managing saved emojis in the database"""
     
     def __init__(self, bot):
-        super().__init__(name="saved", description="Manage saved emojis/stickers")
+        super().__init__(name="db", description="Manage saved emojis/stickers in database")
         self.bot = bot
     
     @app_commands.command(name="save", description="Save an emoji or sticker to the database for later use")
@@ -281,7 +281,7 @@ class SavedEmojiGroup(app_commands.Group):
                 
                 await interaction.followup.send(
                     f"✅ Saved sticker `{name or sticker.name}` (ID: {saved_id})\n"
-                    f"Use `/emoji saved load {saved_id}` to add it to a server later.",
+                    f"Use `/emoji db load {saved_id}` to add it to a server later.",
                     ephemeral=True
                 )
             except Exception as e:
@@ -327,7 +327,7 @@ class SavedEmojiGroup(app_commands.Group):
                 
                 await interaction.followup.send(
                     f"✅ Saved emoji `{save_name}` (ID: {saved_id})\n"
-                    f"Use `/emoji saved load {saved_id}` to add it to a server later.",
+                    f"Use `/emoji db load {saved_id}` to add it to a server later.",
                     ephemeral=True
                 )
             except Exception as e:
@@ -439,6 +439,106 @@ class SavedEmojiGroup(app_commands.Group):
         
         await interaction.followup.send(response, ephemeral=True)
     
+    @app_commands.command(name="saveserver", description="Save emoji(s) from this server to the database")
+    @app_commands.describe(
+        scope="Save a specific emoji or all emojis from the server",
+        emoji_name="Name of the emoji to save (required if scope is 'single')",
+        custom_name="Optional: custom name for the saved emoji (only for single emoji)",
+        notes="Optional: notes about the emoji(s)"
+    )
+    @app_commands.choices(scope=[
+        app_commands.Choice(name="Single emoji", value="single"),
+        app_commands.Choice(name="All server emojis", value="all")
+    ])
+    async def save_server_emoji(self, interaction: discord.Interaction, scope: str, emoji_name: str = None, custom_name: str = None, notes: str = None):
+        """Save emoji(s) from the server's emoji list to the database"""
+        # Check permissions
+        permission_check = check_emoji_permissions(interaction)
+        if permission_check:
+            await interaction.response.send_message(permission_check, ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        if scope == "single":
+            # Save a single emoji
+            if not emoji_name:
+                await interaction.followup.send("❌ Please provide an emoji name when using 'single' scope.", ephemeral=True)
+                return
+            
+            # Find the emoji in the server
+            emoji = discord.utils.get(interaction.guild.emojis, name=emoji_name)
+            
+            if not emoji:
+                await interaction.followup.send(f"❌ No emoji found with name: `{emoji_name}` in this server.", ephemeral=True)
+                return
+            
+            try:
+                # Download emoji
+                image_data = await emoji.read()
+                
+                # Save to database
+                saved_id = db.save_emoji(
+                    name=custom_name or emoji.name,
+                    image_data=image_data,
+                    animated=emoji.animated,
+                    saved_by_user_id=interaction.user.id,
+                    saved_from_guild_id=interaction.guild.id,
+                    notes=notes,
+                    is_sticker=False
+                )
+                
+                await interaction.followup.send(
+                    f"✅ Saved emoji `{custom_name or emoji.name}` (ID: {saved_id})\n"
+                    f"Use `/emoji db load {saved_id}` to add it to a server later.",
+                    ephemeral=True
+                )
+            except Exception as e:
+                await interaction.followup.send(f"❌ Error saving emoji: {str(e)[:200]}", ephemeral=True)
+        
+        else:  # scope == "all"
+            # Save all emojis from the server
+            if not interaction.guild.emojis:
+                await interaction.followup.send("❌ This server has no custom emojis.", ephemeral=True)
+                return
+            
+            saved_items = []
+            errors = []
+            
+            for emoji in interaction.guild.emojis:
+                try:
+                    # Download emoji
+                    image_data = await emoji.read()
+                    
+                    # Save to database
+                    saved_id = db.save_emoji(
+                        name=emoji.name,
+                        image_data=image_data,
+                        animated=emoji.animated,
+                        saved_by_user_id=interaction.user.id,
+                        saved_from_guild_id=interaction.guild.id,
+                        notes=notes,
+                        is_sticker=False
+                    )
+                    
+                    saved_items.append(f"😀 {emoji.name} (ID: {saved_id})")
+                except Exception as e:
+                    errors.append(f"Error saving {emoji.name}: {str(e)[:100]}")
+            
+            # Build response
+            response = ""
+            if saved_items:
+                response += f"✅ Saved {len(saved_items)} emoji(s):\n" + "\n".join(saved_items[:20])
+                if len(saved_items) > 20:
+                    response += f"\n... and {len(saved_items) - 20} more"
+            
+            if errors:
+                response += f"\n\n⚠️ Errors ({len(errors)}):\n" + "\n".join(errors[:5])
+                if len(errors) > 5:
+                    response += f"\n... and {len(errors) - 5} more errors"
+            
+            await interaction.followup.send(response[:2000], ephemeral=True)
+    
     @app_commands.command(name="delete", description="Delete a saved emoji from database (bot owner only)")
     @app_commands.describe(
         emoji_id="ID of the emoji to delete"
@@ -475,8 +575,8 @@ class EmojiGroup(app_commands.Group):
         self.bot = bot
         
         # Create subgroups
-        self.saved = SavedEmojiGroup(bot)
-        self.add_command(self.saved)
+        self.db = SavedEmojiGroup(bot)
+        self.add_command(self.db)
     
     @app_commands.command(name="copy", description="Copy custom emoji(s) from a message")
     @app_commands.describe(

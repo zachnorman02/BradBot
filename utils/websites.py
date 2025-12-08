@@ -195,9 +195,27 @@ class YouTubeLink(SimpleWebsiteLink):
         r"https?://(?:www\.)?(youtube\.com|youtu\.be)/watch\?v=([\w-]+)",
         r"https?://(?:www\.)?(youtube\.com|youtu\.be)/playlist\?list=([\w-]+)",
         r"https?://(?:www\.)?(youtube\.com|youtu\.be)/shorts/([\w-]+)",
-        r"https?://(?:www\.)?(youtube\.com|youtu\.be)/([\w-]+)"
+        r"https?://(?:www\.)?youtu\.be/([\w-]+)"  # youtu.be short links
     ]
     replacement = "youtube.com"
+    
+    def process(self, url: str) -> str:
+        """Process YouTube URL, converting youtu.be short links to full format."""
+        import re
+        
+        # Check if it's a youtu.be short link
+        short_link = re.match(r'https?://(?:www\.)?youtu\.be/([\w-]+)(\?.*)?', url)
+        if short_link:
+            video_id = short_link.group(1)
+            query_params = short_link.group(2) or ''
+            # Convert to youtube.com/watch?v= format
+            url = f"https://youtube.com/watch?v={video_id}{query_params}"
+        else:
+            # Replace domain for other YouTube URLs
+            url = re.sub(r'https?://(?:www\.)?(youtube\.com|youtu\.be)', f'https://{self.replacement}', url)
+        
+        # Clean tracking parameters
+        return self._clean_tracking_params(url)
     
     def _clean_tracking_params(self, url: str) -> str:
         # Only keep 'v' and 't' query parameters, remove others

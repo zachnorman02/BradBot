@@ -554,6 +554,11 @@ class Database:
         query = "UPDATE main.polls SET is_active = FALSE WHERE id = %s"
         self.execute_query(query, (poll_id,), fetch=False)
     
+    def reopen_poll(self, poll_id: int):
+        """Reopen a poll to allow new responses"""
+        query = "UPDATE main.polls SET is_active = TRUE WHERE id = %s"
+        self.execute_query(query, (poll_id,), fetch=False)
+    
     def get_active_polls(self, guild_id: int) -> list:
         """Get all active polls in a guild"""
         query = """

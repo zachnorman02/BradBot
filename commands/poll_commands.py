@@ -462,6 +462,73 @@ class PollGroup(app_commands.Group):
                 ephemeral=True
             )
     
+    @app_commands.command(name="reopen", description="Reopen a closed poll to allow new responses")
+    @app_commands.describe(poll_id="The ID of the poll to reopen")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    async def reopen_poll(self, interaction: discord.Interaction, poll_id: int):
+        """Reopen a closed poll to allow further responses"""
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Get poll info
+            poll_info = db.get_poll(poll_id)
+            if not poll_info:
+                await interaction.response.send_message("❌ Poll not found.", ephemeral=True)
+                return
+            
+            # Check if user has permission (creator or manage messages)
+            if poll_info['creator_id'] != interaction.user.id and not interaction.user.guild_permissions.manage_messages:
+                await interaction.response.send_message(
+                    "❌ You don't have permission to reopen this poll.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check if poll is already active
+            if poll_info['is_active']:
+                await interaction.response.send_message(
+                    "❌ This poll is already open.",
+                    ephemeral=True
+                )
+                return
+            
+            # Reopen the poll
+            db.reopen_poll(poll_id)
+            
+            # Try to edit the original message to show it's open
+            if poll_info.get('message_id'):
+                try:
+                    channel = interaction.guild.get_channel(poll_info['channel_id'])
+                    if channel:
+                        message = await channel.fetch_message(poll_info['message_id'])
+                        
+                        # Update embed
+                        embed = message.embeds[0] if message.embeds else discord.Embed()
+                        embed.color = discord.Color.blue()
+                        embed.title = "📊 Poll"
+                        
+                        # Add the button back
+                        view = PollView(poll_id, poll_info['question'])
+                        await message.edit(embed=embed, view=view)
+                except Exception as e:
+                    print(f"Could not edit poll message: {e}")
+            
+            await interaction.response.send_message(
+                f"✅ Poll #{poll_id} has been reopened. Responses are now accepted.",
+                ephemeral=True
+            )
+            
+            print(f"📊 Poll {poll_id} reopened by {interaction.user}")
+            
+        except Exception as e:
+            print(f"Error reopening poll: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while reopening the poll.",
+                ephemeral=True
+            )
+    
     @app_commands.command(name="refresh", description="Refresh a poll's button to fix interaction issues")
     @app_commands.describe(poll_id="The ID of the poll to refresh")
     async def refresh_poll(self, interaction: discord.Interaction, poll_id: int):
