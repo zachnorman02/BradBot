@@ -61,6 +61,33 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     await on_member_update_handler(before, after)
 
 @bot.event
+async def on_member_join(member: discord.Member):
+    """Handle new members joining - check if they should be auto-kicked/banned"""
+    guild = member.guild
+    
+    # Check if auto-kick for single-server members is enabled
+    kick_enabled = db.get_guild_setting(guild.id, 'auto_kick_single_server', 'false').lower() == 'true'
+    ban_enabled = db.get_guild_setting(guild.id, 'auto_ban_single_server', 'false').lower() == 'true'
+    
+    if not kick_enabled and not ban_enabled:
+        return  # Feature disabled
+    
+    # Check if member is only in this server (and no other mutual servers with bot)
+    mutual_guilds = member.mutual_guilds
+    if len(mutual_guilds) == 1:  # Only in this server
+        try:
+            if ban_enabled:
+                await member.ban(reason="Auto-ban: Member is only in this server with bot")
+                print(f"Auto-banned {member} ({member.id}) from {guild.name} - single server member")
+            elif kick_enabled:
+                await member.kick(reason="Auto-kick: Member is only in this server with bot")
+                print(f"Auto-kicked {member} ({member.id}) from {guild.name} - single server member")
+        except discord.Forbidden:
+            print(f"Failed to kick/ban {member} - insufficient permissions")
+        except Exception as e:
+            print(f"Error auto-kicking/banning {member}: {e}")
+
+@bot.event
 async def on_ready():
     print(f'{bot.user} has logged in!')
     

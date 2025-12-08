@@ -26,6 +26,8 @@ class AdminSettingsView(ui.View):
         unverified_kicks = db.get_guild_setting(self.guild_id, 'unverified_kicks_enabled', 'false').lower() == 'true'
         reply_pings = db.get_guild_setting(self.guild_id, 'reply_pings_enabled', 'true').lower() == 'true'
         member_send_pings = db.get_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true').lower() == 'true'
+        auto_kick_single = db.get_guild_setting(self.guild_id, 'auto_kick_single_server', 'false').lower() == 'true'
+        auto_ban_single = db.get_guild_setting(self.guild_id, 'auto_ban_single_server', 'false').lower() == 'true'
         
         embed = discord.Embed(
             title="⚙️ Server Settings",
@@ -63,6 +65,16 @@ class AdminSettingsView(ui.View):
             value=f"{'🟢 Enabled' if member_send_pings else '🔴 Disabled'}",
             inline=True
         )
+        embed.add_field(
+            name="🦵 Auto-Kick Single Server",
+            value=f"{'🟢 Enabled' if auto_kick_single else '🔴 Disabled'}",
+            inline=True
+        )
+        embed.add_field(
+            name="🔨 Auto-Ban Single Server",
+            value=f"{'🟢 Enabled' if auto_ban_single else '🔴 Disabled'}",
+            inline=True
+        )
         
         embed.set_footer(text="Click buttons to toggle settings")
         return embed
@@ -75,6 +87,8 @@ class AdminSettingsView(ui.View):
         unverified_kicks = db.get_guild_setting(self.guild_id, 'unverified_kicks_enabled', 'false').lower() == 'true'
         reply_pings = db.get_guild_setting(self.guild_id, 'reply_pings_enabled', 'true').lower() == 'true'
         member_send_pings = db.get_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true').lower() == 'true'
+        auto_kick_single = db.get_guild_setting(self.guild_id, 'auto_kick_single_server', 'false').lower() == 'true'
+        auto_ban_single = db.get_guild_setting(self.guild_id, 'auto_ban_single_server', 'false').lower() == 'true'
         
         # Update button children
         self.children[0].style = discord.ButtonStyle.green if link_replacement else discord.ButtonStyle.gray
@@ -94,6 +108,12 @@ class AdminSettingsView(ui.View):
         
         self.children[5].style = discord.ButtonStyle.green if member_send_pings else discord.ButtonStyle.gray
         self.children[5].label = "📤 Member Send Pings " + ("✓" if member_send_pings else "✗")
+        
+        self.children[6].style = discord.ButtonStyle.green if auto_kick_single else discord.ButtonStyle.gray
+        self.children[6].label = "🦵 Auto-Kick Singles " + ("✓" if auto_kick_single else "✗")
+        
+        self.children[7].style = discord.ButtonStyle.green if auto_ban_single else discord.ButtonStyle.gray
+        self.children[7].label = "🔨 Auto-Ban Singles " + ("✓" if auto_ban_single else "✗")
     
     @ui.button(label="🔗 Link Replacement", style=discord.ButtonStyle.gray, row=0)
     async def toggle_link_replacement(self, interaction: discord.Interaction, button: ui.Button):
@@ -140,6 +160,22 @@ class AdminSettingsView(ui.View):
         current = db.get_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true').lower() == 'true'
         new_value = not current
         db.set_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true' if new_value else 'false')
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="🦵 Auto-Kick Singles", style=discord.ButtonStyle.gray, row=2)
+    async def toggle_auto_kick_single(self, interaction: discord.Interaction, button: ui.Button):
+        current = db.get_guild_setting(self.guild_id, 'auto_kick_single_server', 'false').lower() == 'true'
+        new_value = not current
+        db.set_guild_setting(self.guild_id, 'auto_kick_single_server', 'true' if new_value else 'false')
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="🔨 Auto-Ban Singles", style=discord.ButtonStyle.gray, row=2)
+    async def toggle_auto_ban_single(self, interaction: discord.Interaction, button: ui.Button):
+        current = db.get_guild_setting(self.guild_id, 'auto_ban_single_server', 'false').lower() == 'true'
+        new_value = not current
+        db.set_guild_setting(self.guild_id, 'auto_ban_single_server', 'true' if new_value else 'false')
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
@@ -412,6 +448,90 @@ class AdminGroup(app_commands.Group):
             )
         except Exception as e:
             print(f"Error updating member send pings setting: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating the member send pings setting. Please try again later.",
+                ephemeral=True
+            )
+    
+    @app_commands.command(name="autokicksingle", description="Toggle auto-kick for members only in this server with the bot")
+    @app_commands.describe(enabled="Enable or disable auto-kick for single-server members")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="Enable auto-kick", value=1),
+        app_commands.Choice(name="Disable auto-kick", value=0)
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def auto_kick_single(self, interaction: discord.Interaction, enabled: int):
+        """Toggle auto-kick for members who share only this server with the bot (requires administrator permission)"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Update guild setting
+            db.set_guild_setting(
+                guild_id=interaction.guild.id,
+                setting_name='auto_kick_single_server',
+                setting_value='true' if enabled else 'false'
+            )
+            
+            status = "**enabled** ✅" if enabled else "**disabled** 🔕"
+            await interaction.response.send_message(
+                f"Auto-kick single-server members {status}\n"
+                f"The bot will {'now automatically kick' if enabled else 'no longer kick'} members who join and are only in this server with the bot.\n\n"
+                f"⚠️ Use this feature to prevent spam/raid accounts that only join one server.\n"
+                f"⚠️ This cannot be used with auto-ban enabled for the same setting.",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error updating auto-kick single server setting: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating the auto-kick setting. Please try again later.",
+                ephemeral=True
+            )
+    
+    @app_commands.command(name="autobansingle", description="Toggle auto-ban for members only in this server with the bot")
+    @app_commands.describe(enabled="Enable or disable auto-ban for single-server members")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="Enable auto-ban", value=1),
+        app_commands.Choice(name="Disable auto-ban", value=0)
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def auto_ban_single(self, interaction: discord.Interaction, enabled: int):
+        """Toggle auto-ban for members who share only this server with the bot (requires administrator permission)"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        try:
+            # Initialize database connection if needed
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Update guild setting
+            db.set_guild_setting(
+                guild_id=interaction.guild.id,
+                setting_name='auto_ban_single_server',
+                setting_value='true' if enabled else 'false'
+            )
+            
+            status = "**enabled** ✅" if enabled else "**disabled** 🔕"
+            await interaction.response.send_message(
+                f"Auto-ban single-server members {status}\n"
+                f"The bot will {'now automatically ban' if enabled else 'no longer ban'} members who join and are only in this server with the bot.\n\n"
+                f"⚠️ Use this feature to prevent spam/raid accounts that only join one server.\n"
+                f"⚠️ This is more severe than auto-kick and prevents rejoining.",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error updating auto-ban single server setting: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating the auto-ban setting. Please try again later.",
+                ephemeral=True
+            )
             await interaction.response.send_message(
                 "❌ An error occurred while updating the member send pings setting. Please try again later.",
                 ephemeral=True
