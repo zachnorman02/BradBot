@@ -644,6 +644,25 @@ class Migration020(Migration):
                 print(f"   ⚠️  Failed to delete user {user_id}: {e}")
 
 
+class Migration021(Migration):
+    """Delete the eligible column from conditional_role_eligibility"""
+    
+    def __init__(self):
+        super().__init__("021", "Remove eligible column from conditional_role_eligibility table")
+    
+    def up(self):
+        """Delete the eligible column since we track eligibility by presence in the table"""
+        try:
+            query = """
+            ALTER TABLE main.conditional_role_eligibility
+            DROP COLUMN eligible
+            """
+            db.execute_query(query, fetch=False)
+            print(f"   ✅ Deleted eligible column from conditional_role_eligibility")
+        except Exception as e:
+            print(f"   ⚠️  Failed to delete eligible column: {e}")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -664,6 +683,7 @@ MIGRATIONS = [
     Migration018(),  # Saved emojis table
     Migration019(),  # Conditional role assignment tables
     Migration020(),  # Add manually removed users to eligibility
+    Migration021(),  # Remove eligible column from conditional_role_eligibility
 ]
 
 def get_applied_migrations():
