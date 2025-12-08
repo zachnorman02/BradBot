@@ -253,14 +253,14 @@ class Database:
         delete_query = """
         DELETE FROM main.guild_settings 
         WHERE guild_id = %s 
-        AND setting_name = 'link_replacement'
+        AND setting_name = 'link_replacement_enabled'
         """
         self.execute_query(delete_query, (guild_id,), fetch=False)
         
         # Then insert the new value
         insert_query = """
         INSERT INTO main.guild_settings (guild_id, setting_name, setting_value, created_at, updated_at)
-        VALUES (%s, 'link_replacement', %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (%s, 'link_replacement_enabled', %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (guild_id, 'true' if enabled else 'false'), fetch=False)
         
