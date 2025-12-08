@@ -603,7 +603,8 @@ class Migration019(Migration):
 class Migration020(Migration):
     """Add users who had roles removed to conditional_role_eligibility"""
     
-    version = 20
+    def __init__(self):
+        super().__init__("020", "Add manually removed users to eligibility and remove users who shouldn't be tracked")
     
     def up(self):
         """Add users to conditional_role_eligibility and remove others"""
