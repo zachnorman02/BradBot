@@ -537,12 +537,11 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
                         try:
                             await after.add_roles(conditional_role, reason="Deferral criteria no longer met, granting conditional role")
                             
-                            # Update eligibility notes
-                            db.mark_conditional_role_eligible(
+                            # Remove from deferral tracking
+                            db.unmark_conditional_role_eligible(
                                 after.guild.id,
                                 after.id,
-                                conditional_role_id,
-                                notes="Granted after deferral criteria removed"
+                                conditional_role_id
                             )
                             
                             print(f"[CONDITIONAL ROLE] Granted deferred role {conditional_role.name} to {after.display_name} (deferral criteria no longer met)")

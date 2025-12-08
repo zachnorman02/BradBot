@@ -599,6 +599,50 @@ class Migration019(Migration):
         """, fetch=False)
         print(f"   ✅ Created conditional_role_eligibility table")
 
+
+class Migration020(Migration):
+    """Add users who had roles removed to conditional_role_eligibility"""
+    
+    version = 20
+    
+    def up(self):
+        """Add users to conditional_role_eligibility and remove others"""
+        add_user_ids = [
+            1365353222973296741,
+            1070813316026478723,
+            894271255014940673,
+            657952912793927680
+        ]
+        delete_user_ids = [
+            512086807085711372
+        ]
+        guild_id = 1285083698500472853
+        role_id = 1383620483013935285
+        
+        for user_id in add_user_ids:
+            try:
+                query = """
+                INSERT INTO main.conditional_role_eligibility (guild_id, user_id, role_id, eligible, marked_at, notes)
+                VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP, 'Manually added - role was removed during deferral')
+                ON CONFLICT (guild_id, user_id, role_id) DO NOTHING
+                """
+                db.execute_query(query, (guild_id, user_id, role_id), fetch=False)
+                print(f"   ✅ Added user {user_id} to conditional_role_eligibility")
+            except Exception as e:
+                print(f"   ⚠️  Failed to add user {user_id}: {e}")
+        
+        for user_id in delete_user_ids:
+            try:
+                query = """
+                DELETE FROM main.conditional_role_eligibility
+                WHERE guild_id = %s AND user_id = %s AND role_id = %s
+                """
+                db.execute_query(query, (guild_id, user_id, role_id), fetch=False)
+                print(f"   ✅ Deleted user {user_id} from conditional_role_eligibility")
+            except Exception as e:
+                print(f"   ⚠️  Failed to delete user {user_id}: {e}")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -618,6 +662,7 @@ MIGRATIONS = [
     Migration017(),  # Role assignment rules
     Migration018(),  # Saved emojis table
     Migration019(),  # Conditional role assignment tables
+    Migration020(),  # Add manually removed users to eligibility
 ]
 
 def get_applied_migrations():
