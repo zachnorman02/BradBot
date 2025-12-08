@@ -1297,116 +1297,114 @@ class AdminToolsGroup(app_commands.Group):
                 except Exception as e:
                     await interaction.followup.send(f"❌ Error assigning role: {str(e)[:200]}", ephemeral=True)
                 return
-        
-        # check-all action - run all conditional role checks
-        elif action_value == "check_all":
-            await interaction.response.defer()
             
-            dry_run = kwargs.get('dry_run', False)
-            
-            # Get all guild members and configs
-            configs = db.get_all_conditional_role_configs(interaction.guild.id)
-            if not configs:
-                await interaction.followup.send("❌ No conditional roles configured for this server.", ephemeral=True)
+            # check-all action - run all conditional role checks
+            elif action_value == "check_all":
+                dry_run = kwargs.get('dry_run', False)
+                
+                # Get all guild members and configs
+                configs = db.get_all_conditional_role_configs(interaction.guild.id)
+                if not configs:
+                    await interaction.followup.send("❌ No conditional roles configured for this server.", ephemeral=True)
+                    return
+                
+                results = {
+                    'removed': [],
+                    'granted': [],
+                    'errors': []
+                }
+                
+                # Check each member in the guild
+                async for member in interaction.guild.fetch_members(limit=None):
+                    if member.bot:
+                        continue  # Skip bots
+                    
+                    try:
+                        for config in configs:
+                            conditional_role_id = config['role_id']
+                            deferral_role_ids = config.get('deferral_role_ids', [])
+                            
+                            member_role_ids = {r.id for r in member.roles}
+                            has_conditional_role = conditional_role_id in member_role_ids
+                            has_deferral_role = any(dr_id in member_role_ids for dr_id in deferral_role_ids)
+                            
+                            # Check eligibility
+                            eligibility = db.get_conditional_role_eligibility(
+                                interaction.guild.id,
+                                member.id,
+                                conditional_role_id
+                            )
+                            is_eligible = eligibility and eligibility.get('eligible')
+                            
+                            conditional_role = interaction.guild.get_role(conditional_role_id)
+                            role_name = conditional_role.name if conditional_role else f"Role {conditional_role_id}"
+                            
+                            # Logic 1: User has conditional role but has deferral roles - REMOVE IT
+                            if has_conditional_role and has_deferral_role and deferral_role_ids:
+                                action_desc = f"Remove {role_name} from {member.mention} (has deferral roles)"
+                                results['removed'].append(action_desc)
+                                
+                                if not dry_run and conditional_role:
+                                    try:
+                                        await member.remove_roles(conditional_role, reason="Conditional role check: user has deferral roles")
+                                    except Exception as e:
+                                        results['errors'].append(f"Failed to remove {role_name} from {member.mention}: {e}")
+                            
+                            # Logic 2: User is eligible, has no deferral roles, and doesn't have conditional role - GRANT IT
+                            elif is_eligible and not has_deferral_role and not has_conditional_role and deferral_role_ids:
+                                action_desc = f"Grant {role_name} to {member.mention} (eligible, deferral criteria met)"
+                                results['granted'].append(action_desc)
+                                
+                                if not dry_run and conditional_role:
+                                    try:
+                                        await member.add_roles(conditional_role, reason="Conditional role check: criteria met")
+                                    except Exception as e:
+                                        results['errors'].append(f"Failed to grant {role_name} to {member.mention}: {e}")
+                    
+                    except Exception as e:
+                        results['errors'].append(f"Error checking member {member.mention}: {e}")
+                
+                # Build response
+                mode_text = "📋 DRY RUN" if dry_run else "✅ EXECUTED"
+                embed = discord.Embed(
+                    title=f"{mode_text} - Conditional Role Check",
+                    color=discord.Color.blue() if dry_run else discord.Color.green()
+                )
+                
+                if results['removed']:
+                    embed.add_field(
+                        name=f"🗑️ To Remove ({len(results['removed'])})",
+                        value="\n".join(results['removed'][:10]),
+                        inline=False
+                    )
+                    if len(results['removed']) > 10:
+                        embed.add_field(name="...", value=f"and {len(results['removed']) - 10} more", inline=False)
+                
+                if results['granted']:
+                    embed.add_field(
+                        name=f"✨ To Grant ({len(results['granted'])})",
+                        value="\n".join(results['granted'][:10]),
+                        inline=False
+                    )
+                    if len(results['granted']) > 10:
+                        embed.add_field(name="...", value=f"and {len(results['granted']) - 10} more", inline=False)
+                
+                if results['errors']:
+                    embed.add_field(
+                        name=f"⚠️ Errors ({len(results['errors'])})",
+                        value="\n".join(results['errors'][:5]),
+                        inline=False
+                    )
+                    if len(results['errors']) > 5:
+                        embed.add_field(name="...", value=f"and {len(results['errors']) - 5} more", inline=False)
+                
+                if not results['removed'] and not results['granted'] and not results['errors']:
+                    embed.description = "✅ All conditional roles are correctly assigned!"
+                elif dry_run:
+                    embed.set_footer(text="Use dry_run: false to apply these changes")
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
-            
-            results = {
-                'removed': [],
-                'granted': [],
-                'errors': []
-            }
-            
-            # Check each member in the guild
-            async for member in interaction.guild.fetch_members(limit=None):
-                if member.bot:
-                    continue  # Skip bots
-                
-                try:
-                    for config in configs:
-                        conditional_role_id = config['role_id']
-                        deferral_role_ids = config.get('deferral_role_ids', [])
-                        
-                        member_role_ids = {r.id for r in member.roles}
-                        has_conditional_role = conditional_role_id in member_role_ids
-                        has_deferral_role = any(dr_id in member_role_ids for dr_id in deferral_role_ids)
-                        
-                        # Check eligibility
-                        eligibility = db.get_conditional_role_eligibility(
-                            interaction.guild.id,
-                            member.id,
-                            conditional_role_id
-                        )
-                        is_eligible = eligibility and eligibility.get('eligible')
-                        
-                        conditional_role = interaction.guild.get_role(conditional_role_id)
-                        role_name = conditional_role.name if conditional_role else f"Role {conditional_role_id}"
-                        
-                        # Logic 1: User has conditional role but has deferral roles - REMOVE IT
-                        if has_conditional_role and has_deferral_role and deferral_role_ids:
-                            action_desc = f"Remove {role_name} from {member.mention} (has deferral roles)"
-                            results['removed'].append(action_desc)
-                            
-                            if not dry_run and conditional_role:
-                                try:
-                                    await member.remove_roles(conditional_role, reason="Conditional role check: user has deferral roles")
-                                except Exception as e:
-                                    results['errors'].append(f"Failed to remove {role_name} from {member.mention}: {e}")
-                        
-                        # Logic 2: User is eligible, has no deferral roles, and doesn't have conditional role - GRANT IT
-                        elif is_eligible and not has_deferral_role and not has_conditional_role and deferral_role_ids:
-                            action_desc = f"Grant {role_name} to {member.mention} (eligible, deferral criteria met)"
-                            results['granted'].append(action_desc)
-                            
-                            if not dry_run and conditional_role:
-                                try:
-                                    await member.add_roles(conditional_role, reason="Conditional role check: criteria met")
-                                except Exception as e:
-                                    results['errors'].append(f"Failed to grant {role_name} to {member.mention}: {e}")
-                
-                except Exception as e:
-                    results['errors'].append(f"Error checking member {member.mention}: {e}")
-            
-            # Build response
-            mode_text = "📋 DRY RUN" if dry_run else "✅ EXECUTED"
-            embed = discord.Embed(
-                title=f"{mode_text} - Conditional Role Check",
-                color=discord.Color.blue() if dry_run else discord.Color.green()
-            )
-            
-            if results['removed']:
-                embed.add_field(
-                    name=f"🗑️ To Remove ({len(results['removed'])})",
-                    value="\n".join(results['removed'][:10]),
-                    inline=False
-                )
-                if len(results['removed']) > 10:
-                    embed.add_field(name="...", value=f"and {len(results['removed']) - 10} more", inline=False)
-            
-            if results['granted']:
-                embed.add_field(
-                    name=f"✨ To Grant ({len(results['granted'])})",
-                    value="\n".join(results['granted'][:10]),
-                    inline=False
-                )
-                if len(results['granted']) > 10:
-                    embed.add_field(name="...", value=f"and {len(results['granted']) - 10} more", inline=False)
-            
-            if results['errors']:
-                embed.add_field(
-                    name=f"⚠️ Errors ({len(results['errors'])})",
-                    value="\n".join(results['errors'][:5]),
-                    inline=False
-                )
-                if len(results['errors']) > 5:
-                    embed.add_field(name="...", value=f"and {len(results['errors']) - 5} more", inline=False)
-            
-            if not results['removed'] and not results['granted'] and not results['errors']:
-                embed.description = "✅ All conditional roles are correctly assigned!"
-            elif dry_run:
-                embed.set_footer(text="Use dry_run: false to apply these changes")
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            return
         
         except Exception as e:
             print(f"Error in conditionalrole command: {e}")
