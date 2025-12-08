@@ -565,6 +565,8 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
             user_role_ids = {r.id for r in after.roles}
             has_deferral_role = any(dr_id in user_role_ids for dr_id in deferral_role_ids)
             
+            print(f"[CONDITIONAL ROLE DEBUG] Checking {after.display_name}: conditional_role={conditional_role_id}, deferral_ids={deferral_role_ids}, has_deferral={has_deferral_role}, user_roles={user_role_ids}")
+            
             if has_deferral_role:
                 # User has conditional role but now has deferral role(s) - remove conditional role
                 deferral_names = []
