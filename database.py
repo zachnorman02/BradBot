@@ -793,7 +793,7 @@ class Database:
         params.append(limit)
         
         query = f"""
-        SELECT id, name, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, created_at, notes
+        SELECT id, name, image_data, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, created_at, notes
         FROM main.saved_emojis
         {where_clause}
         ORDER BY created_at DESC
@@ -806,13 +806,14 @@ class Database:
                 {
                     'id': row[0],
                     'name': row[1],
-                    'animated': row[2],
-                    'is_sticker': row[3],
-                    'sticker_description': row[4],
-                    'saved_by_user_id': row[5],
-                    'saved_from_guild_id': row[6],
-                    'created_at': row[7],
-                    'notes': row[8]
+                    'image_data': row[2],
+                    'animated': row[3],
+                    'is_sticker': row[4],
+                    'sticker_description': row[5],
+                    'saved_by_user_id': row[6],
+                    'saved_from_guild_id': row[7],
+                    'created_at': row[8],
+                    'notes': row[9]
                 }
                 for row in results
             ]
