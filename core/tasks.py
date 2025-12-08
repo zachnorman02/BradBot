@@ -13,10 +13,9 @@ from database import db
 
 async def handle_verified_role_logic(before: discord.Member, after: discord.Member):
     """
-    Handle verified role assignment logic:
-    1. Remove unverified role when verified role is added
-    2. Give lvl 0 role if they don't have an existing lvl role
-    3. Remove lvl 0 when they gain a lvl x role
+    Handle role assignment logic based on configured role rules.
+    When a member gains a role, check if it triggers any role rules
+    and apply the corresponding role additions/removals.
     """
     try:
         # Skip bots
@@ -33,51 +32,41 @@ async def handle_verified_role_logic(before: discord.Member, after: discord.Memb
         after_role_ids = {role.id for role in after.roles}
         added_roles = after_role_ids - before_role_ids
         
-        # Define role names (case-insensitive)
-        verified_role = discord.utils.get(after.guild.roles, name="verified")
-        unverified_role = discord.utils.get(after.guild.roles, name="unverified")
-        lvl0_role = discord.utils.get(after.guild.roles, name="lvl 0")
+        if not added_roles:
+            return  # No roles were added, nothing to do
         
-        if not verified_role:
-            return  # No verified role configured, skip logic
+        # Get all role rules for this guild
+        role_rules = db.get_role_rules(after.guild.id)
         
-        # Check if verified role was just added
-        if verified_role.id in added_roles:
-            print(f"[VERIFIED] {after.display_name} gained verified role")
-            
-            # 1. Remove unverified role
-            if unverified_role and unverified_role in after.roles:
-                try:
-                    await after.remove_roles(unverified_role, reason="User verified - removing unverified role")
-                    print(f"[VERIFIED] Removed unverified role from {after.display_name}")
-                except Exception as e:
-                    print(f"[VERIFIED] Error removing unverified role: {e}")
-            
-            # 2. Check if they have any lvl role (lvl 1, lvl 2, etc.)
-            has_lvl_role = any(role.name.startswith("lvl ") and role.name != "lvl 0" 
-                             for role in after.roles)
-            
-            if not has_lvl_role and lvl0_role:
-                # Give them lvl 0 role
-                try:
-                    await after.add_roles(lvl0_role, reason="New verified user - assigning lvl 0")
-                    print(f"[VERIFIED] Assigned lvl 0 role to {after.display_name}")
-                except Exception as e:
-                    print(f"[VERIFIED] Error assigning lvl 0 role: {e}")
-        
-        # 3. Check if they gained a lvl x role (not lvl 0)
-        if added_roles:
-            for role_id in added_roles:
-                role = after.guild.get_role(role_id)
-                if role and role.name.startswith("lvl ") and role.name != "lvl 0":
-                    # They got a lvl x role, remove lvl 0 if they have it
-                    if lvl0_role and lvl0_role in after.roles:
-                        try:
-                            await after.remove_roles(lvl0_role, reason=f"User gained {role.name} - removing lvl 0")
-                            print(f"[VERIFIED] Removed lvl 0 from {after.display_name} (gained {role.name})")
-                        except Exception as e:
-                            print(f"[VERIFIED] Error removing lvl 0 role: {e}")
-                    break  # Only need to do this once
+        # Check if any of the added roles trigger a rule
+        for added_role_id in added_roles:
+            for rule in role_rules:
+                if rule['trigger_role_id'] == added_role_id:
+                    trigger_role = after.guild.get_role(added_role_id)
+                    print(f"[ROLE RULE] {after.display_name} gained {trigger_role.name if trigger_role else added_role_id}, applying rule '{rule['rule_name']}'")
+                    
+                    # Remove roles
+                    for role_id in rule['roles_to_remove']:
+                        role = after.guild.get_role(role_id)
+                        if role and role in after.roles:
+                            try:
+                                await after.remove_roles(role, reason=f"Role rule '{rule['rule_name']}' triggered")
+                                print(f"[ROLE RULE] Removed {role.name} from {after.display_name}")
+                            except Exception as e:
+                                print(f"[ROLE RULE] Error removing {role.name}: {e}")
+                    
+                    # Add roles (but only if they don't already have them)
+                    for role_id in rule['roles_to_add']:
+                        role = after.guild.get_role(role_id)
+                        if role and role not in after.roles:
+                            try:
+                                await after.add_roles(role, reason=f"Role rule '{rule['rule_name']}' triggered")
+                                print(f"[ROLE RULE] Added {role.name} to {after.display_name}")
+                            except Exception as e:
+                                print(f"[ROLE RULE] Error adding {role.name}: {e}")
+                    
+    except Exception as e:
+        print(f"[ROLE RULE] Error in handle_verified_role_logic: {e}")
         
     except Exception as e:
         print(f"[VERIFIED] Error in verified role logic: {e}")
@@ -430,14 +419,96 @@ async def daily_maintenance_check(bot):
 # MEMBER UPDATE HANDLER
 # ============================================================================
 
+async def handle_conditional_role_assignment(before: discord.Member, after: discord.Member):
+    """Handle manual conditional role assignment with deferred logic.
+    
+    When a configured conditional role is manually assigned:
+    - Check if user has any deferral roles from config
+    - If yes: mark eligible but remove role (defer assignment)
+    - If no: mark eligible and keep role (normal assignment)
+    """
+    try:
+        before_role_ids = {role.id for role in before.roles}
+        after_role_ids = {role.id for role in after.roles}
+        added_role_ids = after_role_ids - before_role_ids
+        
+        if not added_role_ids:
+            return  # No roles added
+        
+        # Check each added role to see if it's a configured conditional role
+        for added_role_id in added_role_ids:
+            config = db.get_conditional_role_config(after.guild.id, added_role_id)
+            if not config:
+                continue  # Not a conditional role, skip
+            
+            deferral_role_ids = config.get('deferral_role_ids', [])
+            if not deferral_role_ids:
+                # No deferral configured, mark eligible and keep role
+                db.mark_conditional_role_eligible(
+                    after.guild.id,
+                    after.id,
+                    added_role_id,
+                    notes="Manually assigned, no deferral configured"
+                )
+                print(f"[CONDITIONAL ROLE] Approved manual assignment for {after.display_name} (role ID: {added_role_id})")
+                continue
+            
+            # Check if user has any deferral roles
+            user_role_ids = {r.id for r in after.roles}
+            has_deferral_role = any(dr_id in user_role_ids for dr_id in deferral_role_ids)
+            
+            if has_deferral_role:
+                # Get deferral role names for logging
+                deferral_names = []
+                for dr_id in deferral_role_ids:
+                    if dr_id in user_role_ids:
+                        dr = after.guild.get_role(dr_id)
+                        if dr:
+                            deferral_names.append(dr.name)
+                
+                # Mark eligible but remove the role (defer assignment)
+                db.mark_conditional_role_eligible(
+                    after.guild.id,
+                    after.id,
+                    added_role_id,
+                    notes=f"Deferred: has deferral role(s): {', '.join(deferral_names)}"
+                )
+                
+                added_role = after.guild.get_role(added_role_id)
+                if added_role:
+                    try:
+                        await after.remove_roles(added_role, reason=f"Assignment deferred: user has deferral roles ({', '.join(deferral_names)})")
+                        print(f"[CONDITIONAL ROLE] Deferred assignment for {after.display_name} (role: {added_role.name}, has deferral roles: {', '.join(deferral_names)})")
+                    except Exception as e:
+                        print(f"[CONDITIONAL ROLE] Error removing role for deferred assignment: {e}")
+            else:
+                # Normal assignment - mark eligible and keep role
+                db.mark_conditional_role_eligible(
+                    after.guild.id,
+                    after.id,
+                    added_role_id,
+                    notes="Manually assigned and criteria met"
+                )
+                added_role = after.guild.get_role(added_role_id)
+                role_name = added_role.name if added_role else str(added_role_id)
+                print(f"[CONDITIONAL ROLE] Approved manual assignment for {after.display_name} (role: {role_name})")
+    
+    except Exception as e:
+        print(f"[CONDITIONAL ROLE] Error in handle_conditional_role_assignment: {e}")
+
+
 async def on_member_update_handler(before: discord.Member, after: discord.Member):
     """
     Handle member updates:
     - Verified role assignment and level 0 logic
+    - Conditional role manual assignment logic (with deferral)
     - Booster role creation/restoration/deletion
     """
     # Always handle verified role logic
     await handle_verified_role_logic(before, after)
+    
+    # Handle conditional role manual assignments
+    await handle_conditional_role_assignment(before, after)
     
     # Check if booster role automation is enabled
     booster_roles_enabled = db.get_guild_setting(after.guild.id, 'booster_roles_enabled', 'true').lower() == 'true'

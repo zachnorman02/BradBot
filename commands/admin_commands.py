@@ -554,6 +554,27 @@ class AdminToolsGroup(app_commands.Group):
     
     def __init__(self):
         super().__init__(name="tools", description="Database and role management tools")
+    
+    def _should_defer_assignment(self, member: discord.Member, config: dict) -> bool:
+        """Check if role assignment should be deferred based on config.
+        
+        Deferred if user has ANY of the deferral_role_ids from config.
+        
+        Args:
+            member: Discord member to check
+            config: Conditional role config dict with 'deferral_role_ids'
+        
+        Returns:
+            True if assignment should be deferred, False otherwise
+        """
+        deferral_role_ids = config.get('deferral_role_ids', [])
+        
+        if not deferral_role_ids:
+            return False  # No deferral roles configured
+        
+        # Check if user has any deferral role
+        user_role_ids = {r.id for r in member.roles}
+        return any(role_id in user_role_ids for role_id in deferral_role_ids)
 
     @app_commands.command(name="loadboosterroles", description="Load existing booster roles into the database")
     @app_commands.default_permissions(administrator=True)
@@ -768,6 +789,516 @@ class AdminToolsGroup(app_commands.Group):
                 f"❌ An error occurred while saving the booster role: {str(e)[:100]}",
                 ephemeral=True
             )
+
+    @app_commands.command(name="autorole", description="Configure automatic role assignment rules")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        action="What to do with the role rule",
+        rule_name="Unique name for this rule (e.g., 'verified_roles')",
+        trigger_role="Role that triggers this rule when added to a member",
+        roles_to_add="Roles to add (comma-separated role mentions or IDs)",
+        roles_to_remove="Roles to remove (comma-separated role mentions or IDs)"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="add", value="add"),
+        app_commands.Choice(name="remove", value="remove"),
+        app_commands.Choice(name="list", value="list")
+    ])
+    async def autorole(
+        self, 
+        interaction: discord.Interaction, 
+        action: app_commands.Choice[str],
+        rule_name: str = None,
+        trigger_role: discord.Role = None,
+        roles_to_add: str = None,
+        roles_to_remove: str = None
+    ):
+        """Configure automatic role assignment when members gain specific roles"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Ensure table exists
+            db.init_role_rules_table()
+            
+            if action.value == "list":
+                rules = db.get_role_rules(interaction.guild.id)
+                
+                if not rules:
+                    await interaction.followup.send("📋 No role rules configured for this server.", ephemeral=True)
+                    return
+                
+                embed = discord.Embed(
+                    title="⚙️ Automatic Role Assignment Rules",
+                    description=f"Found {len(rules)} rule(s)",
+                    color=discord.Color.blue()
+                )
+                
+                for rule in rules:
+                    trigger = interaction.guild.get_role(rule['trigger_role_id'])
+                    trigger_name = trigger.mention if trigger else f"<@&{rule['trigger_role_id']}> (deleted)"
+                    
+                    add_roles = []
+                    for role_id in rule['roles_to_add']:
+                        r = interaction.guild.get_role(role_id)
+                        add_roles.append(r.mention if r else f"<@&{role_id}> (deleted)")
+                    
+                    remove_roles = []
+                    for role_id in rule['roles_to_remove']:
+                        r = interaction.guild.get_role(role_id)
+                        remove_roles.append(r.mention if r else f"<@&{role_id}> (deleted)")
+                    
+                    value_parts = [f"**Trigger:** {trigger_name}"]
+                    if add_roles:
+                        value_parts.append(f"**Add:** {', '.join(add_roles)}")
+                    if remove_roles:
+                        value_parts.append(f"**Remove:** {', '.join(remove_roles)}")
+                    
+                    embed.add_field(
+                        name=f"📌 {rule['rule_name']}",
+                        value="\n".join(value_parts),
+                        inline=False
+                    )
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            elif action.value == "remove":
+                if not rule_name:
+                    await interaction.followup.send("❌ Please provide a rule name to remove.", ephemeral=True)
+                    return
+                
+                # Check if rule exists
+                rule = db.get_role_rule(interaction.guild.id, rule_name)
+                if not rule:
+                    await interaction.followup.send(f"❌ No rule named `{rule_name}` found.", ephemeral=True)
+                    return
+                
+                db.remove_role_rule(interaction.guild.id, rule_name)
+                await interaction.followup.send(f"✅ Removed role rule `{rule_name}`", ephemeral=True)
+                return
+            
+            elif action.value == "add":
+                if not all([rule_name, trigger_role]):
+                    await interaction.followup.send(
+                        "❌ Please provide a rule name and trigger role.\n"
+                        "Example: `/admin tools autorole add rule_name:verified_roles trigger_role:@Verified roles_to_add:@lvl 0 roles_to_remove:@Unverified`",
+                        ephemeral=True
+                    )
+                    return
+                
+                if not roles_to_add and not roles_to_remove:
+                    await interaction.followup.send(
+                        "❌ Please provide at least one role to add or remove.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Parse role mentions/IDs from comma-separated strings
+                def parse_roles(role_str: str) -> list[int]:
+                    if not role_str:
+                        return []
+                    
+                    role_ids = []
+                    parts = [p.strip() for p in role_str.split(',')]
+                    
+                    for part in parts:
+                        # Try to extract role ID from mention format <@&123456>
+                        if part.startswith('<@&') and part.endswith('>'):
+                            role_id = int(part[3:-1])
+                            role_ids.append(role_id)
+                        # Try to parse as raw ID
+                        elif part.isdigit():
+                            role_ids.append(int(part))
+                        # Try to find by name
+                        else:
+                            role = discord.utils.get(interaction.guild.roles, name=part)
+                            if role:
+                                role_ids.append(role.id)
+                    
+                    return role_ids
+                
+                add_ids = parse_roles(roles_to_add)
+                remove_ids = parse_roles(roles_to_remove)
+                
+                # Save the rule
+                db.add_role_rule(
+                    interaction.guild.id,
+                    rule_name,
+                    trigger_role.id,
+                    add_ids,
+                    remove_ids
+                )
+                
+                # Build response
+                response_parts = [f"✅ Created/updated role rule `{rule_name}`"]
+                response_parts.append(f"**Trigger:** {trigger_role.mention}")
+                
+                if add_ids:
+                    add_mentions = [f"<@&{rid}>" for rid in add_ids]
+                    response_parts.append(f"**Add:** {', '.join(add_mentions)}")
+                
+                if remove_ids:
+                    remove_mentions = [f"<@&{rid}>" for rid in remove_ids]
+                    response_parts.append(f"**Remove:** {', '.join(remove_mentions)}")
+                
+                await interaction.followup.send("\n".join(response_parts), ephemeral=True)
+                return
+        
+        except Exception as e:
+            print(f"Error in autorole command: {e}")
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="conditionalrole", description="Manage conditional role assignments with blocking roles")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        action="What action to perform",
+        role="The role to configure or assign",
+        blocking_roles="Roles that prevent assignment (comma-separated)",
+        deferral_roles="Roles that defer assignment - mark eligible but don't assign (comma-separated)",
+        user="The user to mark/check/assign (for mark/unmark/check/assign actions)"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="configure - Set up a conditional role", value="configure"),
+        app_commands.Choice(name="remove-config - Remove role configuration", value="remove_config"),
+        app_commands.Choice(name="list-configs - Show all configured roles", value="list_configs"),
+        app_commands.Choice(name="mark - Mark user as eligible", value="mark"),
+        app_commands.Choice(name="unmark - Remove user eligibility", value="unmark"),
+        app_commands.Choice(name="check - Check user eligibility", value="check"),
+        app_commands.Choice(name="assign - Assign role if eligible", value="assign"),
+        app_commands.Choice(name="list-eligible - Show eligible users", value="list_eligible")
+    ])
+    async def conditional_role(
+        self,
+        interaction: discord.Interaction,
+        action: app_commands.Choice[str],
+        role: discord.Role = None,
+        blocking_roles: str = None,
+        deferral_roles: str = None,
+        user: discord.Member = None
+    ):
+        """Manage conditional role assignments with eligibility tracking and blocking roles"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Ensure tables exist
+            db.init_conditional_roles_tables()
+            
+            # ================================================================
+            # CONFIGURATION ACTIONS
+            # ================================================================
+            
+            if action.value == "list_configs":
+                configs = db.get_all_conditional_role_configs(interaction.guild.id)
+                
+                if not configs:
+                    await interaction.followup.send("📋 No conditional roles configured for this server.", ephemeral=True)
+                    return
+                
+                embed = discord.Embed(
+                    title="⚙️ Conditional Role Configurations",
+                    description=f"Found {len(configs)} configured role(s)",
+                    color=discord.Color.blue()
+                )
+                
+                for config in configs:
+                    role_obj = interaction.guild.get_role(config['role_id'])
+                    role_mention = role_obj.mention if role_obj else f"<@&{config['role_id']}> (deleted)"
+                    
+                    blocking_mentions = []
+                    for blocking_id in config['blocking_role_ids']:
+                        blocking_role = interaction.guild.get_role(blocking_id)
+                        blocking_mentions.append(blocking_role.mention if blocking_role else f"<@&{blocking_id}> (deleted)")
+                    
+                    blocking_text = ", ".join(blocking_mentions) if blocking_mentions else "None"
+                    
+                    deferral_mentions = []
+                    for deferral_id in config.get('deferral_role_ids', []):
+                        deferral_role = interaction.guild.get_role(deferral_id)
+                        deferral_mentions.append(deferral_role.mention if deferral_role else f"<@&{deferral_id}> (deleted)")
+                    
+                    deferral_text = ", ".join(deferral_mentions) if deferral_mentions else "None"
+                    
+                    embed.add_field(
+                        name=f"🔒 {config.get('role_name', 'Unknown')}",
+                        value=f"**Role:** {role_mention}\n**Blocking Roles:** {blocking_text}\n**Deferral Roles:** {deferral_text}",
+                        inline=False
+                    )
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            elif action.value == "configure":
+                if not role:
+                    await interaction.followup.send("❌ Please specify a role to configure.", ephemeral=True)
+                    return
+                
+                # Parse blocking roles
+                blocking_role_ids = []
+                if blocking_roles:
+                    parts = [p.strip() for p in blocking_roles.split(',')]
+                    for part in parts:
+                        # Try to extract role ID from mention
+                        if part.startswith('<@&') and part.endswith('>'):
+                            blocking_role_ids.append(int(part[3:-1]))
+                        # Try to parse as raw ID
+                        elif part.isdigit():
+                            blocking_role_ids.append(int(part))
+                        # Try to find by name
+                        else:
+                            found_role = discord.utils.get(interaction.guild.roles, name=part)
+                            if found_role:
+                                blocking_role_ids.append(found_role.id)
+                
+                # Parse deferral roles
+                deferral_role_ids = []
+                if deferral_roles:
+                    parts = [p.strip() for p in deferral_roles.split(',')]
+                    for part in parts:
+                        # Try to extract role ID from mention
+                        if part.startswith('<@&') and part.endswith('>'):
+                            deferral_role_ids.append(int(part[3:-1]))
+                        # Try to parse as raw ID
+                        elif part.isdigit():
+                            deferral_role_ids.append(int(part))
+                        # Try to find by name
+                        else:
+                            found_role = discord.utils.get(interaction.guild.roles, name=part)
+                            if found_role:
+                                deferral_role_ids.append(found_role.id)
+                
+                db.add_conditional_role_config(
+                    interaction.guild.id,
+                    role.id,
+                    role.name,
+                    blocking_role_ids,
+                    deferral_role_ids
+                )
+                
+                response_parts = [f"✅ Configured conditional role: {role.mention}"]
+                if blocking_role_ids:
+                    blocking_mentions = [f"<@&{rid}>" for rid in blocking_role_ids]
+                    response_parts.append(f"**Blocking Roles:** {', '.join(blocking_mentions)}")
+                else:
+                    response_parts.append("**Blocking Roles:** None")
+                
+                if deferral_role_ids:
+                    deferral_mentions = [f"<@&{rid}>" for rid in deferral_role_ids]
+                    response_parts.append(f"**Deferral Roles:** {', '.join(deferral_mentions)} (mark eligible but don't assign)")
+                else:
+                    response_parts.append("**Deferral Roles:** None")
+                
+                await interaction.followup.send("\n".join(response_parts), ephemeral=True)
+                return
+            
+            elif action.value == "remove_config":
+                if not role:
+                    await interaction.followup.send("❌ Please specify a role to remove configuration for.", ephemeral=True)
+                    return
+                
+                config = db.get_conditional_role_config(interaction.guild.id, role.id)
+                if not config:
+                    await interaction.followup.send(f"❌ {role.mention} is not configured as a conditional role.", ephemeral=True)
+                    return
+                
+                db.remove_conditional_role_config(interaction.guild.id, role.id)
+                await interaction.followup.send(f"✅ Removed conditional role configuration for {role.mention}", ephemeral=True)
+                return
+            
+            # ================================================================
+            # ELIGIBILITY ACTIONS
+            # ================================================================
+            
+            elif action.value == "list_eligible":
+                if not role:
+                    await interaction.followup.send("❌ Please specify a role to list eligible users for.", ephemeral=True)
+                    return
+                
+                # Check if role is configured
+                config = db.get_conditional_role_config(interaction.guild.id, role.id)
+                if not config:
+                    await interaction.followup.send(
+                        f"❌ {role.mention} is not configured as a conditional role.\n"
+                        f"Use `/admin tools conditionalrole configure role:{role.mention}` first.",
+                        ephemeral=True
+                    )
+                    return
+                
+                eligible_users = db.get_conditional_role_eligible_users(interaction.guild.id, role.id)
+                
+                if not eligible_users:
+                    await interaction.followup.send(f"📋 No users currently marked as eligible for {role.mention}.", ephemeral=True)
+                    return
+                
+                embed = discord.Embed(
+                    title=f"🔓 Eligible Users for {role.name}",
+                    description=f"Found {len(eligible_users)} eligible user(s)",
+                    color=discord.Color.green()
+                )
+                
+                for user_data in eligible_users[:25]:
+                    member = interaction.guild.get_member(user_data['user_id'])
+                    member_name = member.display_name if member else f"Unknown User"
+                    
+                    marked_by = ""
+                    if user_data['marked_by_user_id']:
+                        marker = interaction.guild.get_member(user_data['marked_by_user_id'])
+                        marked_by = f"\nMarked by: {marker.mention if marker else 'Unknown'}"
+                    
+                    notes = f"\nNotes: {user_data['notes']}" if user_data['notes'] else ""
+                    
+                    embed.add_field(
+                        name=f"✅ {member_name}",
+                        value=f"<@{user_data['user_id']}> • {user_data['marked_at'].strftime('%Y-%m-%d')}{marked_by}{notes}",
+                        inline=False
+                    )
+                
+                if len(eligible_users) > 25:
+                    embed.set_footer(text=f"Showing 25 of {len(eligible_users)} eligible users")
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            # All remaining actions require both role and user
+            if not role:
+                await interaction.followup.send(f"❌ Please specify a role for the `{action.name}` action.", ephemeral=True)
+                return
+            
+            if not user:
+                await interaction.followup.send(f"❌ Please specify a user for the `{action.name}` action.", ephemeral=True)
+                return
+            
+            # Check if role is configured
+            config = db.get_conditional_role_config(interaction.guild.id, role.id)
+            if not config:
+                await interaction.followup.send(
+                    f"❌ {role.mention} is not configured as a conditional role.\n"
+                    f"Use `/admin tools conditionalrole configure role:{role.mention}` first.",
+                    ephemeral=True
+                )
+                return
+            
+            if action.value == "mark":
+                db.mark_conditional_role_eligible(interaction.guild.id, user.id, role.id, interaction.user.id)
+                await interaction.followup.send(f"✅ Marked {user.mention} as eligible for {role.mention}.", ephemeral=True)
+                return
+            
+            elif action.value == "unmark":
+                db.unmark_conditional_role_eligible(interaction.guild.id, user.id, role.id)
+                await interaction.followup.send(f"✅ Removed eligibility for {user.mention} to receive {role.mention}.", ephemeral=True)
+                return
+            
+            elif action.value == "check":
+                is_eligible = db.is_conditional_role_eligible(interaction.guild.id, user.id, role.id)
+                
+                if is_eligible:
+                    await interaction.followup.send(f"✅ {user.mention} is eligible for {role.mention}.", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"❌ {user.mention} is NOT eligible for {role.mention}.", ephemeral=True)
+                return
+            
+            elif action.value == "assign":
+                # Check eligibility
+                is_eligible = db.is_conditional_role_eligible(interaction.guild.id, user.id, role.id)
+                
+                if not is_eligible:
+                    await interaction.followup.send(
+                        f"❌ {user.mention} has not been marked as eligible for {role.mention}.\n"
+                        f"Use `/admin tools conditionalrole mark role:{role.mention} user:{user.mention}` first.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Check for blocking roles
+                blocking_role_ids = config['blocking_role_ids']
+                user_role_ids = {r.id for r in user.roles}
+                
+                has_blocking_role = any(rid in user_role_ids for rid in blocking_role_ids)
+                
+                if has_blocking_role:
+                    blocking_roles_found = [
+                        interaction.guild.get_role(rid) 
+                        for rid in blocking_role_ids 
+                        if rid in user_role_ids
+                    ]
+                    blocking_mentions = [r.mention for r in blocking_roles_found if r]
+                    
+                    await interaction.followup.send(
+                        f"❌ Cannot assign {role.mention} to {user.mention}.\n"
+                        f"They have one or more blocking roles: {', '.join(blocking_mentions)}\n\n"
+                        f"Remove these roles first before assigning {role.mention}.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Check if they already have the role
+                if role in user.roles:
+                    await interaction.followup.send(
+                        f"ℹ️ {user.mention} already has {role.mention}.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Check if assignment should be deferred based on config
+                should_defer = self._should_defer_assignment(user, config)
+                
+                if should_defer:
+                    # Get deferral role names for message
+                    deferral_role_names = []
+                    for deferral_id in config.get('deferral_role_ids', []):
+                        deferral_role = interaction.guild.get_role(deferral_id)
+                        if deferral_role:
+                            deferral_role_names.append(deferral_role.name)
+                    
+                    # Mark eligible but don't assign yet
+                    db.mark_conditional_role_eligible(
+                        interaction.guild.id, 
+                        user.id, 
+                        role.id, 
+                        interaction.user.id,
+                        notes=f"Deferred: has deferral role(s): {', '.join(deferral_role_names)}"
+                    )
+                    await interaction.followup.send(
+                        f"⏳ {user.mention} has been marked as eligible for {role.mention}.\n"
+                        f"**Assignment deferred:** They currently have one or more deferral roles: {', '.join(deferral_role_names)}\n"
+                        f"The role will be assignable once these roles are removed.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Assign the role normally
+                try:
+                    await user.add_roles(role, reason=f"Conditional role assigned by {interaction.user.display_name}")
+                    await interaction.followup.send(
+                        f"✅ Successfully assigned {role.mention} to {user.mention}!",
+                        ephemeral=True
+                    )
+                except discord.Forbidden:
+                    await interaction.followup.send(
+                        f"❌ I don't have permission to assign roles.\n"
+                        f"Make sure my role is higher than {role.mention}.",
+                        ephemeral=True
+                    )
+                except Exception as e:
+                    await interaction.followup.send(f"❌ Error assigning role: {str(e)[:200]}", ephemeral=True)
+                return
+        
+        except Exception as e:
+            print(f"Error in conditionalrole command: {e}")
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
 
 class AdminMaintenanceGroup(app_commands.Group):

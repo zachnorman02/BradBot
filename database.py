@@ -824,6 +824,312 @@ class Database:
         query = "DELETE FROM main.saved_emojis WHERE id = %s"
         self.execute_query(query, (emoji_id,), fetch=False)
 
+    # ========================================================================
+    # ROLE RULES
+    # ========================================================================
+    
+    def init_role_rules_table(self):
+        """Create role_rules table if it doesn't exist."""
+        query = """
+        CREATE TABLE IF NOT EXISTS main.role_rules (
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            rule_name VARCHAR(100) NOT NULL,
+            trigger_role_id BIGINT NOT NULL,
+            roles_to_add BIGINT[] DEFAULT '{}',
+            roles_to_remove BIGINT[] DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(guild_id, rule_name)
+        )
+        """
+        self.execute_query(query, fetch=False)
+        print("✅ role_rules table initialized")
+    
+    def add_role_rule(self, guild_id: int, rule_name: str, trigger_role_id: int, 
+                      roles_to_add: list[int] = None, roles_to_remove: list[int] = None):
+        """
+        Add or update a role rule.
+        
+        Args:
+            guild_id: Guild ID
+            rule_name: Name for this rule (e.g., "verified_roles")
+            trigger_role_id: Role ID that triggers this rule when added
+            roles_to_add: List of role IDs to add when triggered
+            roles_to_remove: List of role IDs to remove when triggered
+        """
+        roles_to_add = roles_to_add or []
+        roles_to_remove = roles_to_remove or []
+        
+        query = """
+        INSERT INTO main.role_rules (guild_id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, updated_at)
+        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (guild_id, rule_name) 
+        DO UPDATE SET 
+            trigger_role_id = EXCLUDED.trigger_role_id,
+            roles_to_add = EXCLUDED.roles_to_add,
+            roles_to_remove = EXCLUDED.roles_to_remove,
+            updated_at = CURRENT_TIMESTAMP
+        """
+        self.execute_query(query, (guild_id, rule_name, trigger_role_id, roles_to_add, roles_to_remove), fetch=False)
+    
+    def remove_role_rule(self, guild_id: int, rule_name: str):
+        """Remove a role rule by name."""
+        query = "DELETE FROM main.role_rules WHERE guild_id = %s AND rule_name = %s"
+        self.execute_query(query, (guild_id, rule_name), fetch=False)
+    
+    def get_role_rules(self, guild_id: int):
+        """Get all role rules for a guild."""
+        query = """
+        SELECT id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, created_at, updated_at
+        FROM main.role_rules
+        WHERE guild_id = %s
+        ORDER BY rule_name
+        """
+        results = self.execute_query(query, (guild_id,))
+        
+        if results:
+            return [
+                {
+                    'id': row[0],
+                    'rule_name': row[1],
+                    'trigger_role_id': row[2],
+                    'roles_to_add': row[3] or [],
+                    'roles_to_remove': row[4] or [],
+                    'created_at': row[5],
+                    'updated_at': row[6]
+                }
+                for row in results
+            ]
+        return []
+    
+    def get_role_rule(self, guild_id: int, rule_name: str):
+        """Get a specific role rule."""
+        query = """
+        SELECT id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, created_at, updated_at
+        FROM main.role_rules
+        WHERE guild_id = %s AND rule_name = %s
+        """
+        result = self.execute_query(query, (guild_id, rule_name))
+        
+        if result:
+            row = result[0]
+            return {
+                'id': row[0],
+                'rule_name': row[1],
+                'trigger_role_id': row[2],
+                'roles_to_add': row[3] or [],
+                'roles_to_remove': row[4] or [],
+                'created_at': row[5],
+                'updated_at': row[6]
+            }
+        return None
+
+    # ========================================================================
+    # CONDITIONAL ROLE ASSIGNMENTS
+    # ========================================================================
+    
+    def init_conditional_roles_tables(self):
+        """Create conditional role assignment tables."""
+        # Table for role configurations (which roles have conditional assignment)
+        config_query = """
+        CREATE TABLE IF NOT EXISTS main.conditional_role_configs (
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            role_id BIGINT NOT NULL,
+            role_name VARCHAR(100),
+            blocking_role_ids BIGINT[] DEFAULT '{}',
+            deferral_role_ids BIGINT[] DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(guild_id, role_id)
+        )
+        """
+        self.execute_query(config_query, fetch=False)
+        
+        # Add deferral_role_ids column if it doesn't exist (for existing tables)
+        try:
+            alter_query = """
+            ALTER TABLE main.conditional_role_configs 
+            ADD COLUMN IF NOT EXISTS deferral_role_ids BIGINT[] DEFAULT '{}'
+            """
+            self.execute_query(alter_query, fetch=False)
+        except Exception as e:
+            print(f"Note: Could not add deferral_role_ids column (may already exist): {e}")
+        
+        # Table for user eligibility
+        eligibility_query = """
+        CREATE TABLE IF NOT EXISTS main.conditional_role_eligibility (
+            guild_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            role_id BIGINT NOT NULL,
+            eligible BOOLEAN DEFAULT TRUE,
+            marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            marked_by_user_id BIGINT,
+            notes TEXT,
+            PRIMARY KEY (guild_id, user_id, role_id)
+        )
+        """
+        self.execute_query(eligibility_query, fetch=False)
+        print("✅ conditional_role_configs and conditional_role_eligibility tables initialized")
+    
+    # Configuration management
+    def add_conditional_role_config(self, guild_id: int, role_id: int, role_name: str = None, 
+                                   blocking_role_ids: list[int] = None, deferral_role_ids: list[int] = None):
+        """Add or update a conditional role configuration.
+        
+        Args:
+            guild_id: Guild ID
+            role_id: Role to configure
+            role_name: Name of the role
+            blocking_role_ids: Roles that prevent assignment
+            deferral_role_ids: Roles that trigger deferred assignment (mark eligible but don't assign)
+        """
+        blocking_role_ids = blocking_role_ids or []
+        deferral_role_ids = deferral_role_ids or []
+        
+        query = """
+        INSERT INTO main.conditional_role_configs (guild_id, role_id, role_name, blocking_role_ids, deferral_role_ids, updated_at)
+        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (guild_id, role_id) 
+        DO UPDATE SET 
+            role_name = EXCLUDED.role_name,
+            blocking_role_ids = EXCLUDED.blocking_role_ids,
+            deferral_role_ids = EXCLUDED.deferral_role_ids,
+            updated_at = CURRENT_TIMESTAMP
+        """
+        self.execute_query(query, (guild_id, role_id, role_name, blocking_role_ids, deferral_role_ids), fetch=False)
+    
+    def remove_conditional_role_config(self, guild_id: int, role_id: int):
+        """Remove a conditional role configuration and all associated eligibility records."""
+        # Delete eligibility records first
+        self.execute_query("DELETE FROM main.conditional_role_eligibility WHERE guild_id = %s AND role_id = %s", 
+                          (guild_id, role_id), fetch=False)
+        # Delete config
+        self.execute_query("DELETE FROM main.conditional_role_configs WHERE guild_id = %s AND role_id = %s", 
+                          (guild_id, role_id), fetch=False)
+    
+    def get_conditional_role_config(self, guild_id: int, role_id: int):
+        """Get a specific conditional role configuration."""
+        query = """
+        SELECT id, role_id, role_name, blocking_role_ids, deferral_role_ids, created_at, updated_at
+        FROM main.conditional_role_configs
+        WHERE guild_id = %s AND role_id = %s
+        """
+        result = self.execute_query(query, (guild_id, role_id))
+        
+        if result:
+            row = result[0]
+            return {
+                'id': row[0],
+                'role_id': row[1],
+                'role_name': row[2],
+                'blocking_role_ids': row[3] or [],
+                'deferral_role_ids': row[4] or [],
+                'created_at': row[5],
+                'updated_at': row[6]
+            }
+        return None
+    
+    def get_all_conditional_role_configs(self, guild_id: int):
+        """Get all conditional role configurations for a guild."""
+        query = """
+        SELECT id, role_id, role_name, blocking_role_ids, deferral_role_ids, created_at, updated_at
+        FROM main.conditional_role_configs
+        WHERE guild_id = %s
+        ORDER BY role_name
+        """
+        results = self.execute_query(query, (guild_id,))
+        
+        if results:
+            return [
+                {
+                    'id': row[0],
+                    'role_id': row[1],
+                    'role_name': row[2],
+                    'blocking_role_ids': row[3] or [],
+                    'deferral_role_ids': row[4] or [],
+                    'created_at': row[5],
+                    'updated_at': row[6]
+                }
+                for row in results
+            ]
+        return []
+    
+    # Eligibility management
+    def mark_conditional_role_eligible(self, guild_id: int, user_id: int, role_id: int, 
+                                       marked_by_user_id: int = None, notes: str = None):
+        """Mark a user as eligible for a conditional role."""
+        query = """
+        INSERT INTO main.conditional_role_eligibility (guild_id, user_id, role_id, eligible, marked_at, marked_by_user_id, notes)
+        VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP, %s, %s)
+        ON CONFLICT (guild_id, user_id, role_id) 
+        DO UPDATE SET 
+            eligible = TRUE,
+            marked_at = CURRENT_TIMESTAMP,
+            marked_by_user_id = EXCLUDED.marked_by_user_id,
+            notes = EXCLUDED.notes
+        """
+        self.execute_query(query, (guild_id, user_id, role_id, marked_by_user_id, notes), fetch=False)
+    
+    def unmark_conditional_role_eligible(self, guild_id: int, user_id: int, role_id: int):
+        """Remove conditional role eligibility for a user."""
+        query = "DELETE FROM main.conditional_role_eligibility WHERE guild_id = %s AND user_id = %s AND role_id = %s"
+        self.execute_query(query, (guild_id, user_id, role_id), fetch=False)
+    
+    def is_conditional_role_eligible(self, guild_id: int, user_id: int, role_id: int) -> bool:
+        """Check if a user is eligible for a conditional role."""
+        query = """
+        SELECT eligible FROM main.conditional_role_eligibility 
+        WHERE guild_id = %s AND user_id = %s AND role_id = %s
+        """
+        result = self.execute_query(query, (guild_id, user_id, role_id))
+        return bool(result and result[0][0])
+    
+    def get_conditional_role_eligible_users(self, guild_id: int, role_id: int):
+        """Get all users eligible for a specific conditional role."""
+        query = """
+        SELECT user_id, marked_at, marked_by_user_id, notes
+        FROM main.conditional_role_eligibility
+        WHERE guild_id = %s AND role_id = %s AND eligible = TRUE
+        ORDER BY marked_at DESC
+        """
+        results = self.execute_query(query, (guild_id, role_id))
+        
+        if results:
+            return [
+                {
+                    'user_id': row[0],
+                    'marked_at': row[1],
+                    'marked_by_user_id': row[2],
+                    'notes': row[3]
+                }
+                for row in results
+            ]
+        return []
+    
+    def get_user_conditional_role_eligibilities(self, guild_id: int, user_id: int):
+        """Get all conditional roles a user is eligible for."""
+        query = """
+        SELECT role_id, marked_at, marked_by_user_id, notes
+        FROM main.conditional_role_eligibility
+        WHERE guild_id = %s AND user_id = %s AND eligible = TRUE
+        ORDER BY marked_at DESC
+        """
+        results = self.execute_query(query, (guild_id, user_id))
+        
+        if results:
+            return [
+                {
+                    'role_id': row[0],
+                    'marked_at': row[1],
+                    'marked_by_user_id': row[2],
+                    'notes': row[3]
+                }
+                for row in results
+            ]
+        return []
+
 # Global database instance
 db = Database()
 
