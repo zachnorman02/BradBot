@@ -65,6 +65,10 @@ async def on_member_join(member: discord.Member):
     """Handle new members joining - check if they should be auto-kicked/banned"""
     guild = member.guild
     
+    # Don't apply to bots
+    if member.bot:
+        return
+    
     # Check if auto-kick for single-server members is enabled
     kick_enabled = db.get_guild_setting(guild.id, 'auto_kick_single_server', 'false').lower() == 'true'
     ban_enabled = db.get_guild_setting(guild.id, 'auto_ban_single_server', 'false').lower() == 'true'
