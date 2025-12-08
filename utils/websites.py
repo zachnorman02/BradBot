@@ -199,9 +199,12 @@ class YouTubeLink(SimpleWebsiteLink):
     ]
     replacement = "youtube.com"
     
-    def process(self, url: str) -> str:
+    async def render(self) -> Optional[str]:
         """Process YouTube URL, converting youtu.be short links to full format."""
-        import re
+        if not self.is_valid():
+            return None
+        
+        url = self.url
         
         # Check if it's a youtu.be short link
         short_link = re.match(r'https?://(?:www\.)?youtu\.be/([\w-]+)(\?.*)?', url)
