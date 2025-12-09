@@ -64,12 +64,47 @@ async def handle_verified_role_logic(before: discord.Member, after: discord.Memb
                                 print(f"[ROLE RULE] Added {role.name} to {after.display_name}")
                             except Exception as e:
                                 print(f"[ROLE RULE] Error adding {role.name}: {e}")
-                    
+        
+        # ===== ENFORCEMENT: Validate all role rules are satisfied =====
+        # Refresh member object to get current roles after any rule applications
+        try:
+            after = await after.guild.fetch_member(after.id)
+        except Exception as e:
+            print(f"[ROLE RULE ENFORCEMENT] Could not refresh member: {e}")
+            return
+        
+        # Check if user has any trigger roles and ensure the rules are properly applied
+        after_role_ids = {r.id for r in after.roles}
+        
+        for rule in role_rules:
+            trigger_role_id = rule['trigger_role_id']
+            
+            # If user has the trigger role, enforce the rule
+            if trigger_role_id in after_role_ids:
+                # Ensure roles_to_add are present
+                for add_role_id in rule['roles_to_add']:
+                    if add_role_id not in after_role_ids:
+                        add_role = after.guild.get_role(add_role_id)
+                        if add_role:
+                            try:
+                                await after.add_roles(add_role, reason=f"Role rule enforcement: '{rule['rule_name']}'")
+                                print(f"[ROLE RULE ENFORCEMENT] Added {add_role.name} to {after.display_name}")
+                            except Exception as e:
+                                print(f"[ROLE RULE ENFORCEMENT] Error adding {add_role.name}: {e}")
+                
+                # Ensure roles_to_remove are not present
+                for remove_role_id in rule['roles_to_remove']:
+                    if remove_role_id in after_role_ids:
+                        remove_role = after.guild.get_role(remove_role_id)
+                        if remove_role:
+                            try:
+                                await after.remove_roles(remove_role, reason=f"Role rule enforcement: '{rule['rule_name']}'")
+                                print(f"[ROLE RULE ENFORCEMENT] Removed {remove_role.name} from {after.display_name}")
+                            except Exception as e:
+                                print(f"[ROLE RULE ENFORCEMENT] Error removing {remove_role.name}: {e}")
+    
     except Exception as e:
         print(f"[ROLE RULE] Error in handle_verified_role_logic: {e}")
-        
-    except Exception as e:
-        print(f"[VERIFIED] Error in verified role logic: {e}")
 
 
 # ============================================================================

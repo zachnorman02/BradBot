@@ -800,9 +800,10 @@ class AdminToolsGroup(app_commands.Group):
         roles_to_remove="Roles to remove (comma-separated role mentions or IDs)"
     )
     @app_commands.choices(action=[
-        app_commands.Choice(name="add", value="add"),
-        app_commands.Choice(name="remove", value="remove"),
-        app_commands.Choice(name="list", value="list")
+        app_commands.Choice(name="add - Create/update a role rule", value="add"),
+        app_commands.Choice(name="remove - Delete a role rule", value="remove"),
+        app_commands.Choice(name="list - Show all role rules", value="list"),
+        app_commands.Choice(name="check-all - Check all members for compliance", value="check-all")
     ])
     async def autorole(
         self, 
@@ -949,6 +950,72 @@ class AdminToolsGroup(app_commands.Group):
                     response_parts.append(f"**Remove:** {', '.join(remove_mentions)}")
                 
                 await interaction.followup.send("\n".join(response_parts), ephemeral=True)
+                return
+            
+            elif action.value == "check-all":
+                # Scan all members and ensure role rules are properly applied
+                await interaction.followup.send("🔍 Checking all members for role rule compliance...", ephemeral=True)
+                
+                rules = db.get_role_rules(interaction.guild.id)
+                if not rules:
+                    await interaction.followup.send("📋 No role rules configured.", ephemeral=True)
+                    return
+                
+                results = {'fixed': [], 'issues': [], 'errors': []}
+                
+                for member in interaction.guild.members:
+                    if member.bot:
+                        continue
+                    
+                    member_role_ids = {r.id for r in member.roles}
+                    
+                    for rule in rules:
+                        trigger_role_id = rule['trigger_role_id']
+                        roles_to_add = rule['roles_to_add']
+                        roles_to_remove = rule['roles_to_remove']
+                        
+                        # If user has trigger role, check if roles_to_add and roles_to_remove are correct
+                        if trigger_role_id in member_role_ids:
+                            # Check roles that should be added
+                            for add_role_id in roles_to_add:
+                                if add_role_id not in member_role_ids:
+                                    add_role = interaction.guild.get_role(add_role_id)
+                                    if add_role:
+                                        results['issues'].append(f"{member.mention} missing {add_role.mention} (trigger: <@&{trigger_role_id}>)")
+                            
+                            # Check roles that should be removed
+                            for remove_role_id in roles_to_remove:
+                                if remove_role_id in member_role_ids:
+                                    remove_role = interaction.guild.get_role(remove_role_id)
+                                    if remove_role:
+                                        results['issues'].append(f"{member.mention} still has {remove_role.mention} (should be removed by trigger: <@&{trigger_role_id}>)")
+                
+                # Build response
+                embed = discord.Embed(
+                    title="🔍 Role Rule Compliance Check",
+                    color=discord.Color.blue()
+                )
+                
+                if results['issues']:
+                    embed.add_field(
+                        name=f"⚠️ Issues Found ({len(results['issues'])})",
+                        value="\n".join(results['issues'][:20]),
+                        inline=False
+                    )
+                    if len(results['issues']) > 20:
+                        embed.add_field(name="...", value=f"and {len(results['issues']) - 20} more", inline=False)
+                else:
+                    embed.add_field(name="✅ All Clear", value="No compliance issues found!", inline=False)
+                
+                if results['errors']:
+                    embed.add_field(
+                        name=f"❌ Errors ({len(results['errors'])})",
+                        value="\n".join(results['errors'][:10]),
+                        inline=False
+                    )
+                
+                embed.set_footer(text="Note: This is a read-only check. Issues are not automatically fixed.")
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
         
         except Exception as e:
