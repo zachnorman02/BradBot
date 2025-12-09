@@ -416,6 +416,21 @@ async def daily_maintenance_check(bot):
 
 
 # ============================================================================
+# CONDITIONAL ROLE ASSIGNMENT HELPERS
+# ============================================================================
+
+def get_deferral_role_names(guild: discord.Guild, deferral_role_ids: list[int], user_role_ids: set[int]) -> list[str]:
+    """Get names of deferral roles that the user has."""
+    deferral_names = []
+    for dr_id in deferral_role_ids:
+        if dr_id in user_role_ids:
+            dr = guild.get_role(dr_id)
+            if dr:
+                deferral_names.append(dr.name)
+    return deferral_names
+
+
+# ============================================================================
 # MEMBER UPDATE HANDLER
 # ============================================================================
 
@@ -444,7 +459,7 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
         # Get all conditional role configs for this guild
         all_configs = db.get_all_conditional_role_configs(after.guild.id)
         
-        # Handle roles being added
+        # ===== SECTION 1: Handle conditional roles being added =====
         for added_role_id in added_role_ids:
             config = db.get_conditional_role_config(after.guild.id, added_role_id)
             if not config:
@@ -497,12 +512,7 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
             
             if has_deferral_role:
                 # Get deferral role names for logging
-                deferral_names = []
-                for dr_id in deferral_role_ids:
-                    if dr_id in user_role_ids:
-                        dr = after.guild.get_role(dr_id)
-                        if dr:
-                            deferral_names.append(dr.name)
+                deferral_names = get_deferral_role_names(after.guild, deferral_role_ids, user_role_ids)
                 
                 # Mark eligible but remove the role (defer assignment)
                 db.mark_conditional_role_eligible(
@@ -531,7 +541,7 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
                 role_name = added_role.name if added_role else str(added_role_id)
                 print(f"[CONDITIONAL ROLE] Approved manual assignment for {after.display_name} (role: {role_name})")
         
-        # Handle roles being removed - check if user now qualifies for deferred conditional roles
+        # ===== SECTION 2: Handle roles being removed - grant deferred conditional roles =====
         if removed_role_ids:
             for config in all_configs:
                 conditional_role_id = config['role_id']
@@ -577,7 +587,7 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
                         except Exception as e:
                             print(f"[CONDITIONAL ROLE] Error granting deferred role: {e}")
         
-        # On every role change: check if user has conditional roles they shouldn't have
+        # ===== SECTION 3: Enforcement - remove conditional roles if user has deferral roles =====
         # This catches cases where a deferral role is added after the conditional role was assigned
         for config in all_configs:
             conditional_role_id = config['role_id']
@@ -594,16 +604,9 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
             user_role_ids = {r.id for r in after.roles}
             has_deferral_role = any(dr_id in user_role_ids for dr_id in deferral_role_ids)
             
-            print(f"[CONDITIONAL ROLE DEBUG] Checking {after.display_name}: conditional_role={conditional_role_id}, deferral_ids={deferral_role_ids}, has_deferral={has_deferral_role}, user_roles={user_role_ids}")
-            
             if has_deferral_role:
                 # User has conditional role but now has deferral role(s) - remove conditional role
-                deferral_names = []
-                for dr_id in deferral_role_ids:
-                    if dr_id in user_role_ids:
-                        dr = after.guild.get_role(dr_id)
-                        if dr:
-                            deferral_names.append(dr.name)
+                deferral_names = get_deferral_role_names(after.guild, deferral_role_ids, user_role_ids)
                 
                 conditional_role = after.guild.get_role(conditional_role_id)
                 if conditional_role:

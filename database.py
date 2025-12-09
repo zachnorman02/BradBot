@@ -861,9 +861,18 @@ class Database:
         roles_to_add = roles_to_add or []
         roles_to_remove = roles_to_remove or []
         
+        # Convert lists to comma-separated strings
+        add_str = ','.join(str(rid) for rid in roles_to_add) if roles_to_add else ''
+        remove_str = ','.join(str(rid) for rid in roles_to_remove) if roles_to_remove else ''
+        
+        # Generate ID from MAX + 1
+        max_id_query = "SELECT COALESCE(MAX(id), 0) FROM main.role_rules"
+        max_id_result = self.execute_query(max_id_query)
+        new_id = (max_id_result[0][0] if max_id_result else 0) + 1
+        
         query = """
-        INSERT INTO main.role_rules (guild_id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, updated_at)
-        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        INSERT INTO main.role_rules (id, guild_id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT (guild_id, rule_name) 
         DO UPDATE SET 
             trigger_role_id = EXCLUDED.trigger_role_id,
@@ -871,7 +880,7 @@ class Database:
             roles_to_remove = EXCLUDED.roles_to_remove,
             updated_at = CURRENT_TIMESTAMP
         """
-        self.execute_query(query, (guild_id, rule_name, trigger_role_id, roles_to_add, roles_to_remove), fetch=False)
+        self.execute_query(query, (new_id, guild_id, rule_name, trigger_role_id, add_str, remove_str), fetch=False)
     
     def remove_role_rule(self, guild_id: int, rule_name: str):
         """Remove a role rule by name."""
@@ -889,18 +898,25 @@ class Database:
         results = self.execute_query(query, (guild_id,))
         
         if results:
-            return [
-                {
+            rules = []
+            for row in results:
+                # Parse comma-separated strings back to lists of ints
+                add_str = row[3] or ''
+                remove_str = row[4] or ''
+                
+                add_ids = [int(rid) for rid in add_str.split(',') if rid] if add_str else []
+                remove_ids = [int(rid) for rid in remove_str.split(',') if rid] if remove_str else []
+                
+                rules.append({
                     'id': row[0],
                     'rule_name': row[1],
                     'trigger_role_id': row[2],
-                    'roles_to_add': row[3] or [],
-                    'roles_to_remove': row[4] or [],
+                    'roles_to_add': add_ids,
+                    'roles_to_remove': remove_ids,
                     'created_at': row[5],
                     'updated_at': row[6]
-                }
-                for row in results
-            ]
+                })
+            return rules
         return []
     
     def get_role_rule(self, guild_id: int, rule_name: str):
@@ -914,12 +930,19 @@ class Database:
         
         if result:
             row = result[0]
+            # Parse comma-separated strings back to lists of ints
+            add_str = row[3] or ''
+            remove_str = row[4] or ''
+            
+            add_ids = [int(rid) for rid in add_str.split(',') if rid] if add_str else []
+            remove_ids = [int(rid) for rid in remove_str.split(',') if rid] if remove_str else []
+            
             return {
                 'id': row[0],
                 'rule_name': row[1],
                 'trigger_role_id': row[2],
-                'roles_to_add': row[3] or [],
-                'roles_to_remove': row[4] or [],
+                'roles_to_add': add_ids,
+                'roles_to_remove': remove_ids,
                 'created_at': row[5],
                 'updated_at': row[6]
             }

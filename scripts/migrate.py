@@ -710,7 +710,43 @@ class Migration022(Migration):
             print(f"   ✅ Renamed table - eligible column removed")
             
         except Exception as e:
-            print(f"   ⚠️  Failed to migrate table structure: {e}")
+                print(f"   ⚠️  Failed to migrate table structure: {e}")
+
+
+class Migration023(Migration):
+    """Create role_rules table for verified role automation"""
+    
+    def __init__(self):
+        super().__init__("023", "Create role_rules table for verified role automation")
+    
+    def up(self):
+        """Create the role_rules table"""
+        print(f"   📋 Creating role_rules table...")
+        
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.role_rules (
+                id BIGINT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                rule_name VARCHAR(100) NOT NULL,
+                trigger_role_id BIGINT NOT NULL,
+                roles_to_add TEXT,
+                roles_to_remove TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(guild_id, rule_name)
+            )
+        """, fetch=False)
+        print(f"   ✅ Created role_rules table")
+        
+        # Create index for guild lookups
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_role_rules_guild 
+                ON main.role_rules(guild_id)
+            """, fetch=False)
+            print(f"   ✅ Created index on role_rules(guild_id)")
+        except Exception as e:
+            print(f"   ⚠️  Index creation queued: {e}")
 
 
 # List of all migrations in order
@@ -735,6 +771,7 @@ MIGRATIONS = [
     Migration020(),  # Add manually removed users to eligibility
     Migration021(),  # Attempt to remove eligible column
     Migration022(),  # Remove eligible column from conditional_role_eligibility
+    Migration023(),  # Create role_rules table
 ]
 
 def get_applied_migrations():
