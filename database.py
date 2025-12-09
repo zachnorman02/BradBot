@@ -829,15 +829,15 @@ class Database:
     # ========================================================================
     
     def init_role_rules_table(self):
-        """Create role_rules table if it doesn't exist."""
+        """Create role_rules table if it doesn't exist (Aurora DSQL compatible)."""
         query = """
         CREATE TABLE IF NOT EXISTS main.role_rules (
-            id SERIAL PRIMARY KEY,
+            id BIGINT PRIMARY KEY,
             guild_id BIGINT NOT NULL,
             rule_name VARCHAR(100) NOT NULL,
             trigger_role_id BIGINT NOT NULL,
-            roles_to_add BIGINT[] DEFAULT '{}',
-            roles_to_remove BIGINT[] DEFAULT '{}',
+            roles_to_add TEXT,
+            roles_to_remove TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(guild_id, rule_name)
