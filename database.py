@@ -238,7 +238,7 @@ class Database:
         query = """
         SELECT setting_value FROM main.guild_settings 
         WHERE guild_id = %s 
-        AND setting_name = 'link_replacement'
+        AND setting_name = 'link_replacement_enabled'
         ORDER BY updated_at DESC
         LIMIT 1
         """
