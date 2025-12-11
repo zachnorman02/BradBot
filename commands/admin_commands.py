@@ -1022,6 +1022,188 @@ class AdminToolsGroup(app_commands.Group):
             print(f"Error in autorole command: {e}")
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="channelrestriction", description="Configure channel access restrictions based on roles")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        action="What action to perform",
+        channel="The channel to restrict access to",
+        blocking_role="Role that blocks access to the channel",
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="add - Block role from viewing channel", value="add"),
+        app_commands.Choice(name="remove - Remove channel restriction", value="remove"),
+        app_commands.Choice(name="list - Show all channel restrictions", value="list"),
+        app_commands.Choice(name="apply-all - Apply restrictions to all current members", value="apply-all")
+    ])
+    async def channel_restriction(
+        self,
+        interaction: discord.Interaction,
+        action: app_commands.Choice[str],
+        channel: discord.TextChannel = None,
+        blocking_role: discord.Role = None
+    ):
+        """Configure automatic channel permission overwrites when members have specific roles"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Ensure table exists
+            db.init_channel_restrictions_table()
+            
+            if action.value == "list":
+                restrictions = db.get_channel_restrictions(interaction.guild.id)
+                
+                if not restrictions:
+                    await interaction.followup.send("📋 No channel restrictions configured for this server.", ephemeral=True)
+                    return
+                
+                embed = discord.Embed(
+                    title="🔒 Channel Restrictions",
+                    description=f"Found {len(restrictions)} restriction(s)",
+                    color=discord.Color.blue()
+                )
+                
+                # Group by channel
+                from collections import defaultdict
+                by_channel = defaultdict(list)
+                for r in restrictions:
+                    by_channel[r['channel_id']].append(r)
+                
+                for channel_id, channel_restrictions in by_channel.items():
+                    channel_obj = interaction.guild.get_channel(channel_id)
+                    channel_name = channel_obj.mention if channel_obj else f"Unknown Channel ({channel_id})"
+                    
+                    role_mentions = []
+                    for r in channel_restrictions:
+                        role = interaction.guild.get_role(r['blocking_role_id'])
+                        role_mentions.append(role.mention if role else f"Unknown ({r['blocking_role_id']})")
+                    
+                    embed.add_field(
+                        name=f"🔒 {channel_obj.name if channel_obj else 'Unknown'}",
+                        value=f"**Channel:** {channel_name}\n**Blocked Roles:** {', '.join(role_mentions)}",
+                        inline=False
+                    )
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            elif action.value == "remove":
+                if not channel or not blocking_role:
+                    await interaction.followup.send("❌ Please specify both channel and blocking_role for remove action.", ephemeral=True)
+                    return
+                
+                db.remove_channel_restriction(interaction.guild.id, channel.id, blocking_role.id)
+                await interaction.followup.send(
+                    f"✅ Removed channel restriction\n"
+                    f"• Channel: {channel.mention}\n"
+                    f"• Blocking Role: {blocking_role.mention}",
+                    ephemeral=True
+                )
+                return
+            
+            elif action.value == "add":
+                if not channel or not blocking_role:
+                    await interaction.followup.send("❌ Please specify both channel and blocking_role for add action.", ephemeral=True)
+                    return
+                
+                # Save to database
+                db.add_channel_restriction(interaction.guild.id, channel.id, blocking_role.id)
+                
+                await interaction.followup.send(
+                    f"✅ Added channel restriction\n"
+                    f"• Channel: {channel.mention}\n"
+                    f"• Blocking Role: {blocking_role.mention}\n\n"
+                    f"Members with {blocking_role.mention} will be blocked from viewing {channel.mention}.\n"
+                    f"Use `apply-all` action to apply this to existing members.",
+                    ephemeral=True
+                )
+                return
+            
+            elif action.value == "apply-all":
+                # Apply all channel restrictions to current members
+                await interaction.followup.send("🔄 Applying channel restrictions to all members...", ephemeral=True)
+                
+                restrictions = db.get_channel_restrictions(interaction.guild.id)
+                if not restrictions:
+                    await interaction.followup.send("❌ No channel restrictions configured.", ephemeral=True)
+                    return
+                
+                results = {'blocked': 0, 'unblocked': 0, 'errors': []}
+                
+                # Group restrictions by channel for efficiency
+                from collections import defaultdict
+                by_channel = defaultdict(list)
+                for r in restrictions:
+                    by_channel[r['channel_id']].append(r['blocking_role_id'])
+                
+                # Process each channel
+                for channel_id, blocking_role_ids in by_channel.items():
+                    channel_obj = interaction.guild.get_channel(channel_id)
+                    if not channel_obj:
+                        results['errors'].append(f"Channel {channel_id} not found")
+                        continue
+                    
+                    # Check each member
+                    for member in interaction.guild.members:
+                        if member.bot:
+                            continue
+                        
+                        member_role_ids = {r.id for r in member.roles}
+                        has_blocking_role = any(rid in member_role_ids for rid in blocking_role_ids)
+                        
+                        try:
+                            if has_blocking_role:
+                                # Block access
+                                await channel_obj.set_permissions(
+                                    member,
+                                    view_channel=False,
+                                    reason="Channel restriction enforcement"
+                                )
+                                results['blocked'] += 1
+                            else:
+                                # Check if they have an overwrite and remove it
+                                overwrite = channel_obj.overwrites_for(member)
+                                if overwrite.view_channel is False:
+                                    await channel_obj.set_permissions(
+                                        member,
+                                        overwrite=None,
+                                        reason="Removing channel restriction"
+                                    )
+                                    results['unblocked'] += 1
+                        except Exception as e:
+                            results['errors'].append(f"{member.display_name}: {str(e)[:50]}")
+                
+                # Build response
+                embed = discord.Embed(
+                    title="✅ Channel Restrictions Applied",
+                    color=discord.Color.green()
+                )
+                
+                embed.add_field(
+                    name="📊 Results",
+                    value=f"Blocked: {results['blocked']}\nUnblocked: {results['unblocked']}",
+                    inline=False
+                )
+                
+                if results['errors']:
+                    error_text = "\n".join(results['errors'][:5])
+                    if len(results['errors']) > 5:
+                        error_text += f"\n... and {len(results['errors']) - 5} more"
+                    embed.add_field(name="⚠️ Errors", value=error_text, inline=False)
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+        
+        except Exception as e:
+            print(f"Error in channelrestriction command: {e}")
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="conditionalrole", description="Manage conditional role assignments with blocking roles")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(

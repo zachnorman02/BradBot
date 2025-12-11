@@ -749,6 +749,38 @@ class Migration023(Migration):
             print(f"   ⚠️  Index creation queued: {e}")
 
 
+class Migration024(Migration):
+    """Create channel_restrictions table for role-based channel access control"""
+    
+    def __init__(self):
+        super().__init__("024", "Create channel_restrictions table for role-based channel access control")
+    
+    def up(self):
+        """Create the channel_restrictions table"""
+        print(f"   📋 Creating channel_restrictions table...")
+        
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.channel_restrictions (
+                guild_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                blocking_role_id BIGINT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, channel_id, blocking_role_id)
+            )
+        """, fetch=False)
+        print(f"   ✅ Created channel_restrictions table")
+        
+        # Create index for guild lookups
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_channel_restrictions_guild 
+                ON main.channel_restrictions(guild_id)
+            """, fetch=False)
+            print(f"   ✅ Created index on channel_restrictions(guild_id)")
+        except Exception as e:
+            print(f"   ⚠️  Index creation queued: {e}")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -772,6 +804,7 @@ MIGRATIONS = [
     Migration021(),  # Attempt to remove eligible column
     Migration022(),  # Remove eligible column from conditional_role_eligibility
     Migration023(),  # Create role_rules table
+    Migration024(),  # Create channel_restrictions table
 ]
 
 def get_applied_migrations():
