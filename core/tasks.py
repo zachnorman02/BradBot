@@ -59,6 +59,13 @@ async def handle_verified_role_logic(before: discord.Member, after: discord.Memb
                     for role_id in rule['roles_to_add']:
                         role = after.guild.get_role(role_id)
                         if role and role not in after.roles:
+                            # Special case: Don't add "lvl 0" if user has a higher level role
+                            if role.name == "lvl 0":
+                                has_higher_level = any(r.name.startswith("lvl ") and r.name != "lvl 0" for r in after.roles)
+                                if has_higher_level:
+                                    print(f"[ROLE RULE] Skipped adding lvl 0 to {after.display_name} (has higher level)")
+                                    continue
+                            
                             try:
                                 await after.add_roles(role, reason=f"Role rule '{rule['rule_name']}' triggered")
                                 print(f"[ROLE RULE] Added {role.name} to {after.display_name}")
@@ -86,6 +93,13 @@ async def handle_verified_role_logic(before: discord.Member, after: discord.Memb
                     if add_role_id not in after_role_ids:
                         add_role = after.guild.get_role(add_role_id)
                         if add_role:
+                            # Special case: Don't add "lvl 0" if user has a higher level role
+                            if add_role.name == "lvl 0":
+                                has_higher_level = any(r.name.startswith("lvl ") and r.name != "lvl 0" for r in after.roles)
+                                if has_higher_level:
+                                    print(f"[ROLE RULE ENFORCEMENT] Skipped adding lvl 0 to {after.display_name} (has higher level)")
+                                    continue
+                            
                             try:
                                 await after.add_roles(add_role, reason=f"Role rule enforcement: '{rule['rule_name']}'")
                                 print(f"[ROLE RULE ENFORCEMENT] Added {add_role.name} to {after.display_name}")
