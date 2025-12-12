@@ -6,6 +6,53 @@ import discord
 from database import db
 
 
+def create_mirror_embed(message: discord.Message) -> discord.Embed:
+    """Create a mirror embed for a message.
+    
+    Args:
+        message: The original Discord message to mirror
+        
+    Returns:
+        discord.Embed: The embed representation of the message
+    """
+    content = message.content or ""
+    
+    # Create embed with author info
+    embed = discord.Embed(
+        description=content if content else "*[No text content]*",
+        color=message.author.color if message.author.color != discord.Color.default() else discord.Color.blue(),
+        timestamp=message.created_at
+    )
+    
+    # Add author info
+    embed.set_author(
+        name=message.author.display_name,
+        icon_url=message.author.display_avatar.url
+    )
+    
+    # Add footer showing source channel
+    embed.set_footer(text=f"Mirrored from #{message.channel.name}")
+    
+    # Handle attachments
+    if message.attachments:
+        # Add attachment URLs to embed
+        attachment_text = "\n\n**Attachments:**\n" + "\n".join(
+            f"[{att.filename}]({att.url})" for att in message.attachments
+        )
+        
+        # Append to description if it fits
+        if len(embed.description + attachment_text) <= 4096:
+            embed.description += attachment_text
+        else:
+            embed.add_field(
+                name="📎 Attachments",
+                value="\n".join(f"[{att.filename}]({att.url})" for att in message.attachments[:10]),
+                inline=False
+            )
+    
+    return embed
+
+
 async def handle_message_mirror(message: discord.Message):
     """Handle mirroring of a new message to configured target channels."""
     # Ignore bot messages to prevent infinite loops
@@ -31,42 +78,8 @@ async def handle_message_mirror(message: discord.Message):
             continue
         
         try:
-            # Build the mirrored message
-            content = message.content or ""
-            
-            # Create embed with author info
-            embed = discord.Embed(
-                description=content if content else "*[No text content]*",
-                color=message.author.color if message.author.color != discord.Color.default() else discord.Color.blue(),
-                timestamp=message.created_at
-            )
-            
-            # Add author info
-            embed.set_author(
-                name=message.author.display_name,
-                icon_url=message.author.display_avatar.url
-            )
-            
-            # Add footer showing source channel
-            embed.set_footer(text=f"Mirrored from #{message.channel.name}")
-            
-            # Handle attachments
-            files = []
-            if message.attachments:
-                # Add attachment URLs to embed
-                attachment_text = "\n\n**Attachments:**\n" + "\n".join(
-                    f"[{att.filename}]({att.url})" for att in message.attachments
-                )
-                
-                # Append to description if it fits
-                if len(embed.description + attachment_text) <= 4096:
-                    embed.description += attachment_text
-                else:
-                    embed.add_field(
-                        name="📎 Attachments",
-                        value="\n".join(f"[{att.filename}]({att.url})" for att in message.attachments[:10]),
-                        inline=False
-                    )
+            # Create mirror embed using helper function
+            embed = create_mirror_embed(message)
             
             # Handle embeds from original message
             embeds_to_send = [embed]

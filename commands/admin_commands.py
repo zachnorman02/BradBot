@@ -874,13 +874,15 @@ class AdminToolsGroup(app_commands.Group):
         action="What action to perform",
         source_channel="The channel to mirror messages from",
         target_channel="The channel to mirror messages to",
-        message_link="Optional: Discord message link to mirror a specific message"
+        message_link="Optional: Discord message link to mirror a specific message",
+        limit="Optional: Number of existing messages to copy (default: 100, max: 1000)"
     )
     @app_commands.choices(action=[
         app_commands.Choice(name="add - Mirror messages from source to target", value="add"),
         app_commands.Choice(name="remove - Stop mirroring to target", value="remove"),
         app_commands.Choice(name="list - Show all mirror configurations", value="list"),
-        app_commands.Choice(name="mirror-one - Mirror a specific message", value="mirror-one")
+        app_commands.Choice(name="mirror-one - Mirror a specific message", value="mirror-one"),
+        app_commands.Choice(name="copy-existing - Copy existing messages from source", value="copy-existing")
     ])
     async def message_mirror(
         self,
@@ -888,7 +890,8 @@ class AdminToolsGroup(app_commands.Group):
         action: app_commands.Choice[str],
         source_channel: discord.TextChannel = None,
         target_channel: discord.TextChannel = None,
-        message_link: str = None
+        message_link: str = None,
+        limit: int = 100
     ):
         """Configure automatic message mirroring between channels"""
         if not interaction.guild:
@@ -1067,6 +1070,111 @@ class AdminToolsGroup(app_commands.Group):
                 except Exception as e:
                     await interaction.followup.send(f"❌ Error mirroring message: {str(e)[:200]}", ephemeral=True)
                 
+                return
+            
+            elif action.value == "copy-existing":
+                if not source_channel or not target_channel:
+                    await interaction.followup.send("❌ Please specify both source and target channels.", ephemeral=True)
+                    return
+                
+                # Validate limit
+                if limit < 1 or limit > 1000:
+                    await interaction.followup.send("❌ Limit must be between 1 and 1000.", ephemeral=True)
+                    return
+                
+                # Check bot permissions
+                bot_member = interaction.guild.get_member(interaction.client.user.id)
+                
+                source_perms = source_channel.permissions_for(bot_member)
+                if not source_perms.read_messages or not source_perms.read_message_history:
+                    await interaction.followup.send(
+                        f"❌ I don't have permission to read messages in {source_channel.mention}.",
+                        ephemeral=True
+                    )
+                    return
+                
+                target_perms = target_channel.permissions_for(bot_member)
+                if not target_perms.send_messages or not target_perms.embed_links:
+                    await interaction.followup.send(
+                        f"❌ I don't have permission to send messages in {target_channel.mention}.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Import mirror helper
+                from core.message_mirroring import create_mirror_embed
+                
+                # Fetch messages from source channel
+                try:
+                    messages = []
+                    async for msg in source_channel.history(limit=limit, oldest_first=True):
+                        if not msg.author.bot:  # Skip bot messages
+                            messages.append(msg)
+                    
+                    if not messages:
+                        await interaction.followup.send(
+                            f"📋 No messages found in {source_channel.mention} to copy.",
+                            ephemeral=True
+                        )
+                        return
+                    
+                    # Send a status update
+                    await interaction.followup.send(
+                        f"⏳ Copying {len(messages)} message(s) from {source_channel.mention} to {target_channel.mention}...\n"
+                        f"This may take a moment.",
+                        ephemeral=True
+                    )
+                    
+                    # Copy each message
+                    copied_count = 0
+                    errors = 0
+                    
+                    for msg in messages:
+                        try:
+                            # Create mirror embed
+                            embed = create_mirror_embed(msg)
+                            
+                            # Handle original embeds
+                            embeds_to_send = [embed]
+                            if msg.embeds:
+                                for orig_embed in msg.embeds[:9]:
+                                    embeds_to_send.append(orig_embed)
+                            
+                            # Send mirrored message
+                            mirror_msg = await target_channel.send(embeds=embeds_to_send)
+                            
+                            # Track the mirrored message
+                            db.track_mirrored_message(
+                                msg.id,
+                                msg.channel.id,
+                                mirror_msg.id,
+                                target_channel.id,
+                                msg.guild.id
+                            )
+                            
+                            copied_count += 1
+                            
+                        except Exception as e:
+                            print(f"[MIRROR] Error copying message {msg.id}: {e}")
+                            errors += 1
+                    
+                    # Send completion message
+                    result_msg = f"✅ Successfully copied {copied_count} message(s) from {source_channel.mention} to {target_channel.mention}."
+                    if errors > 0:
+                        result_msg += f"\n⚠️ Failed to copy {errors} message(s)."
+                    result_msg += "\n\nThese messages will now auto-sync on edits and deletes."
+                    
+                    await interaction.channel.send(result_msg)
+                    
+                except discord.Forbidden:
+                    await interaction.channel.send(
+                        "❌ I don't have permission to access one of the channels.",
+                    )
+                except Exception as e:
+                    print(f"[MIRROR] Error in copy-existing: {e}")
+                    await interaction.channel.send(
+                        f"❌ Error copying messages: {str(e)[:200]}",
+                    )
                 return
             
             elif action.value == "add":
