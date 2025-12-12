@@ -3,6 +3,7 @@ Message mirroring functionality
 Automatically copies messages to configured target channels and keeps them synced
 """
 import discord
+from typing import Optional
 from database import db
 
 
@@ -108,9 +109,9 @@ async def handle_message_mirror(message: discord.Message):
             print(f"[MIRROR] Error mirroring message to {target_channel.name}: {e}")
 
 
-async def handle_message_edit(before: discord.Message, after: discord.Message):
+async def handle_message_edit(before: Optional[discord.Message], after: discord.Message):
     """Handle editing of a mirrored message."""
-    print(f"[DEBUG] on_message_edit fired: before.id={before.id}, after.id={after.id}, author={after.author}, channel={after.channel}")
+    print(f"[DEBUG] on_message_edit fired: before_id={getattr(before, 'id', None)}, after_id={getattr(after, 'id', None)}, author={getattr(after, 'author', None)}, channel={getattr(after, 'channel', None)}")
     # Ignore bot messages
     if after.author.bot:
         print(f"[DEBUG] Skipping bot message edit: {after.id}")

@@ -1151,6 +1151,7 @@ class AdminToolsGroup(app_commands.Group):
                                 target_channel.id,
                                 msg.guild.id
                             )
+                            print(f"[MIRROR] Tracked mirror: original={msg.id} -> mirror={mirror_msg.id} in channel={target_channel.id}")
                             
                             copied_count += 1
                             

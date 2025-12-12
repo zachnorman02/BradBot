@@ -186,7 +186,47 @@ async def on_message(message):
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
     """Handle message edits for mirrored messages"""
+    try:
+        print(f"[DEBUG] on_message_edit event: before_id={getattr(before, 'id', None)} after_id={getattr(after, 'id', None)} author_id={getattr(after.author, 'id', None)} guild_id={getattr(after.guild, 'id', None)} channel_id={getattr(after.channel, 'id', None)}")
+    except Exception:
+        # Defensive logging - ensure we never crash event handling
+        print("[DEBUG] on_message_edit event fired (could not introspect message objects)")
+
     await handle_message_edit(before, after)
+
+
+@bot.event
+async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
+    """Fallback for message edits when the message isn't in the cache.
+
+    This will fetch the edited message and call the same handler used by
+    `on_message_edit`. `before` will be passed as `None` since we don't have
+    the cached previous state.
+    """
+    try:
+        print(f"[DEBUG] on_raw_message_edit fired: message_id={payload.message_id} channel_id={payload.channel_id} guild_id={payload.guild_id}")
+        # Try to resolve channel and fetch the message
+        channel = None
+        if payload.guild_id:
+            guild = bot.get_guild(payload.guild_id)
+            if guild:
+                channel = guild.get_channel(payload.channel_id)
+        if not channel:
+            channel = bot.get_channel(payload.channel_id)
+
+        if not channel:
+            print(f"[DEBUG] Could not resolve channel for raw edit: {payload.channel_id}")
+            return
+
+        try:
+            after = await channel.fetch_message(payload.message_id)
+        except Exception as e:
+            print(f"[DEBUG] Failed to fetch edited message {payload.message_id}: {e}")
+            return
+
+        await handle_message_edit(None, after)
+    except Exception as e:
+        print(f"[DEBUG] on_raw_message_edit handler error: {e}")
 
 @bot.event
 async def on_message_delete(message: discord.Message):
