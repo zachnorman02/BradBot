@@ -873,19 +873,22 @@ class AdminToolsGroup(app_commands.Group):
     @app_commands.describe(
         action="What action to perform",
         source_channel="The channel to mirror messages from",
-        target_channel="The channel to mirror messages to"
+        target_channel="The channel to mirror messages to",
+        message_link="Optional: Discord message link to mirror a specific message"
     )
     @app_commands.choices(action=[
         app_commands.Choice(name="add - Mirror messages from source to target", value="add"),
         app_commands.Choice(name="remove - Stop mirroring to target", value="remove"),
-        app_commands.Choice(name="list - Show all mirror configurations", value="list")
+        app_commands.Choice(name="list - Show all mirror configurations", value="list"),
+        app_commands.Choice(name="mirror-one - Mirror a specific message", value="mirror-one")
     ])
     async def message_mirror(
         self,
         interaction: discord.Interaction,
         action: app_commands.Choice[str],
         source_channel: discord.TextChannel = None,
-        target_channel: discord.TextChannel = None
+        target_channel: discord.TextChannel = None,
+        message_link: str = None
     ):
         """Configure automatic message mirroring between channels"""
         if not interaction.guild:
@@ -952,6 +955,118 @@ class AdminToolsGroup(app_commands.Group):
                     f"• Target: {target_channel.mention}",
                     ephemeral=True
                 )
+                return
+            
+            elif action.value == "mirror-one":
+                if not message_link:
+                    await interaction.followup.send("❌ Please provide a message link to mirror.", ephemeral=True)
+                    return
+                
+                if not target_channel:
+                    await interaction.followup.send("❌ Please specify a target channel.", ephemeral=True)
+                    return
+                
+                # Parse message link
+                # Format: https://discord.com/channels/{guild_id}/{channel_id}/{message_id}
+                import re
+                link_match = re.match(r'https://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)', message_link)
+                
+                if not link_match:
+                    await interaction.followup.send("❌ Invalid message link format.", ephemeral=True)
+                    return
+                
+                link_guild_id = int(link_match.group(1))
+                link_channel_id = int(link_match.group(2))
+                link_message_id = int(link_match.group(3))
+                
+                # Verify it's from this guild
+                if link_guild_id != interaction.guild.id:
+                    await interaction.followup.send("❌ Message must be from this server.", ephemeral=True)
+                    return
+                
+                # Get the source channel and message
+                msg_channel = interaction.guild.get_channel(link_channel_id)
+                if not msg_channel:
+                    await interaction.followup.send("❌ Source channel not found.", ephemeral=True)
+                    return
+                
+                try:
+                    original_msg = await msg_channel.fetch_message(link_message_id)
+                except discord.NotFound:
+                    await interaction.followup.send("❌ Message not found.", ephemeral=True)
+                    return
+                except discord.Forbidden:
+                    await interaction.followup.send("❌ I don't have permission to read messages in that channel.", ephemeral=True)
+                    return
+                
+                # Check target channel permissions
+                bot_member = interaction.guild.get_member(interaction.client.user.id)
+                target_perms = target_channel.permissions_for(bot_member)
+                if not target_perms.send_messages or not target_perms.embed_links:
+                    await interaction.followup.send(
+                        f"❌ I don't have permission to send messages in {target_channel.mention}.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Mirror the message
+                content = original_msg.content or ""
+                
+                embed = discord.Embed(
+                    description=content if content else "*[No text content]*",
+                    color=original_msg.author.color if original_msg.author.color != discord.Color.default() else discord.Color.blue(),
+                    timestamp=original_msg.created_at
+                )
+                
+                embed.set_author(
+                    name=original_msg.author.display_name,
+                    icon_url=original_msg.author.display_avatar.url
+                )
+                
+                embed.set_footer(text=f"Mirrored from #{msg_channel.name}")
+                
+                # Handle attachments
+                if original_msg.attachments:
+                    attachment_text = "\n\n**Attachments:**\n" + "\n".join(
+                        f"[{att.filename}]({att.url})" for att in original_msg.attachments
+                    )
+                    
+                    if len(embed.description + attachment_text) <= 4096:
+                        embed.description += attachment_text
+                    else:
+                        embed.add_field(
+                            name="📎 Attachments",
+                            value="\n".join(f"[{att.filename}]({att.url})" for att in original_msg.attachments[:10]),
+                            inline=False
+                        )
+                
+                # Handle embeds
+                embeds_to_send = [embed]
+                if original_msg.embeds:
+                    for orig_embed in original_msg.embeds[:9]:
+                        embeds_to_send.append(orig_embed)
+                
+                try:
+                    mirror_msg = await target_channel.send(embeds=embeds_to_send)
+                    
+                    # Track the mirrored message
+                    db.track_mirrored_message(
+                        original_msg.id,
+                        msg_channel.id,
+                        mirror_msg.id,
+                        target_channel.id,
+                        interaction.guild.id
+                    )
+                    
+                    await interaction.followup.send(
+                        f"✅ Mirrored message to {target_channel.mention}\n"
+                        f"[Jump to mirror]({mirror_msg.jump_url})\n\n"
+                        f"The mirror will automatically update if the original message is edited or deleted.",
+                        ephemeral=True
+                    )
+                except Exception as e:
+                    await interaction.followup.send(f"❌ Error mirroring message: {str(e)[:200]}", ephemeral=True)
+                
                 return
             
             elif action.value == "add":

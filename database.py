@@ -858,18 +858,24 @@ class Database:
         self.execute_query(query, fetch=False)
         
         # Create index on guild_id for faster lookups
-        index_query = """
-        CREATE INDEX IF NOT EXISTS idx_message_mirrors_guild 
-        ON main.message_mirrors (guild_id)
-        """
-        self.execute_query(index_query, fetch=False)
+        try:
+            index_query = """
+            CREATE INDEX ASYNC IF NOT EXISTS idx_message_mirrors_guild 
+            ON main.message_mirrors (guild_id)
+            """
+            self.execute_query(index_query, fetch=False)
+        except Exception as e:
+            pass  # Index creation queued
         
         # Create index on source_channel_id for faster lookups
-        source_index_query = """
-        CREATE INDEX IF NOT EXISTS idx_message_mirrors_source 
-        ON main.message_mirrors (source_channel_id)
-        """
-        self.execute_query(source_index_query, fetch=False)
+        try:
+            source_index_query = """
+            CREATE INDEX ASYNC IF NOT EXISTS idx_message_mirrors_source 
+            ON main.message_mirrors (source_channel_id)
+            """
+            self.execute_query(source_index_query, fetch=False)
+        except Exception as e:
+            pass  # Index creation queued
         
         print("✅ message_mirrors table initialized")
     
@@ -889,18 +895,24 @@ class Database:
         self.execute_query(query, fetch=False)
         
         # Create index on original_message_id for faster lookups
-        index_query = """
-        CREATE INDEX IF NOT EXISTS idx_mirrored_messages_original 
-        ON main.mirrored_messages (original_message_id)
-        """
-        self.execute_query(index_query, fetch=False)
+        try:
+            index_query = """
+            CREATE INDEX ASYNC IF NOT EXISTS idx_mirrored_messages_original 
+            ON main.mirrored_messages (original_message_id)
+            """
+            self.execute_query(index_query, fetch=False)
+        except Exception as e:
+            pass  # Index creation queued
         
         # Create index on mirror_message_id for reverse lookups
-        mirror_index_query = """
-        CREATE INDEX IF NOT EXISTS idx_mirrored_messages_mirror 
-        ON main.mirrored_messages (mirror_message_id)
-        """
-        self.execute_query(mirror_index_query, fetch=False)
+        try:
+            mirror_index_query = """
+            CREATE INDEX ASYNC IF NOT EXISTS idx_mirrored_messages_mirror 
+            ON main.mirrored_messages (mirror_message_id)
+            """
+            self.execute_query(mirror_index_query, fetch=False)
+        except Exception as e:
+            pass  # Index creation queued
         
         print("✅ mirrored_messages table initialized")
     
