@@ -110,23 +110,29 @@ async def handle_message_mirror(message: discord.Message):
 
 async def handle_message_edit(before: discord.Message, after: discord.Message):
     """Handle editing of a mirrored message."""
+    print(f"[DEBUG] on_message_edit fired: before.id={before.id}, after.id={after.id}, author={after.author}, channel={after.channel}")
     # Ignore bot messages
     if after.author.bot:
+        print(f"[DEBUG] Skipping bot message edit: {after.id}")
         return
     
     # Only process guild messages
     if not after.guild:
+        print(f"[DEBUG] Skipping non-guild message edit: {after.id}")
         return
     
     # Check if this message has been mirrored
     mirrored = db.get_mirrored_messages(after.id)
+    print(f"[DEBUG] Mirrored entries for {after.id}: {mirrored}")
     
     if not mirrored:
+        print(f"[DEBUG] No mirrored messages found for {after.id}")
         return  # Message not mirrored
     
     # Update all mirror copies
     for mirror_info in mirrored:
         target_channel = after.guild.get_channel(mirror_info['mirror_channel_id'])
+        print(f"[DEBUG] Attempting to update mirror: mirror_message_id={mirror_info['mirror_message_id']}, mirror_channel_id={mirror_info['mirror_channel_id']}, target_channel={target_channel}")
         
         if not target_channel:
             print(f"[MIRROR] Target channel {mirror_info['mirror_channel_id']} not found for edit")
@@ -135,6 +141,7 @@ async def handle_message_edit(before: discord.Message, after: discord.Message):
         try:
             # Fetch the mirror message
             mirror_msg = await target_channel.fetch_message(mirror_info['mirror_message_id'])
+            print(f"[DEBUG] Fetched mirror message: {mirror_msg.id}")
             
             # Build updated embed
             content = after.content or ""
@@ -182,8 +189,6 @@ async def handle_message_edit(before: discord.Message, after: discord.Message):
             
         except discord.NotFound:
             print(f"[MIRROR] Mirror message {mirror_info['mirror_message_id']} not found, cleaning up tracking")
-            # Clean up this specific tracking entry
-            # Note: We could add a method to delete individual tracking entries, but for now just log it
         except discord.Forbidden:
             print(f"[MIRROR] No permission to edit message in {target_channel.name}")
         except Exception as e:
