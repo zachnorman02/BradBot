@@ -34,7 +34,10 @@ from core import (
     on_member_update_handler,
     handle_reply_notification,
     process_message_links,
-    send_processed_message
+    send_processed_message,
+    handle_message_mirror,
+    handle_message_edit,
+    handle_message_delete
 )
 
 # Import helpers for standalone commands
@@ -163,7 +166,7 @@ async def on_ready():
     
 @bot.event
 async def on_message(message):
-    """Process messages for link replacement and reply notifications"""
+    """Process messages for link replacement, reply notifications, and mirroring"""
     if message.author.bot:
         return
     await bot.process_commands(message)
@@ -176,6 +179,19 @@ async def on_message(message):
     
     # Send processed message if content was changed
     await send_processed_message(message, processed_result, bot)
+    
+    # Handle message mirroring to configured target channels
+    await handle_message_mirror(message)
+
+@bot.event
+async def on_message_edit(before: discord.Message, after: discord.Message):
+    """Handle message edits for mirrored messages"""
+    await handle_message_edit(before, after)
+
+@bot.event
+async def on_message_delete(message: discord.Message):
+    """Handle message deletions for mirrored messages"""
+    await handle_message_delete(message)
 
 # Manual sync command (useful for testing) - keep as text command
 @bot.command()

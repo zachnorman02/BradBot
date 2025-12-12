@@ -781,6 +781,73 @@ class Migration024(Migration):
             print(f"   ⚠️  Index creation queued: {e}")
 
 
+class Migration025(Migration):
+    """Create message_mirrors and mirrored_messages tables for message mirroring"""
+    
+    def __init__(self):
+        super().__init__("025", "Create message_mirrors and mirrored_messages tables for message mirroring")
+    
+    def up(self):
+        """Create the message mirroring tables"""
+        print(f"   📋 Creating message_mirrors table...")
+        
+        # Message mirror configurations
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.message_mirrors (
+                guild_id BIGINT NOT NULL,
+                source_channel_id BIGINT NOT NULL,
+                target_channel_id BIGINT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, source_channel_id, target_channel_id)
+            )
+        """, fetch=False)
+        print(f"   ✅ Created message_mirrors table")
+        
+        # Create indexes for guild and source channel lookups
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_message_mirrors_guild 
+                ON main.message_mirrors(guild_id)
+            """, fetch=False)
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_message_mirrors_source 
+                ON main.message_mirrors(source_channel_id)
+            """, fetch=False)
+            print(f"   ✅ Created indexes on message_mirrors")
+        except Exception as e:
+            print(f"   ⚠️  Index creation queued: {e}")
+        
+        print(f"   📋 Creating mirrored_messages table...")
+        
+        # Track individual mirrored messages
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.mirrored_messages (
+                original_message_id BIGINT NOT NULL,
+                original_channel_id BIGINT NOT NULL,
+                mirror_message_id BIGINT NOT NULL,
+                mirror_channel_id BIGINT NOT NULL,
+                guild_id BIGINT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (original_message_id, mirror_channel_id)
+            )
+        """, fetch=False)
+        print(f"   ✅ Created mirrored_messages table")
+        
+        # Create indexes for message lookups
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_mirrored_messages_original 
+                ON main.mirrored_messages(original_message_id)
+            """, fetch=False)
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_mirrored_messages_mirror 
+                ON main.mirrored_messages(mirror_message_id)
+            """, fetch=False)
+            print(f"   ✅ Created indexes on mirrored_messages")
+        except Exception as e:
+            print(f"   ⚠️  Index creation queued: {e}")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -805,6 +872,7 @@ MIGRATIONS = [
     Migration022(),  # Remove eligible column from conditional_role_eligibility
     Migration023(),  # Create role_rules table
     Migration024(),  # Create channel_restrictions table
+    Migration025(),  # Create message_mirrors and mirrored_messages tables
 ]
 
 def get_applied_migrations():

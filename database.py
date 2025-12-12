@@ -840,6 +840,171 @@ class Database:
             ]
         return []
     
+    # ============================================================================
+    # Message Mirroring
+    # ============================================================================
+    
+    def init_message_mirrors_table(self):
+        """Initialize the message mirrors table."""
+        query = """
+        CREATE TABLE IF NOT EXISTS main.message_mirrors (
+            guild_id BIGINT NOT NULL,
+            source_channel_id BIGINT NOT NULL,
+            target_channel_id BIGINT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (guild_id, source_channel_id, target_channel_id)
+        )
+        """
+        self.execute_query(query, fetch=False)
+        
+        # Create index on guild_id for faster lookups
+        index_query = """
+        CREATE INDEX IF NOT EXISTS idx_message_mirrors_guild 
+        ON main.message_mirrors (guild_id)
+        """
+        self.execute_query(index_query, fetch=False)
+        
+        # Create index on source_channel_id for faster lookups
+        source_index_query = """
+        CREATE INDEX IF NOT EXISTS idx_message_mirrors_source 
+        ON main.message_mirrors (source_channel_id)
+        """
+        self.execute_query(source_index_query, fetch=False)
+        
+        print("✅ message_mirrors table initialized")
+    
+    def init_mirrored_messages_table(self):
+        """Initialize the mirrored messages tracking table."""
+        query = """
+        CREATE TABLE IF NOT EXISTS main.mirrored_messages (
+            original_message_id BIGINT NOT NULL,
+            original_channel_id BIGINT NOT NULL,
+            mirror_message_id BIGINT NOT NULL,
+            mirror_channel_id BIGINT NOT NULL,
+            guild_id BIGINT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (original_message_id, mirror_channel_id)
+        )
+        """
+        self.execute_query(query, fetch=False)
+        
+        # Create index on original_message_id for faster lookups
+        index_query = """
+        CREATE INDEX IF NOT EXISTS idx_mirrored_messages_original 
+        ON main.mirrored_messages (original_message_id)
+        """
+        self.execute_query(index_query, fetch=False)
+        
+        # Create index on mirror_message_id for reverse lookups
+        mirror_index_query = """
+        CREATE INDEX IF NOT EXISTS idx_mirrored_messages_mirror 
+        ON main.mirrored_messages (mirror_message_id)
+        """
+        self.execute_query(mirror_index_query, fetch=False)
+        
+        print("✅ mirrored_messages table initialized")
+    
+    def add_message_mirror(self, guild_id: int, source_channel_id: int, target_channel_id: int):
+        """Add a message mirror configuration."""
+        # Aurora DSQL pattern: Delete then insert
+        delete_query = """
+        DELETE FROM main.message_mirrors
+        WHERE guild_id = %s AND source_channel_id = %s AND target_channel_id = %s
+        """
+        self.execute_query(delete_query, (guild_id, source_channel_id, target_channel_id), fetch=False)
+        
+        insert_query = """
+        INSERT INTO main.message_mirrors (guild_id, source_channel_id, target_channel_id, created_at)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        """
+        self.execute_query(insert_query, (guild_id, source_channel_id, target_channel_id), fetch=False)
+        print(f"✅ Added message mirror: guild={guild_id}, source={source_channel_id}, target={target_channel_id}")
+    
+    def remove_message_mirror(self, guild_id: int, source_channel_id: int, target_channel_id: int):
+        """Remove a message mirror configuration."""
+        query = """
+        DELETE FROM main.message_mirrors
+        WHERE guild_id = %s AND source_channel_id = %s AND target_channel_id = %s
+        """
+        self.execute_query(query, (guild_id, source_channel_id, target_channel_id), fetch=False)
+        print(f"✅ Removed message mirror: guild={guild_id}, source={source_channel_id}, target={target_channel_id}")
+    
+    def get_message_mirrors(self, guild_id: int, source_channel_id: int = None):
+        """Get message mirror configurations for a guild or specific source channel."""
+        if source_channel_id:
+            query = """
+            SELECT source_channel_id, target_channel_id, created_at
+            FROM main.message_mirrors
+            WHERE guild_id = %s AND source_channel_id = %s
+            ORDER BY created_at ASC
+            """
+            result = self.execute_query(query, (guild_id, source_channel_id))
+        else:
+            query = """
+            SELECT source_channel_id, target_channel_id, created_at
+            FROM main.message_mirrors
+            WHERE guild_id = %s
+            ORDER BY source_channel_id, created_at ASC
+            """
+            result = self.execute_query(query, (guild_id,))
+        
+        if result:
+            return [
+                {
+                    'source_channel_id': row[0],
+                    'target_channel_id': row[1],
+                    'created_at': row[2]
+                }
+                for row in result
+            ]
+        return []
+    
+    def track_mirrored_message(self, original_message_id: int, original_channel_id: int, 
+                               mirror_message_id: int, mirror_channel_id: int, guild_id: int):
+        """Track a mirrored message for future updates/deletes."""
+        # Aurora DSQL pattern: Delete then insert
+        delete_query = """
+        DELETE FROM main.mirrored_messages
+        WHERE original_message_id = %s AND mirror_channel_id = %s
+        """
+        self.execute_query(delete_query, (original_message_id, mirror_channel_id), fetch=False)
+        
+        insert_query = """
+        INSERT INTO main.mirrored_messages 
+        (original_message_id, original_channel_id, mirror_message_id, mirror_channel_id, guild_id, created_at)
+        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        """
+        self.execute_query(insert_query, (original_message_id, original_channel_id, 
+                                          mirror_message_id, mirror_channel_id, guild_id), fetch=False)
+    
+    def get_mirrored_messages(self, original_message_id: int):
+        """Get all mirror copies of an original message."""
+        query = """
+        SELECT mirror_message_id, mirror_channel_id, guild_id
+        FROM main.mirrored_messages
+        WHERE original_message_id = %s
+        """
+        result = self.execute_query(query, (original_message_id,))
+        
+        if result:
+            return [
+                {
+                    'mirror_message_id': row[0],
+                    'mirror_channel_id': row[1],
+                    'guild_id': row[2]
+                }
+                for row in result
+            ]
+        return []
+    
+    def delete_mirrored_message_tracking(self, original_message_id: int):
+        """Delete all tracking entries for an original message."""
+        query = """
+        DELETE FROM main.mirrored_messages
+        WHERE original_message_id = %s
+        """
+        self.execute_query(query, (original_message_id,), fetch=False)
+    
     def search_saved_emojis(self, search_term: Optional[str] = None, limit: int = 25, only_stickers: bool = False, only_emojis: bool = False):
         """Search saved emojis/stickers by name."""
         conditions = []

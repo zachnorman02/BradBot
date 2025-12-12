@@ -868,6 +868,139 @@ class AdminToolsGroup(app_commands.Group):
             print(f"Error in channelrestriction command: {e}")
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="messagemirror", description="Configure message mirroring between channels")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        action="What action to perform",
+        source_channel="The channel to mirror messages from",
+        target_channel="The channel to mirror messages to"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="add - Mirror messages from source to target", value="add"),
+        app_commands.Choice(name="remove - Stop mirroring to target", value="remove"),
+        app_commands.Choice(name="list - Show all mirror configurations", value="list")
+    ])
+    async def message_mirror(
+        self,
+        interaction: discord.Interaction,
+        action: app_commands.Choice[str],
+        source_channel: discord.TextChannel = None,
+        target_channel: discord.TextChannel = None
+    ):
+        """Configure automatic message mirroring between channels"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+            
+            # Ensure tables exist
+            db.init_message_mirrors_table()
+            db.init_mirrored_messages_table()
+            
+            if action.value == "list":
+                mirrors = db.get_message_mirrors(interaction.guild.id)
+                
+                if not mirrors:
+                    await interaction.followup.send("📋 No message mirrors configured for this server.", ephemeral=True)
+                    return
+                
+                embed = discord.Embed(
+                    title="🪞 Message Mirror Configurations",
+                    description=f"Found {len(mirrors)} mirror(s)",
+                    color=discord.Color.blue()
+                )
+                
+                # Group by source channel
+                from collections import defaultdict
+                by_source = defaultdict(list)
+                for m in mirrors:
+                    by_source[m['source_channel_id']].append(m)
+                
+                for source_id, source_mirrors in by_source.items():
+                    source_ch = interaction.guild.get_channel(source_id)
+                    source_name = source_ch.mention if source_ch else f"<#{source_id}> (deleted)"
+                    
+                    targets = []
+                    for m in source_mirrors:
+                        target_ch = interaction.guild.get_channel(m['target_channel_id'])
+                        target_name = target_ch.mention if target_ch else f"<#{m['target_channel_id']}> (deleted)"
+                        targets.append(target_name)
+                    
+                    embed.add_field(
+                        name=f"📤 Source: {source_name}",
+                        value=f"**Mirrors to:**\n" + "\n".join(f"• {t}" for t in targets),
+                        inline=False
+                    )
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            elif action.value == "remove":
+                if not source_channel or not target_channel:
+                    await interaction.followup.send("❌ Please specify both source and target channels.", ephemeral=True)
+                    return
+                
+                db.remove_message_mirror(interaction.guild.id, source_channel.id, target_channel.id)
+                await interaction.followup.send(
+                    f"✅ Removed message mirror\n"
+                    f"• Source: {source_channel.mention}\n"
+                    f"• Target: {target_channel.mention}",
+                    ephemeral=True
+                )
+                return
+            
+            elif action.value == "add":
+                if not source_channel or not target_channel:
+                    await interaction.followup.send("❌ Please specify both source and target channels.", ephemeral=True)
+                    return
+                
+                if source_channel.id == target_channel.id:
+                    await interaction.followup.send("❌ Source and target channels cannot be the same.", ephemeral=True)
+                    return
+                
+                # Check bot permissions in both channels
+                bot_member = interaction.guild.get_member(interaction.client.user.id)
+                
+                source_perms = source_channel.permissions_for(bot_member)
+                if not source_perms.read_messages or not source_perms.read_message_history:
+                    await interaction.followup.send(
+                        f"❌ I don't have permission to read messages in {source_channel.mention}.\n"
+                        f"Please grant me `Read Messages` and `Read Message History` permissions.",
+                        ephemeral=True
+                    )
+                    return
+                
+                target_perms = target_channel.permissions_for(bot_member)
+                if not target_perms.send_messages or not target_perms.embed_links:
+                    await interaction.followup.send(
+                        f"❌ I don't have permission to send messages in {target_channel.mention}.\n"
+                        f"Please grant me `Send Messages` and `Embed Links` permissions.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Save to database
+                db.add_message_mirror(interaction.guild.id, source_channel.id, target_channel.id)
+                
+                await interaction.followup.send(
+                    f"✅ Added message mirror\n"
+                    f"• Source: {source_channel.mention}\n"
+                    f"• Target: {target_channel.mention}\n\n"
+                    f"Messages sent in {source_channel.mention} will now be copied to {target_channel.mention}.\n"
+                    f"When the original message is edited or deleted, all mirrors will update automatically.",
+                    ephemeral=True
+                )
+                return
+        
+        except Exception as e:
+            print(f"Error in messagemirror command: {e}")
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="conditionalrole", description="Manage conditional role assignments with blocking roles")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
@@ -1735,4 +1868,250 @@ class AdminGroup(app_commands.Group):
                 f"❌ Error retrieving task logs: {str(e)[:100]}",
                 ephemeral=True
             )
+    
+    @app_commands.command(name="auditlog", description="Query audit log with SQL-like syntax")
+    @app_commands.describe(
+        query="SQL-like query: SELECT * WHERE action='kick' AND user='@User' LIMIT 10"
+    )
+    @app_commands.default_permissions(view_audit_log=True)
+    async def audit_log_query(self, interaction: discord.Interaction, query: str):
+        """Query the audit log using SQL-like syntax"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        # Check if bot has view_audit_log permission
+        bot_member = interaction.guild.get_member(interaction.client.user.id)
+        if not bot_member.guild_permissions.view_audit_log:
+            await interaction.response.send_message(
+                "❌ I don't have permission to view the audit log. Please grant me the `View Audit Log` permission.",
+                ephemeral=True
+            )
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Parse SQL-like query
+            parsed = self._parse_audit_query(query)
+            
+            if "error" in parsed:
+                await interaction.followup.send(f"❌ Query error: {parsed['error']}", ephemeral=True)
+                return
+            
+            # Build discord.py audit_logs() parameters
+            audit_params = {
+                'limit': parsed.get('limit', 100),
+            }
+            
+            # Map action types
+            action_map = {
+                'kick': discord.AuditLogAction.kick,
+                'ban': discord.AuditLogAction.ban,
+                'unban': discord.AuditLogAction.unban,
+                'member_update': discord.AuditLogAction.member_update,
+                'member_role_update': discord.AuditLogAction.member_role_update,
+                'channel_create': discord.AuditLogAction.channel_create,
+                'channel_delete': discord.AuditLogAction.channel_delete,
+                'channel_update': discord.AuditLogAction.channel_update,
+                'role_create': discord.AuditLogAction.role_create,
+                'role_delete': discord.AuditLogAction.role_delete,
+                'role_update': discord.AuditLogAction.role_update,
+                'message_delete': discord.AuditLogAction.message_delete,
+                'message_bulk_delete': discord.AuditLogAction.message_bulk_delete,
+                'message_pin': discord.AuditLogAction.message_pin,
+                'message_unpin': discord.AuditLogAction.message_unpin,
+            }
+            
+            if parsed.get('action'):
+                action_key = parsed['action'].lower()
+                if action_key in action_map:
+                    audit_params['action'] = action_map[action_key]
+                else:
+                    await interaction.followup.send(
+                        f"❌ Unknown action type: `{parsed['action']}`\n"
+                        f"Available: {', '.join(action_map.keys())}",
+                        ephemeral=True
+                    )
+                    return
+            
+            if parsed.get('user_id'):
+                user = interaction.guild.get_member(parsed['user_id'])
+                if user:
+                    audit_params['user'] = user
+            
+            # Fetch audit log entries
+            entries = []
+            async for entry in interaction.guild.audit_logs(**audit_params):
+                # Apply filters
+                if parsed.get('target_id'):
+                    if not hasattr(entry.target, 'id') or entry.target.id != parsed['target_id']:
+                        continue
+                
+                if parsed.get('before'):
+                    if entry.created_at >= parsed['before']:
+                        continue
+                
+                if parsed.get('after'):
+                    if entry.created_at <= parsed['after']:
+                        continue
+                
+                entries.append(entry)
+                
+                if len(entries) >= parsed.get('limit', 100):
+                    break
+            
+            if not entries:
+                await interaction.followup.send("📋 No audit log entries found matching your query.", ephemeral=True)
+                return
+            
+            # Format results
+            embed = discord.Embed(
+                title="📋 Audit Log Query Results",
+                description=f"Found {len(entries)} entr{'y' if len(entries) == 1 else 'ies'}",
+                color=discord.Color.blue()
+            )
+            
+            # Show query
+            embed.add_field(
+                name="🔍 Query",
+                value=f"```{query[:200]}```",
+                inline=False
+            )
+            
+            # Show results (up to 10 entries)
+            for i, entry in enumerate(entries[:10]):
+                action_name = str(entry.action).replace('AuditLogAction.', '')
+                
+                user_str = entry.user.mention if entry.user else "Unknown"
+                target_str = entry.target.mention if hasattr(entry.target, 'mention') else str(entry.target) if entry.target else "N/A"
+                
+                reason_str = entry.reason if entry.reason else "No reason provided"
+                
+                timestamp = f"<t:{int(entry.created_at.timestamp())}:R>"
+                
+                value = f"**User:** {user_str}\n**Target:** {target_str}\n**Reason:** {reason_str[:50]}\n**When:** {timestamp}"
+                
+                embed.add_field(
+                    name=f"{i+1}. {action_name}",
+                    value=value,
+                    inline=False
+                )
+            
+            if len(entries) > 10:
+                embed.set_footer(text=f"Showing 10 of {len(entries)} entries. Refine your query to see specific results.")
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ I don't have permission to access the audit log.",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error in audit log query: {e}")
+            await interaction.followup.send(
+                f"❌ Error executing query: {str(e)[:200]}",
+                ephemeral=True
+            )
+    
+    def _parse_audit_query(self, query: str) -> dict:
+        """Parse SQL-like query syntax for audit log filtering
+        
+        Syntax: SELECT * WHERE action='kick' AND user='@User' AND target='@Target' AND after='2024-01-01' LIMIT 10
+        
+        Returns dict with: action, user_id, target_id, before, after, limit
+        """
+        import re
+        from datetime import datetime, timedelta
+        
+        result = {}
+        query_upper = query.upper()
+        
+        # Extract LIMIT
+        limit_match = re.search(r'LIMIT\s+(\d+)', query_upper)
+        if limit_match:
+            result['limit'] = min(int(limit_match.group(1)), 100)
+        else:
+            result['limit'] = 10
+        
+        # Extract WHERE clause
+        where_match = re.search(r'WHERE\s+(.+?)(?:LIMIT|$)', query, re.IGNORECASE)
+        if not where_match:
+            return result
+        
+        where_clause = where_match.group(1).strip()
+        
+        # Parse conditions (simple AND-based parser)
+        conditions = re.split(r'\s+AND\s+', where_clause, flags=re.IGNORECASE)
+        
+        for condition in conditions:
+            # Parse key='value' or key="value"
+            match = re.match(r"(\w+)\s*=\s*['\"]([^'\"]+)['\"]", condition.strip())
+            if not match:
+                continue
+            
+            key = match.group(1).lower()
+            value = match.group(2)
+            
+            if key == 'action':
+                result['action'] = value
+            
+            elif key == 'user':
+                # Extract user ID from mention or direct ID
+                user_id_match = re.search(r'<@!?(\d+)>|^(\d+)$', value)
+                if user_id_match:
+                    result['user_id'] = int(user_id_match.group(1) or user_id_match.group(2))
+            
+            elif key == 'target':
+                # Extract target ID from mention or direct ID
+                target_id_match = re.search(r'<@!?(\d+)>|<#(\d+)>|<@&(\d+)>|^(\d+)$', value)
+                if target_id_match:
+                    result['target_id'] = int(target_id_match.group(1) or target_id_match.group(2) or target_id_match.group(3) or target_id_match.group(4))
+            
+            elif key == 'after':
+                # Parse date/time
+                try:
+                    # Try parsing relative time (e.g., "1d", "2h", "30m")
+                    relative_match = re.match(r'(\d+)([dhm])', value.lower())
+                    if relative_match:
+                        amount = int(relative_match.group(1))
+                        unit = relative_match.group(2)
+                        
+                        if unit == 'd':
+                            result['after'] = datetime.now() - timedelta(days=amount)
+                        elif unit == 'h':
+                            result['after'] = datetime.now() - timedelta(hours=amount)
+                        elif unit == 'm':
+                            result['after'] = datetime.now() - timedelta(minutes=amount)
+                    else:
+                        # Try parsing absolute date
+                        result['after'] = datetime.fromisoformat(value)
+                except:
+                    result['error'] = f"Invalid date format for 'after': {value}"
+                    return result
+            
+            elif key == 'before':
+                # Parse date/time
+                try:
+                    # Try parsing relative time
+                    relative_match = re.match(r'(\d+)([dhm])', value.lower())
+                    if relative_match:
+                        amount = int(relative_match.group(1))
+                        unit = relative_match.group(2)
+                        
+                        if unit == 'd':
+                            result['before'] = datetime.now() - timedelta(days=amount)
+                        elif unit == 'h':
+                            result['before'] = datetime.now() - timedelta(hours=amount)
+                        elif unit == 'm':
+                            result['before'] = datetime.now() - timedelta(minutes=amount)
+                    else:
+                        # Try parsing absolute date
+                        result['before'] = datetime.fromisoformat(value)
+                except:
+                    result['error'] = f"Invalid date format for 'before': {value}"
+                    return result
+        
+        return result
     
