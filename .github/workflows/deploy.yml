@@ -38,7 +38,8 @@ jobs:
           CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1) &&
           echo "Chrome version: $CHROME_VERSION" &&
           MAJOR_VERSION=$(echo $CHROME_VERSION | cut -d'.' -f1) &&
-          CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$MAJOR_VERSION") &&
+          # Try major version first, fallback to latest
+          CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$MAJOR_VERSION" || curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE") &&
           echo "ChromeDriver version: $CHROMEDRIVER_VERSION" &&
           curl -o /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip" &&
           unzip /tmp/chromedriver.zip -d /tmp &&
