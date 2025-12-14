@@ -9,6 +9,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 import time
 
 
@@ -35,28 +36,12 @@ def get_chrome_driver():
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-plugins")
 
-    # Try to find chromedriver
-    driver_paths = [
-        "/usr/local/bin/chromedriver",  # Our downloaded one
-        "/usr/bin/chromedriver",
-        "/usr/lib/bin/chromedriver",
-        "/usr/lib/x86_64-linux-gnu/bin/chromedriver",
-        "chromedriver"
-    ]
-
-    driver = None
-    for path in driver_paths:
-        try:
-            driver = webdriver.Chrome(executable_path=path, options=chrome_options)
-            # Execute script to remove webdriver property
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            break
-        except Exception:
-            continue
-
-    if not driver:
-        raise RuntimeError("Could not find or start ChromeDriver. Please ensure it's installed and in PATH.")
-
+    # Use webdriver-manager to automatically download correct ChromeDriver
+    driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
+    
+    # Execute script to remove webdriver property
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    
     return driver
 
 
