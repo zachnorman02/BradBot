@@ -159,106 +159,219 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                             pass
 
                 try:
-                    # Repeat the chosen playback pattern 'repeat' times (small pause between iterations)
-                    for i in range(max(1, int(repeat or 1))):
-                        # Alternate pattern: tone -> TTS -> tone
-                        if alternate and tone and tts:
-                            # initial tone
-                            try:
-                                tmp_fd, tmp_tone1 = tempfile.mkstemp(suffix='.wav')
-                                os.close(tmp_fd)
-                                try:
-                                    subprocess.run([
-                                        'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=2', '-ar', '48000', '-ac', '2', '-y', tmp_tone1
-                                    ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                                    size = os.path.getsize(tmp_tone1) if os.path.exists(tmp_tone1) else None
-                                    logger.info('Generated tone file %s size=%s', tmp_tone1, size)
-                                    await _play_and_wait(tmp_tone1)
-                                except Exception as e:
-                                    logger.exception('Failed to generate initial tone: %s', e)
+                    # If repeat == 0, treat as "hold continuously until cancelled" mode
+                    rep = int(repeat or 1)
+                    if rep == 0:
+                        # continuous play until cancelled; respond to task cancellation
+                        try:
+                            while True:
+                                # Alternate pattern: tone -> TTS -> tone
+                                if alternate and tone and tts:
+                                    # initial tone
                                     try:
-                                        os.remove(tmp_tone1)
+                                        tmp_fd, tmp_tone1 = tempfile.mkstemp(suffix='.wav')
+                                        os.close(tmp_fd)
+                                        try:
+                                            subprocess.run([
+                                                'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=2', '-ar', '48000', '-ac', '2', '-y', tmp_tone1
+                                            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                            size = os.path.getsize(tmp_tone1) if os.path.exists(tmp_tone1) else None
+                                            logger.info('Generated tone file %s size=%s', tmp_tone1, size)
+                                            await _play_and_wait(tmp_tone1)
+                                        except Exception as e:
+                                            logger.exception('Failed to generate initial tone (continuous): %s', e)
+                                            try:
+                                                os.remove(tmp_tone1)
+                                            except Exception:
+                                                pass
                                     except Exception:
-                                        pass
-                            except Exception:
-                                try:
-                                    os.remove(tmp_tone1)
-                                except Exception:
-                                    pass
+                                        try:
+                                            os.remove(tmp_tone1)
+                                        except Exception:
+                                            pass
 
-                            # TTS (use provider helper — gTTS fallback, optional Polly)
-                            try:
-                                tmp_fd, tmp_tts = tempfile.mkstemp(suffix='.mp3')
-                                os.close(tmp_fd)
-                                synthesize_tts_to_file(message or 'Alarm', tmp_tts)
-                                await _play_and_wait(tmp_tts)
-                            except Exception:
-                                try:
-                                    os.remove(tmp_tts)
-                                except Exception:
-                                    pass
-
-                            # final tone (short)
-                            try:
-                                tmp_fd, tmp_tone2 = tempfile.mkstemp(suffix='.wav')
-                                os.close(tmp_fd)
-                                try:
-                                    subprocess.run([
-                                        'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=1', '-ar', '48000', '-ac', '2', '-y', tmp_tone2
-                                    ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                                    size2 = os.path.getsize(tmp_tone2) if os.path.exists(tmp_tone2) else None
-                                    logger.info('Generated final tone file %s size=%s', tmp_tone2, size2)
-                                    await _play_and_wait(tmp_tone2)
-                                except Exception as e:
-                                    logger.exception('Failed to generate final tone: %s', e)
+                                    # TTS
                                     try:
-                                        os.remove(tmp_tone2)
-                                    except Exception:
-                                        pass
-                            except Exception:
-                                try:
-                                    os.remove(tmp_tone2)
-                                except Exception:
-                                    pass
+                                        tmp_fd, tmp_tts = tempfile.mkstemp(suffix='.mp3')
+                                        os.close(tmp_fd)
+                                        synthesize_tts_to_file(message or 'Alarm', tmp_tts)
+                                        await _play_and_wait(tmp_tts)
+                                    except Exception as e:
+                                        logger.exception('TTS generation/playback failed: %s', e)
+                                        try:
+                                            os.remove(tmp_tts)
+                                        except Exception:
+                                            pass
 
-                        else:
-                            # fallback: tone or tts only
-                            if tone:
+                                    # final tone (short)
+                                    try:
+                                        tmp_fd, tmp_tone2 = tempfile.mkstemp(suffix='.wav')
+                                        os.close(tmp_fd)
+                                        try:
+                                            subprocess.run([
+                                                'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=1', '-ar', '48000', '-ac', '2', '-y', tmp_tone2
+                                            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                            size2 = os.path.getsize(tmp_tone2) if os.path.exists(tmp_tone2) else None
+                                            logger.info('Generated final tone file %s size=%s', tmp_tone2, size2)
+                                            await _play_and_wait(tmp_tone2)
+                                        except Exception as e:
+                                            logger.exception('Failed to generate final tone (continuous): %s', e)
+                                            try:
+                                                os.remove(tmp_tone2)
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        try:
+                                            os.remove(tmp_tone2)
+                                        except Exception:
+                                            pass
+
+                                else:
+                                    # fallback: tone or tts only
+                                    if tone:
+                                        try:
+                                            tmp_fd, tmp_path = tempfile.mkstemp(suffix='.wav')
+                                            os.close(tmp_fd)
+                                            try:
+                                                subprocess.run([
+                                                    'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=4', '-ar', '48000', '-ac', '2', '-y', tmp_path
+                                                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                                sizep = os.path.getsize(tmp_path) if os.path.exists(tmp_path) else None
+                                                logger.info('Generated fallback tone file %s size=%s', tmp_path, sizep)
+                                                await _play_and_wait(tmp_path)
+                                            except Exception as e:
+                                                logger.exception('Failed to generate fallback tone (continuous): %s', e)
+                                                try:
+                                                    os.remove(tmp_path)
+                                                except Exception:
+                                                    pass
+                                        except Exception:
+                                            try:
+                                                os.remove(tmp_path)
+                                            except Exception:
+                                                pass
+                                    elif tts:
+                                        try:
+                                            tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3')
+                                            os.close(tmp_fd)
+                                            synthesize_tts_to_file(message or 'Alarm', tmp_path)
+                                            await _play_and_wait(tmp_path)
+                                        except Exception as e:
+                                            logger.exception('TTS generation/playback failed: %s', e)
+                                            try:
+                                                os.remove(tmp_path)
+                                            except Exception:
+                                                pass
+
+                                # short pause to avoid tight loop
+                                await asyncio.sleep(0.5)
+                        except asyncio.CancelledError:
+                            try:
+                                vc.stop()
+                            except Exception:
+                                pass
+                            raise
+                    else:
+                        # Repeat the chosen playback pattern 'repeat' times (small pause between iterations)
+                        for i in range(max(1, rep)):
+                            # Alternate pattern: tone -> TTS -> tone
+                            if alternate and tone and tts:
+                                # initial tone
                                 try:
-                                    tmp_fd, tmp_path = tempfile.mkstemp(suffix='.wav')
+                                    tmp_fd, tmp_tone1 = tempfile.mkstemp(suffix='.wav')
                                     os.close(tmp_fd)
                                     try:
                                         subprocess.run([
-                                            'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=4', '-ar', '48000', '-ac', '2', '-y', tmp_path
+                                            'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=2', '-ar', '48000', '-ac', '2', '-y', tmp_tone1
                                         ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                                        sizep = os.path.getsize(tmp_path) if os.path.exists(tmp_path) else None
-                                        logger.info('Generated fallback tone file %s size=%s', tmp_path, sizep)
-                                        await _play_and_wait(tmp_path)
+                                        size = os.path.getsize(tmp_tone1) if os.path.exists(tmp_tone1) else None
+                                        logger.info('Generated tone file %s size=%s', tmp_tone1, size)
+                                        await _play_and_wait(tmp_tone1)
                                     except Exception as e:
-                                        logger.exception('Failed to generate fallback tone: %s', e)
+                                        logger.exception('Failed to generate initial tone: %s', e)
                                         try:
-                                            os.remove(tmp_path)
+                                            os.remove(tmp_tone1)
                                         except Exception:
                                             pass
                                 except Exception:
                                     try:
-                                        os.remove(tmp_path)
-                                    except Exception:
-                                        pass
-                            elif tts:
-                                try:
-                                    tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3')
-                                    os.close(tmp_fd)
-                                    synthesize_tts_to_file(message or 'Alarm', tmp_path)
-                                    await _play_and_wait(tmp_path)
-                                except Exception:
-                                    try:
-                                        os.remove(tmp_path)
+                                        os.remove(tmp_tone1)
                                     except Exception:
                                         pass
 
-                        # small pause between repeats
-                        await asyncio.sleep(0.5)
+                                # TTS (use provider helper — gTTS fallback, optional Polly)
+                                try:
+                                    tmp_fd, tmp_tts = tempfile.mkstemp(suffix='.mp3')
+                                    os.close(tmp_fd)
+                                    synthesize_tts_to_file(message or 'Alarm', tmp_tts)
+                                    await _play_and_wait(tmp_tts)
+                                except Exception:
+                                    try:
+                                        os.remove(tmp_tts)
+                                    except Exception:
+                                        pass
+
+                                # final tone (short)
+                                try:
+                                    tmp_fd, tmp_tone2 = tempfile.mkstemp(suffix='.wav')
+                                    os.close(tmp_fd)
+                                    try:
+                                        subprocess.run([
+                                            'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=1', '-ar', '48000', '-ac', '2', '-y', tmp_tone2
+                                        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                        size2 = os.path.getsize(tmp_tone2) if os.path.exists(tmp_tone2) else None
+                                        logger.info('Generated final tone file %s size=%s', tmp_tone2, size2)
+                                        await _play_and_wait(tmp_tone2)
+                                    except Exception as e:
+                                        logger.exception('Failed to generate final tone: %s', e)
+                                        try:
+                                            os.remove(tmp_tone2)
+                                        except Exception:
+                                            pass
+                                except Exception:
+                                    try:
+                                        os.remove(tmp_tone2)
+                                    except Exception:
+                                        pass
+
+                            else:
+                                # fallback: tone or tts only
+                                if tone:
+                                    try:
+                                        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.wav')
+                                        os.close(tmp_fd)
+                                        try:
+                                            subprocess.run([
+                                                'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=4', '-ar', '48000', '-ac', '2', '-y', tmp_path
+                                            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                            sizep = os.path.getsize(tmp_path) if os.path.exists(tmp_path) else None
+                                            logger.info('Generated fallback tone file %s size=%s', tmp_path, sizep)
+                                            await _play_and_wait(tmp_path)
+                                        except Exception as e:
+                                            logger.exception('Failed to generate fallback tone: %s', e)
+                                            try:
+                                                os.remove(tmp_path)
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        try:
+                                            os.remove(tmp_path)
+                                        except Exception:
+                                            pass
+                                elif tts:
+                                    try:
+                                        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3')
+                                        os.close(tmp_fd)
+                                        synthesize_tts_to_file(message or 'Alarm', tmp_path)
+                                        await _play_and_wait(tmp_path)
+                                    except Exception:
+                                        try:
+                                            os.remove(tmp_path)
+                                        except Exception:
+                                            pass
+
+                            # small pause between repeats
+                            await asyncio.sleep(0.5)
                 except Exception:
                     pass
 
@@ -335,7 +448,7 @@ class AlarmGroup(app_commands.Group):
         super().__init__(name='alarm', description='Set simple alarms (message or TTS)')
 
     @app_commands.command(name='set', description='Set an alarm. Example: "in 10m" or "2025-12-31 08:00"')
-    @app_commands.describe(time='Relative (e.g. "in 10m") or absolute (YYYY-MM-DD HH:MM)', message='Message to send when alarm fires', channel='Channel to send the alarm to (defaults to current channel)', tts='If true, try to speak the message in voice if connected', tone='If true, play a loud tone in voice instead of TTS', alternate='If true and both tone+tts are set, alternate tone and TTS (tone->tts->tone)', repeat='Number of times to play the alarm audio (default 1, max 10)', interval='Optional recurrence interval (e.g. "daily", "hourly", or "in 1h30m")', tz='Optional timezone for absolute times (e.g. "Europe/London" or "+02:00")')
+    @app_commands.describe(time='Relative (e.g. "in 10m") or absolute (YYYY-MM-DD HH:MM)', message='Message to send when alarm fires', channel='Channel to send the alarm to (defaults to current channel)', tts='If true, try to speak the message in voice if connected', tone='If true, play a loud tone in voice instead of TTS', alternate='If true and both tone+tts are set, alternate tone and TTS (tone->tts->tone)', repeat='Number of times to play the alarm audio (default 1, max 10; set 0 to hold continuously until cancelled)', interval='Optional recurrence interval (e.g. "daily", "hourly", or "in 1h30m")', tz='Optional timezone for absolute times (e.g. "Europe/London" or "+02:00")')
     async def set(self, interaction: discord.Interaction, time: str, message: str = None, channel: discord.TextChannel = None, tts: bool = False, tone: bool = False, alternate: bool = False, repeat: int = 1, interval: str = None, tz: str = None):
         if not interaction.guild:
             await interaction.response.send_message('❌ Alarms must be set in a server.', ephemeral=True)
@@ -424,8 +537,10 @@ class AlarmGroup(app_commands.Group):
                 repeat_val = int(repeat)
             except Exception:
                 repeat_val = 1
-            if repeat_val < 1:
-                repeat_val = 1
+            # allow 0 as a special value meaning "hold continuously until cancelled"
+            if repeat_val < 0:
+                repeat_val = 0
+            # cap positive repeats
             if repeat_val > 10:
                 repeat_val = 10
 

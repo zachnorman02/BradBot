@@ -1,5 +1,8 @@
 import os
 import typing
+import logging
+
+logger = logging.getLogger('bradbot.tts')
 
 def synthesize_tts_to_file(text: str, out_path: str) -> None:
     """Synthesize `text` to `out_path` (mp3 recommended).
@@ -12,6 +15,8 @@ def synthesize_tts_to_file(text: str, out_path: str) -> None:
     """
     provider = os.getenv('BRADBOT_TTS_PROVIDER', 'gtts').strip().lower()
     text_to_use = text or 'Alarm'
+
+    logger.info('TTS provider selected: %s', provider)
 
     if provider == 'polly':
         try:
@@ -29,9 +34,12 @@ def synthesize_tts_to_file(text: str, out_path: str) -> None:
                 raise RuntimeError('No AudioStream in Polly response')
             with open(out_path, 'wb') as f:
                 f.write(stream.read())
+        except Exception:
+            logger.exception('Polly TTS synthesis failed')
+            raise
         finally:
             try:
-                if hasattr(stream, 'close'):
+                if 'stream' in locals() and hasattr(stream, 'close'):
                     stream.close()
             except Exception:
                 pass
@@ -42,5 +50,9 @@ def synthesize_tts_to_file(text: str, out_path: str) -> None:
         except Exception as e:
             raise RuntimeError('gTTS is required as a fallback provider; install gTTS') from e
 
-        t = gTTS(text=text_to_use, lang='en')
-        t.save(out_path)
+        try:
+            t = gTTS(text=text_to_use, lang='en')
+            t.save(out_path)
+        except Exception:
+            logger.exception('gTTS synthesis failed')
+            raise
