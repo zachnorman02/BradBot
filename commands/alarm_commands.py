@@ -25,7 +25,10 @@ def _seconds_until(fire_at_str: str) -> float:
         except Exception:
             # give up
             return -1
-    now = dt.datetime.utcnow()
+    # normalize to UTC-aware
+    if isinstance(then, dt.datetime) and then.tzinfo is None:
+        then = then.replace(tzinfo=dt.timezone.utc)
+    now = dt.datetime.now(dt.timezone.utc)
     return (then - now).total_seconds()
 
 
@@ -37,7 +40,9 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
             return
         fire_at = rows[0][0]
         # compute delay
-        now = dt.datetime.utcnow()
+        # use timezone-aware UTC 'now'
+        now = dt.datetime.now(dt.timezone.utc)
+
         if isinstance(fire_at, str):
             try:
                 fire_dt = dt.datetime.fromisoformat(fire_at)
@@ -46,9 +51,13 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
         else:
             fire_dt = fire_at
 
+        # normalize fire_dt to UTC-aware
+        if isinstance(fire_dt, dt.datetime) and fire_dt.tzinfo is None:
+            fire_dt = fire_dt.replace(tzinfo=dt.timezone.utc)
+
         # Main loop: fire, then if interval_seconds is set, update fire_at and loop for next occurrence.
         while True:
-            delay = (fire_dt - dt.datetime.utcnow()).total_seconds()
+            delay = (fire_dt - dt.datetime.now(dt.timezone.utc)).total_seconds()
             if delay > 0:
                 await asyncio.sleep(delay)
 
@@ -223,9 +232,13 @@ def schedule_alarm_task(bot: discord.Client, alarm_row: tuple):
         try:
             fire_dt = dt.datetime.strptime(str(fire_at), "%Y-%m-%d %H:%M:%S")
         except Exception:
-            fire_dt = dt.datetime.utcnow()
+            fire_dt = dt.datetime.now(dt.timezone.utc)
 
-    delay = (fire_dt - dt.datetime.utcnow()).total_seconds()
+    # normalize to UTC-aware
+    if isinstance(fire_dt, dt.datetime) and fire_dt.tzinfo is None:
+        fire_dt = fire_dt.replace(tzinfo=dt.timezone.utc)
+
+    delay = (fire_dt - dt.datetime.now(dt.timezone.utc)).total_seconds()
     if delay < 0:
         delay = 0
 
@@ -279,40 +292,44 @@ class AlarmGroup(app_commands.Group):
                 total += int(num)
             delay = total
         else:
-            # absolute
-            try:
-                # parse naive local time first
-                if 'T' in time:
-                    naive_dt = dt.datetime.fromisoformat(time)
-                else:
-                    naive_dt = dt.datetime.strptime(time, '%Y-%m-%d %H:%M')
+                # absolute
+                try:
+                    # parse naive local time first
+                    if 'T' in time:
+                        naive_dt = dt.datetime.fromisoformat(time)
+                    else:
+                        naive_dt = dt.datetime.strptime(time, '%Y-%m-%d %H:%M')
 
-                # apply timezone if provided
-                if tz:
-                    try:
-                        if tz.startswith('+') or tz.startswith('-'):
-                            # parse offset like +02:00
-                            sign = 1 if tz[0] == '+' else -1
-                            parts = tz[1:].split(':')
-                            hh = int(parts[0])
-                            mm = int(parts[1]) if len(parts) > 1 else 0
-                            offset = dt.timedelta(hours=hh, minutes=mm) * sign
-                            tzinfo = dt.timezone(offset)
+                    # apply timezone if provided
+                    if tz:
+                        try:
+                            if tz.startswith('+') or tz.startswith('-'):
+                                # parse offset like +02:00
+                                sign = 1 if tz[0] == '+' else -1
+                                parts = tz[1:].split(':')
+                                hh = int(parts[0])
+                                mm = int(parts[1]) if len(parts) > 1 else 0
+                                offset = dt.timedelta(hours=hh, minutes=mm) * sign
+                                tzinfo = dt.timezone(offset)
+                            else:
+                                tzinfo = ZoneInfo(tz)
+                            aware = naive_dt.replace(tzinfo=tzinfo)
+                            fire_dt = aware.astimezone(dt.timezone.utc)
+                        except Exception:
+                            # failed to apply zoneinfo - consider input invalid
+                            await interaction.response.send_message('❌ Invalid timezone provided. Use IANA zone name like "Europe/London" or offset like "+02:00".', ephemeral=True)
+                            return
+                    else:
+                        # no timezone - assume UTC for absolute times
+                        if isinstance(naive_dt, dt.datetime) and naive_dt.tzinfo is None:
+                            fire_dt = naive_dt.replace(tzinfo=dt.timezone.utc)
                         else:
-                            tzinfo = ZoneInfo(tz)
-                        aware = naive_dt.replace(tzinfo=tzinfo)
-                        fire_dt = aware.astimezone(dt.timezone.utc).replace(tzinfo=None)
-                    except Exception:
-                        # failed to apply zoneinfo - consider input invalid
-                        await interaction.response.send_message('❌ Invalid timezone provided. Use IANA zone name like "Europe/London" or offset like "+02:00".', ephemeral=True)
-                        return
-                else:
-                    # no timezone - assume UTC for absolute times
-                    fire_dt = naive_dt
+                            # if it already has tzinfo, normalize to UTC
+                            fire_dt = naive_dt.astimezone(dt.timezone.utc)
 
-                delay = (fire_dt - now).total_seconds()
-            except Exception:
-                delay = None
+                    delay = (fire_dt - now).total_seconds()
+                except Exception:
+                    delay = None
 
         if delay is None or delay <= 0:
             await interaction.response.send_message('❌ Could not parse time. Use "in 10m" or "YYYY-MM-DD HH:MM".', ephemeral=True)
@@ -322,8 +339,8 @@ class AlarmGroup(app_commands.Group):
             channel = interaction.channel
 
         fire_dt = now + dt.timedelta(seconds=delay)
-        # store as ISO in UTC
-        fire_at_iso = fire_dt.astimezone(dt.timezone.utc).isoformat() if fire_dt.tzinfo else fire_dt.replace(tzinfo=dt.timezone.utc).isoformat()
+        # store as ISO in UTC (fire_dt is already UTC-aware)
+        fire_at_iso = fire_dt.astimezone(dt.timezone.utc).isoformat()
         aid = uuid.uuid4().hex[:8]
         try:
             # sanitize repeat
