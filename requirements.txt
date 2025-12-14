@@ -9,8 +9,6 @@ pynacl
 pillow
 python-dateutil
 selenium
-webdriver-manager
-yt-dlp
-selenium
 gTTS
 boto3
+playwright

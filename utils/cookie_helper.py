@@ -4,48 +4,26 @@ Cookie handling utilities for BradBot
 import os
 import json
 import tempfile
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager, ChromeType
+from playwright.sync_api import sync_playwright
 import time
 
 
-def get_chrome_driver():
-    """Get a Chrome WebDriver instance configured for headless operation."""
-    # Set display for GUI mode (not needed for headless)
-    # os.environ.setdefault('DISPLAY', ':1')
-    
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--remote-debugging-port=9222")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    
-    # Set Chrome binary location
-    chrome_options.binary_location = "/usr/bin/google-chrome"
-    
-    # Anti-detection measures
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-plugins")
-
-    # Use webdriver-manager to automatically download correct ChromeDriver
-    service = Service(ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    
-    # Execute script to remove webdriver property
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-    
-    return driver
+def get_browser():
+    """Get a Playwright browser instance configured for headless operation."""
+    playwright = sync_playwright().start()
+    browser = playwright.chromium.launch(
+        headless=True,
+        args=[
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-extensions",
+            "--disable-plugins",
+            "--disable-blink-features=AutomationControlled",
+            "--disable-web-security",
+        ]
+    )
+    return browser, playwright
 
 
 def fetch_youtube_cookies():
@@ -71,92 +49,89 @@ def fetch_youtube_cookies():
             print("[COOKIES] No credentials provided - skipping login")
             return None
 
-        driver = get_chrome_driver()
+        browser, playwright = get_browser()
+        context = browser.new_context()
+        page = context.new_page()
 
         # Navigate to YouTube
         print("[COOKIES] Navigating to YouTube...")
-        driver.get("https://www.youtube.com")
+        page.goto("https://www.youtube.com")
 
         # Wait for page to load
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
-        )
+        page.wait_for_load_state("networkidle")
+        time.sleep(2)
 
         # Take screenshot for debugging
-        driver.save_screenshot("/tmp/youtube_homepage.png")
+        page.screenshot(path="/tmp/youtube_homepage.png")
         print("[COOKIES] Saved screenshot of YouTube homepage")
 
         # Check if we need to log in
         logged_in = False
         try:
             # Look for sign-in button - if it exists, we're not logged in
-            sign_in_button = driver.find_element(By.XPATH, "//a[contains(@href, 'signin')]")
-            print("[COOKIES] Sign-in button found - attempting login")
+            sign_in_locator = page.locator("a[href*='signin']")
+            if sign_in_locator.count() > 0:
+                print("[COOKIES] Sign-in button found - attempting login")
 
-            # Click sign-in button
-            sign_in_button.click()
-            print("[COOKIES] Clicked sign-in button")
-            time.sleep(2)
-            driver.save_screenshot("/tmp/signin_clicked.png")
+                # Click sign-in button
+                sign_in_locator.click()
+                print("[COOKIES] Clicked sign-in button")
+                page.wait_for_load_state("networkidle")
+                time.sleep(2)
+                page.screenshot(path="/tmp/signin_clicked.png")
 
-            # Wait for login page to load
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "identifierId"))
-            )
-            print("[COOKIES] Login page loaded")
-            driver.save_screenshot("/tmp/login_page.png")
+                # Wait for login page to load
+                page.wait_for_url("**/accounts.google.com/**", timeout=10000)
+                print("[COOKIES] Login page loaded")
+                page.screenshot(path="/tmp/login_page.png")
 
-            # Enter email/username
-            email_input = driver.find_element(By.ID, "identifierId")
-            email_input.clear()
-            email_input.send_keys(username)
-            print("[COOKIES] Entered username")
-            driver.save_screenshot("/tmp/username_entered.png")
+                # Enter email/username
+                email_input = page.locator("#identifierId")
+                email_input.fill(username)
+                print("[COOKIES] Entered username")
+                page.screenshot(path="/tmp/username_entered.png")
 
-            # Click Next
-            next_button = driver.find_element(By.ID, "identifierNext")
-            next_button.click()
-            print("[COOKIES] Clicked Next after username")
-            time.sleep(3)
-            driver.save_screenshot("/tmp/next_clicked.png")
+                # Click Next
+                next_button = page.locator("#identifierNext")
+                next_button.click()
+                print("[COOKIES] Clicked Next after username")
+                time.sleep(3)
+                page.screenshot(path="/tmp/next_clicked.png")
 
-            # Wait for password field
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.NAME, "password"))
-            )
-            print("[COOKIES] Password field loaded")
+                # Wait for password field
+                page.wait_for_selector("input[name='password']", timeout=10000)
+                print("[COOKIES] Password field loaded")
 
-            # Enter password
-            password_input = driver.find_element(By.NAME, "password")
-            password_input.clear()
-            password_input.send_keys(password)
-            print("[COOKIES] Entered password")
+                # Enter password
+                password_input = page.locator("input[name='password']")
+                password_input.fill(password)
+                print("[COOKIES] Entered password")
 
-            # Click Next
-            next_button = driver.find_element(By.ID, "passwordNext")
-            next_button.click()
-            print("[COOKIES] Clicked Next after password")
+                # Click Next
+                next_button = page.locator("#passwordNext")
+                next_button.click()
+                print("[COOKIES] Clicked Next after password")
 
-            # Wait for login to complete - look for YouTube homepage or avatar
-            try:
-                WebDriverWait(driver, 30).until(
-                    lambda d: "youtube.com" in d.current_url and not "signin" in d.current_url
-                )
-                logged_in = True
-                print("[COOKIES] Login successful - on YouTube homepage")
-            except Exception as e:
-                print(f"[COOKIES] Login completion check failed: {e}")
-                # Check if we're on a 2FA or verification page
-                if "challenge" in driver.current_url or "verify" in driver.current_url:
-                    print("[COOKIES] 2FA/Verification required - cannot proceed automatically")
-                    return None
-                else:
-                    print("[COOKIES] Assuming login succeeded despite timeout")                # Navigate back to YouTube if we got redirected
-                if "accounts.google.com" in driver.current_url:
-                    driver.get("https://www.youtube.com")
-                    WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
+                # Wait for login to complete
+                try:
+                    page.wait_for_url("https://www.youtube.com/**", timeout=30000)
+                    logged_in = True
+                    print("[COOKIES] Login successful - on YouTube homepage")
+                except Exception as e:
+                    print(f"[COOKIES] Login completion check failed: {e}")
+                    # Check if we're on a 2FA or verification page
+                    if "challenge" in page.url or "verify" in page.url:
+                        print("[COOKIES] 2FA/Verification required - cannot proceed automatically")
+                        browser.close()
+                        playwright.stop()
+                        return None
+                    else:
+                        print("[COOKIES] Assuming login succeeded despite timeout")
+                        logged_in = True
+                        # Navigate back to YouTube if we got redirected
+                        if "accounts.google.com" in page.url:
+                            page.goto("https://www.youtube.com")
+                            page.wait_for_load_state("networkidle")
 
             else:
                 print("[COOKIES] No credentials provided - will try to get basic cookies without login")
@@ -167,11 +142,13 @@ def fetch_youtube_cookies():
             logged_in = True
 
         # Get cookies
-        cookies = driver.get_cookies()
+        cookies = context.cookies()
         print(f"[COOKIES] Retrieved {len(cookies)} cookies")
 
         if not cookies:
             print("[COOKIES] No cookies found")
+            browser.close()
+            playwright.stop()
             return None
 
         # Save cookies to temporary file
@@ -187,12 +164,14 @@ def fetch_youtube_cookies():
 
                 secure = 'TRUE' if cookie.get('secure', False) else 'FALSE'
                 http_only = 'TRUE' if cookie.get('httpOnly', False) else 'FALSE'
-                expiry = str(int(cookie.get('expiry', 0))) if cookie.get('expiry') else '0'
+                expiry = str(int(cookie.get('expires', 0))) if cookie.get('expires') else '0'
 
                 line = f"{domain}\tTRUE\t{cookie.get('path', '/')}\t{secure}\t{expiry}\t{cookie.get('name')}\t{cookie.get('value')}\n"
                 f.write(line)
 
         print(f"[COOKIES] Saved {len(cookies)} cookies to {cookie_file}")
+        browser.close()
+        playwright.stop()
         return cookie_file
 
     except Exception as e:
@@ -202,9 +181,10 @@ def fetch_youtube_cookies():
         return None
 
     finally:
-        if driver:
+        if 'browser' in locals():
             try:
-                driver.quit()
+                browser.close()
+                playwright.stop()
             except:
                 pass
 
