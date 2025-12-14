@@ -34,12 +34,12 @@ jobs:
           echo "Virtual environment created successfully" &&
           # Ensure system packages are up-to-date and install required packages
           sudo apt-get update && sudo apt-get install -y ffmpeg google-chrome-stable python3-venv python3-pip virtualenv jq curl unzip &&
-          # Download ChromeDriver (hardcoded recent version)
-          CHROMEDRIVER_VERSION="131.0.6778.85" &&
+          # Download ChromeDriver (known working version)
+          CHROMEDRIVER_VERSION="120.0.6099.109" &&
           echo "ChromeDriver version: $CHROMEDRIVER_VERSION" &&
-          curl -o /tmp/chromedriver.zip "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/$CHROMEDRIVER_VERSION/chromedriver-linux64.zip" &&
+          curl -o /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip" &&
           unzip /tmp/chromedriver.zip -d /tmp &&
-          sudo mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver &&
+          sudo mv /tmp/chromedriver /usr/local/bin/chromedriver &&
           sudo chmod +x /usr/local/bin/chromedriver &&
           # Install Deno if not present
           if ! command -v deno &> /dev/null; then
