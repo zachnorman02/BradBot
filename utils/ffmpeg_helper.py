@@ -54,8 +54,14 @@ def ensure_ffmpeg(dest_bin_dir: str | None = None) -> str | None:
     if path:
         return path
 
-    # Only attempt auto-install on linux x86_64
+    # Only attempt auto-install on linux x86_64 (avoid downloading amd64 binary on ARM hosts)
     if sys.platform.startswith('linux') and (sys.maxsize > 2**32):
+        import platform
+        arch = platform.machine().lower()
+        if arch not in ('x86_64', 'amd64'):
+            # not an amd64 machine — do not attempt to download an incompatible static build
+            print(f"⚠️ ffmpeg auto-install skipped: unsupported architecture '{arch}'")
+            return None
         if dest_bin_dir is None:
             dest_bin_dir = os.path.join(os.getcwd(), 'bin')
         url = 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz'

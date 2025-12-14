@@ -27,6 +27,8 @@ jobs:
           cd /home/ubuntu/bradbot &&
           git pull origin main &&
           git submodule update --init --recursive &&
+          # Ensure system packages are up-to-date and ffmpeg is installed (Ubuntu)
+          sudo apt-get update && sudo apt-get install -y ffmpeg &&
           source venv/bin/activate &&
           pip install -r requirements.txt &&
           echo "Updating systemd service file..." &&
