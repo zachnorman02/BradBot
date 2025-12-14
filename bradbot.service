@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/bradbot
-Environment=PATH=/home/ubuntu/bradbot/venv/bin
+Environment=PATH=/home/ubuntu/bradbot/venv/bin:/home/ubuntu/.deno/bin
 Environment=DB_HOST=ontgcoj4pznoqbq4aznk64mehy.dsql.us-east-1.on.aws
 Environment=DB_PORT=5432
 Environment=DB_NAME=postgres

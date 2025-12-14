@@ -54,8 +54,7 @@ jobs:
               YOUTUBE_PASSWORD=$(grep "YOUTUBE_PASSWORD" /etc/systemd/system/bradbot.service.backup | cut -d'=' -f2-) &&
               sudo sed -i "/^Environment=YOUTUBE_USERNAME=/d" /etc/systemd/system/bradbot.service &&
               sudo sed -i "/^Environment=YOUTUBE_PASSWORD=/d" /etc/systemd/system/bradbot.service &&
-              echo "Environment=YOUTUBE_USERNAME=$YOUTUBE_USERNAME" | sudo tee -a /etc/systemd/system/bradbot.service > /dev/null &&
-              echo "Environment=YOUTUBE_PASSWORD=$YOUTUBE_PASSWORD" | sudo tee -a /etc/systemd/system/bradbot.service > /dev/null
+              sudo sed -i "/^\[Install\]/i Environment=YOUTUBE_USERNAME=$YOUTUBE_USERNAME\nEnvironment=YOUTUBE_PASSWORD=$YOUTUBE_PASSWORD" /etc/systemd/system/bradbot.service
             fi
           else
             sudo cp bradbot.service /etc/systemd/system/bradbot.service
