@@ -32,6 +32,7 @@ async def fetch_youtube_cookies():
             return None
 
         async with async_playwright() as p:
+            print("[COOKIES] Starting Playwright...")
             browser = await p.chromium.launch(
                 headless=True,
                 args=[
@@ -40,8 +41,11 @@ async def fetch_youtube_cookies():
                     "--disable-gpu",
                 ]
             )
+            print("[COOKIES] Browser launched")
             context = await browser.new_context()
+            print("[COOKIES] Context created")
             page = await context.new_page()
+            print("[COOKIES] Page created")
 
         # Navigate to YouTube
         print("[COOKIES] Navigating to YouTube...")
