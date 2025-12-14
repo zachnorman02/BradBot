@@ -9,8 +9,12 @@ from typing import Dict
 
 import discord
 from discord import app_commands
+import shutil
+import logging
 
 from database import db
+
+logger = logging.getLogger('bradbot.alarm')
 
 # In-process scheduled tasks for alarms: alarm_id -> asyncio.Task
 ALARM_TASKS: Dict[str, asyncio.Task] = {}
@@ -89,7 +93,16 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                 async def _play_and_wait(path: str):
                     try:
                         from discord import FFmpegPCMAudio
-                        audio = FFmpegPCMAudio(path)
+                        # prefer system ffmpeg if available
+                        ffmpeg_exec = shutil.which('ffmpeg') or 'ffmpeg'
+                        try:
+                            # log ffmpeg version for diagnostics
+                            ver = subprocess.run([ffmpeg_exec, '-version'], check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=5)
+                            logger.info('Using ffmpeg: %s', ver.stdout.splitlines()[0] if ver and ver.stdout else ffmpeg_exec)
+                        except Exception as e:
+                            logger.warning('Could not run ffmpeg -version: %s', e)
+
+                        audio = FFmpegPCMAudio(path, executable=ffmpeg_exec)
                         # stop any current playback and play immediately
                         try:
                             vc.stop()
