@@ -33,7 +33,7 @@ async def fetch_youtube_cookies():
 
         async with async_playwright() as p:
             print("[COOKIES] Starting Playwright...")
-            browser = await p.chromium.launch(
+            browser = await p.firefox.launch(
                 headless=True,
                 args=[
                     "--no-sandbox",

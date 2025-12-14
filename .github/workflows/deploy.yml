@@ -42,7 +42,7 @@ jobs:
           fi &&
           source venv/bin/activate &&
           pip install -r requirements.txt &&
-          playwright install chromium &&
+          playwright install firefox &&
           echo "Updating systemd service file..." &&
           if [ -f /etc/systemd/system/bradbot.service ]; then
             echo "Backing up existing service file..." &&
