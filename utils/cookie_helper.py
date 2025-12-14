@@ -37,8 +37,8 @@ def get_chrome_driver():
 
     # Try to find chromedriver
     driver_paths = [
+        "/usr/local/bin/chromedriver",  # Our downloaded one
         "/usr/bin/chromedriver",
-        "/usr/local/bin/chromedriver",
         "/usr/lib/bin/chromedriver",
         "/usr/lib/x86_64-linux-gnu/bin/chromedriver",
         "chromedriver"
