@@ -10,3 +10,4 @@ pillow
 python-dateutil
 yt-dlp
 gTTS
+boto3

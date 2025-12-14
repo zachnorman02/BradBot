@@ -13,7 +13,9 @@ Environment=DB_NAME=postgres
 Environment=DB_USER=bradbotrole
 Environment=USE_IAM_AUTH=true
 Environment=AWS_REGION=us-east-1
-Environment=BRADBOT_FFMPEG_VOLUME=2.0
+Environment=BRADBOT_FFMPEG_VOLUME=5.0
+Environment=BRADBOT_TTS_PROVIDER=polly
+Environment=BRADBOT_TTS_VOICE=Matthew
 ExecStart=/home/ubuntu/bradbot/venv/bin/python main.py
 Restart=always
 RestartSec=10

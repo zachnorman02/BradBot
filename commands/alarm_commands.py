@@ -13,6 +13,7 @@ import shutil
 import logging
 
 from database import db
+from utils.tts_helper import synthesize_tts_to_file
 
 logger = logging.getLogger('bradbot.alarm')
 
@@ -92,7 +93,7 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
 
                 async def _play_and_wait(path: str):
                     try:
-                        from discord import FFmpegPCMAudio
+                        from discord import FFmpegOpusAudio
                         # prefer system ffmpeg if available
                         ffmpeg_exec = shutil.which('ffmpeg') or 'ffmpeg'
                         try:
@@ -110,7 +111,17 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                             vol = 1.0
                         # FFmpeg options: force 48kHz, stereo PCM and apply volume filter
                         ffmpeg_options = f"-f s16le -ar 48000 -ac 2 -af volume={vol}"
-                        audio = FFmpegPCMAudio(path, executable=ffmpeg_exec, options=ffmpeg_options)
+                        # Log file size for diagnostics
+                        try:
+                            size = os.path.getsize(path)
+                        except Exception:
+                            size = None
+                        logger.info('Playing file size=%s bytes path=%s', size, path)
+
+                        # Use FFmpegOpusAudio which encodes to opus in-process (more reliable for Discord clients)
+                        # options string: no video, set sample rate/channels and volume filter
+                        opus_opts = f"-vn -af volume={vol} -ar 48000 -ac 2"
+                        audio = FFmpegOpusAudio(path, executable=ffmpeg_exec, options=opus_opts)
 
                         # Log bot voice state (muted/deafened) for diagnostics
                         try:
@@ -133,6 +144,14 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                         while vc.is_playing() or vc.is_paused():
                             await asyncio.sleep(0.2)
                         logger.info('Playback finished: guild=%s channel=%s', guild_id, channel_id)
+
+                        # Optionally upload the audio file to the channel for debugging if env var is set
+                        try:
+                            if os.getenv('BRADBOT_DEBUG_UPLOAD_AUDIO', 'false').lower() in ('1', 'true', 'yes') and channel:
+                                with open(path, 'rb') as f:
+                                    await channel.send('Uploading played audio for debugging:', file=discord.File(f, filename=os.path.basename(path)))
+                        except Exception:
+                            logger.exception('Failed to upload debug audio')
                     finally:
                         try:
                             os.remove(path)
@@ -148,23 +167,30 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                             try:
                                 tmp_fd, tmp_tone1 = tempfile.mkstemp(suffix='.wav')
                                 os.close(tmp_fd)
-                                subprocess.run([
-                                    'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=2', '-ar', '48000', '-ac', '2', '-y', tmp_tone1
-                                ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                                await _play_and_wait(tmp_tone1)
+                                try:
+                                    subprocess.run([
+                                        'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=2', '-ar', '48000', '-ac', '2', '-y', tmp_tone1
+                                    ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                    size = os.path.getsize(tmp_tone1) if os.path.exists(tmp_tone1) else None
+                                    logger.info('Generated tone file %s size=%s', tmp_tone1, size)
+                                    await _play_and_wait(tmp_tone1)
+                                except Exception as e:
+                                    logger.exception('Failed to generate initial tone: %s', e)
+                                    try:
+                                        os.remove(tmp_tone1)
+                                    except Exception:
+                                        pass
                             except Exception:
                                 try:
                                     os.remove(tmp_tone1)
                                 except Exception:
                                     pass
 
-                            # TTS
+                            # TTS (use provider helper — gTTS fallback, optional Polly)
                             try:
-                                from gtts import gTTS
                                 tmp_fd, tmp_tts = tempfile.mkstemp(suffix='.mp3')
                                 os.close(tmp_fd)
-                                t = gTTS(text=message or 'Alarm', lang='en')
-                                t.save(tmp_tts)
+                                synthesize_tts_to_file(message or 'Alarm', tmp_tts)
                                 await _play_and_wait(tmp_tts)
                             except Exception:
                                 try:
@@ -176,10 +202,19 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                             try:
                                 tmp_fd, tmp_tone2 = tempfile.mkstemp(suffix='.wav')
                                 os.close(tmp_fd)
-                                subprocess.run([
-                                    'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=1', '-ar', '48000', '-ac', '2', '-y', tmp_tone2
-                                ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                                await _play_and_wait(tmp_tone2)
+                                try:
+                                    subprocess.run([
+                                        'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=1', '-ar', '48000', '-ac', '2', '-y', tmp_tone2
+                                    ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                    size2 = os.path.getsize(tmp_tone2) if os.path.exists(tmp_tone2) else None
+                                    logger.info('Generated final tone file %s size=%s', tmp_tone2, size2)
+                                    await _play_and_wait(tmp_tone2)
+                                except Exception as e:
+                                    logger.exception('Failed to generate final tone: %s', e)
+                                    try:
+                                        os.remove(tmp_tone2)
+                                    except Exception:
+                                        pass
                             except Exception:
                                 try:
                                     os.remove(tmp_tone2)
@@ -192,10 +227,19 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                                 try:
                                     tmp_fd, tmp_path = tempfile.mkstemp(suffix='.wav')
                                     os.close(tmp_fd)
-                                    subprocess.run([
-                                        'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=4', '-ar', '48000', '-ac', '2', '-y', tmp_path
-                                    ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                                    await _play_and_wait(tmp_path)
+                                    try:
+                                        subprocess.run([
+                                            'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=4', '-ar', '48000', '-ac', '2', '-y', tmp_path
+                                        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                        sizep = os.path.getsize(tmp_path) if os.path.exists(tmp_path) else None
+                                        logger.info('Generated fallback tone file %s size=%s', tmp_path, sizep)
+                                        await _play_and_wait(tmp_path)
+                                    except Exception as e:
+                                        logger.exception('Failed to generate fallback tone: %s', e)
+                                        try:
+                                            os.remove(tmp_path)
+                                        except Exception:
+                                            pass
                                 except Exception:
                                     try:
                                         os.remove(tmp_path)
@@ -203,11 +247,9 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                                         pass
                             elif tts:
                                 try:
-                                    from gtts import gTTS
                                     tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3')
                                     os.close(tmp_fd)
-                                    t = gTTS(text=message or 'Alarm', lang='en')
-                                    t.save(tmp_path)
+                                    synthesize_tts_to_file(message or 'Alarm', tmp_path)
                                     await _play_and_wait(tmp_path)
                                 except Exception:
                                     try:
