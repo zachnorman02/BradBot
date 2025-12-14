@@ -102,7 +102,23 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                         except Exception as e:
                             logger.warning('Could not run ffmpeg -version: %s', e)
 
-                        audio = FFmpegPCMAudio(path, executable=ffmpeg_exec)
+                        # Respect optional runtime volume multiplier via env var
+                        vol_str = os.getenv('BRADBOT_FFMPEG_VOLUME', '1.0')
+                        try:
+                            vol = float(vol_str)
+                        except Exception:
+                            vol = 1.0
+                        # FFmpeg options: force 48kHz, stereo PCM and apply volume filter
+                        ffmpeg_options = f"-f s16le -ar 48000 -ac 2 -af volume={vol}"
+                        audio = FFmpegPCMAudio(path, executable=ffmpeg_exec, options=ffmpeg_options)
+
+                        # Log bot voice state (muted/deafened) for diagnostics
+                        try:
+                            me = guild.me
+                            if me and me.voice:
+                                logger.info('Bot voice state: self_mute=%s self_deaf=%s server_mute=%s server_deaf=%s', me.voice.self_mute, me.voice.self_deaf, me.voice.mute, me.voice.deaf)
+                        except Exception:
+                            pass
                         # stop any current playback and play immediately
                         try:
                             vc.stop()
