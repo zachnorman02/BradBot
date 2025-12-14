@@ -56,6 +56,16 @@ intents.members = True
 
 bot = commands.Bot(command_prefix=":", intents=intents)
 
+# Add command groups to the tree
+bot.tree.add_command(EmojiGroup(bot))
+bot.tree.add_command(BoosterGroup())
+bot.tree.add_command(SettingsGroup())
+bot.tree.add_command(AdminGroup())
+bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
+bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
+bot.tree.add_command(VoiceGroup())
+bot.tree.add_command(AlarmGroup())
+
 
 # ============================================================================
 # EVENT HANDLERS
@@ -163,16 +173,6 @@ async def on_ready():
         print(f"✅ Registered {len(active_polls)} active poll view(s)")
     except Exception as e:
         print(f"⚠️  Failed to register poll views: {e}")
-    
-    # Add command groups to the tree
-    bot.tree.add_command(EmojiGroup(bot))
-    bot.tree.add_command(BoosterGroup())
-    bot.tree.add_command(SettingsGroup())
-    bot.tree.add_command(AdminGroup())
-    bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
-    bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
-    bot.tree.add_command(VoiceGroup())
-    bot.tree.add_command(AlarmGroup())
     
     try:
         # Sync slash commands
