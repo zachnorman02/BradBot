@@ -40,7 +40,15 @@ def synthesize_tts_to_file(text: str, out_path: str) -> None:
             raise RuntimeError('boto3 is required for Polly provider; install boto3')
 
         voice = os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
-        client = _boto3.client('polly')
+        # Determine AWS region: prefer explicit env vars. If missing, raise a helpful error.
+        region = os.getenv('AWS_REGION') or os.getenv('AWS_DEFAULT_REGION')
+        if region:
+            client = _boto3.client('polly', region_name=region)
+        else:
+            raise RuntimeError(
+                "AWS region not configured for Polly. Set AWS_REGION or AWS_DEFAULT_REGION in the environment "
+                "(for example, in your systemd unit: Environment=AWS_REGION=us-east-1), or configure a default region in ~/.aws/config or via instance metadata."
+            )
         try:
             # Polly can return an audio stream; write it to file
             resp = client.synthesize_speech(Text=text_to_use, OutputFormat='mp3', VoiceId=voice)
