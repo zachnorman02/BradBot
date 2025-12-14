@@ -242,7 +242,7 @@ class VoiceGroup(app_commands.Group):
         try:
             if 'youtube.com' in source or 'youtu.be' in source:
                 # Try to get cookies for age-restricted content
-                cookie_file = fetch_youtube_cookies()
+                cookie_file = await fetch_youtube_cookies()
 
                 ydl_opts = {
                     'format': 'bestaudio',

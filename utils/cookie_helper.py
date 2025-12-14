@@ -4,29 +4,11 @@ Cookie handling utilities for BradBot
 import os
 import json
 import tempfile
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 import time
 
 
-def get_browser():
-    """Get a Playwright browser instance configured for headless operation."""
-    playwright = sync_playwright().start()
-    browser = playwright.chromium.launch(
-        headless=True,
-        args=[
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--disable-extensions",
-            "--disable-plugins",
-            "--disable-blink-features=AutomationControlled",
-            "--disable-web-security",
-        ]
-    )
-    return browser, playwright
-
-
-def fetch_youtube_cookies():
+def validate_cookies_file(cookie_file_path):
     """
     Fetch YouTube cookies by logging in automatically if credentials are provided.
     Uses YOUTUBE_USERNAME and YOUTUBE_PASSWORD environment variables.
@@ -49,20 +31,32 @@ def fetch_youtube_cookies():
             print("[COOKIES] No credentials provided - skipping login")
             return None
 
-        browser, playwright = get_browser()
-        context = browser.new_context()
-        page = context.new_page()
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-extensions",
+                    "--disable-plugins",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-web-security",
+                ]
+            )
+            context = await browser.new_context()
+            page = await context.new_page()
 
         # Navigate to YouTube
         print("[COOKIES] Navigating to YouTube...")
-        page.goto("https://www.youtube.com")
+        await page.goto("https://www.youtube.com")
 
         # Wait for page to load
-        page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("networkidle")
         time.sleep(2)
 
         # Take screenshot for debugging
-        page.screenshot(path="/tmp/youtube_homepage.png")
+        await page.screenshot(path="/tmp/youtube_homepage.png")
         print("[COOKIES] Saved screenshot of YouTube homepage")
 
         # Check if we need to log in
@@ -76,30 +70,30 @@ def fetch_youtube_cookies():
                 # Click sign-in button
                 sign_in_locator.click()
                 print("[COOKIES] Clicked sign-in button")
-                page.wait_for_load_state("networkidle")
+                await page.wait_for_load_state("networkidle")
                 time.sleep(2)
-                page.screenshot(path="/tmp/signin_clicked.png")
+                await page.screenshot(path="/tmp/signin_clicked.png")
 
                 # Wait for login page to load
-                page.wait_for_url("**/accounts.google.com/**", timeout=10000)
+                await page.wait_for_url("**/accounts.google.com/**", timeout=10000)
                 print("[COOKIES] Login page loaded")
-                page.screenshot(path="/tmp/login_page.png")
+                await page.screenshot(path="/tmp/login_page.png")
 
                 # Enter email/username
                 email_input = page.locator("#identifierId")
                 email_input.fill(username)
                 print("[COOKIES] Entered username")
-                page.screenshot(path="/tmp/username_entered.png")
+                await page.screenshot(path="/tmp/username_entered.png")
 
                 # Click Next
                 next_button = page.locator("#identifierNext")
                 next_button.click()
                 print("[COOKIES] Clicked Next after username")
                 time.sleep(3)
-                page.screenshot(path="/tmp/next_clicked.png")
+                await page.screenshot(path="/tmp/next_clicked.png")
 
                 # Wait for password field
-                page.wait_for_selector("input[name='password']", timeout=10000)
+                await page.wait_for_selector("input[name='password']", timeout=10000)
                 print("[COOKIES] Password field loaded")
 
                 # Enter password
@@ -114,7 +108,7 @@ def fetch_youtube_cookies():
 
                 # Wait for login to complete
                 try:
-                    page.wait_for_url("https://www.youtube.com/**", timeout=30000)
+                    await page.wait_for_url("https://www.youtube.com/**", timeout=30000)
                     logged_in = True
                     print("[COOKIES] Login successful - on YouTube homepage")
                 except Exception as e:
@@ -122,16 +116,14 @@ def fetch_youtube_cookies():
                     # Check if we're on a 2FA or verification page
                     if "challenge" in page.url or "verify" in page.url:
                         print("[COOKIES] 2FA/Verification required - cannot proceed automatically")
-                        browser.close()
-                        playwright.stop()
                         return None
                     else:
                         print("[COOKIES] Assuming login succeeded despite timeout")
                         logged_in = True
                         # Navigate back to YouTube if we got redirected
                         if "accounts.google.com" in page.url:
-                            page.goto("https://www.youtube.com")
-                            page.wait_for_load_state("networkidle")
+                            await page.goto("https://www.youtube.com")
+                            await page.wait_for_load_state("networkidle")
 
             else:
                 print("[COOKIES] No credentials provided - will try to get basic cookies without login")
@@ -170,8 +162,6 @@ def fetch_youtube_cookies():
                 f.write(line)
 
         print(f"[COOKIES] Saved {len(cookies)} cookies to {cookie_file}")
-        browser.close()
-        playwright.stop()
         return cookie_file
 
     except Exception as e:
@@ -179,14 +169,6 @@ def fetch_youtube_cookies():
         import traceback
         traceback.print_exc()
         return None
-
-    finally:
-        if 'browser' in locals():
-            try:
-                browser.close()
-                playwright.stop()
-            except:
-                pass
 
 
 def validate_cookies_file(cookie_file_path):
