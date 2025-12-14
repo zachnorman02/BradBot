@@ -9,6 +9,7 @@ import re
 from typing import Optional
 from dateutil import parser
 from database import db
+from utils.cookie_helper import fetch_youtube_cookies
 
 
 class UtilityGroup(app_commands.Group):
@@ -110,6 +111,28 @@ class UtilityGroup(app_commands.Group):
                 )
             except:
                 pass
+    
+    @app_commands.command(name="refresh_cookies", description="Refresh YouTube cookies for video downloads")
+    async def refresh_cookies(self, interaction: discord.Interaction):
+        """Refresh YouTube authentication cookies"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Run cookie fetch in thread pool to avoid blocking
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(fetch_youtube_cookies)
+                cookie_file = future.result(timeout=60)  # 60 second timeout
+            
+            if cookie_file:
+                await interaction.followup.send("✅ YouTube cookies refreshed successfully!", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ Failed to refresh YouTube cookies. Check logs for details.", ephemeral=True)
+                
+        except concurrent.futures.TimeoutError:
+            await interaction.followup.send("⏰ Cookie refresh timed out. The process may still be running.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error refreshing cookies: {str(e)}", ephemeral=True)
     
     @app_commands.command(name="timer", description="Start a countdown timer visible to everyone")
     @app_commands.describe(

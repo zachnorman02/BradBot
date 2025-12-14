@@ -33,7 +33,7 @@ jobs:
             python3 -m venv venv
           fi &&
           # Ensure system packages are up-to-date and install required packages
-          sudo apt-get update && sudo apt-get install -y ffmpeg google-chrome-stable chromium-chromedriver &&
+          sudo apt-get update && sudo apt-get install -y ffmpeg google-chrome-stable chromium-chromedriver python3-venv &&
           # Install Deno if not present
           if ! command -v deno &> /dev/null; then
             curl -fsSL https://deno.land/install.sh | sh &&
