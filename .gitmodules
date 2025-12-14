@@ -1,3 +1,6 @@
 [submodule "discordpy"]
 	path = discordpy
 	url = https://github.com/Rapptz/discord.py
+[submodule "yt-audio-api"]
+	path = yt-audio-api
+	url = https://github.com/alperensumeroglu/yt-audio-api
