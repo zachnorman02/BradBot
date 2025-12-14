@@ -8,6 +8,7 @@ from .settings_commands import SettingsGroup
 from .poll_commands import PollGroup
 from .utility_commands import UtilityGroup
 from .standalone_commands import tconvert_command, timestamp_command
+from .voice_commands import VoiceGroup
 
 __all__ = [
     'EmojiGroup',
@@ -17,6 +18,7 @@ __all__ = [
     'SettingsGroup',
     'PollGroup',
     'UtilityGroup',
+    'VoiceGroup',
     'tconvert_command',
     'timestamp_command',
 ]

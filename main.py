@@ -18,6 +18,7 @@ from commands import (
     SettingsGroup,
     PollGroup,
     UtilityGroup,
+    VoiceGroup,
     tconvert_command,
     timestamp_command
 )
@@ -144,6 +145,7 @@ async def on_ready():
     bot.tree.add_command(AdminGroup())
     bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
     bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
+    bot.tree.add_command(VoiceGroup())
     
     try:
         # Sync slash commands
