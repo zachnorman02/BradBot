@@ -27,11 +27,11 @@ jobs:
           cd /home/ubuntu/bradbot &&
           git pull origin main &&
           git submodule update --init --recursive &&
-          # Create virtual environment if it doesn't exist
-          if [ ! -d "venv" ]; then
-            echo "Creating virtual environment..." &&
-            virtualenv -p python3 venv
-          fi &&
+          # Create virtual environment (always recreate to ensure it's working)
+          echo "Creating virtual environment..." &&
+          rm -rf venv &&
+          virtualenv venv &&
+          echo "Virtual environment created successfully" &&
           # Ensure system packages are up-to-date and install required packages
           sudo apt-get update && sudo apt-get install -y ffmpeg google-chrome-stable chromium-chromedriver python3-venv python3-pip virtualenv &&
           # Install Deno if not present
