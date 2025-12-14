@@ -23,7 +23,7 @@ jobs:
         
     - name: Deploy to EC2
       run: |
-        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} '
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
           cd /home/ubuntu/bradbot &&
           git pull origin main &&
           git submodule update --init --recursive &&
@@ -50,8 +50,8 @@ jobs:
             # Restore YouTube environment variables if they exist in backup
             if grep -q "YOUTUBE_USERNAME" /etc/systemd/system/bradbot.service.backup; then
               echo "Restoring YouTube credentials from backup..." &&
-              YOUTUBE_USERNAME=$(grep "YOUTUBE_USERNAME" /etc/systemd/system/bradbot.service.backup | cut -d'\''='\'' -f2-) &&
-              YOUTUBE_PASSWORD=$(grep "YOUTUBE_PASSWORD" /etc/systemd/system/bradbot.service.backup | cut -d'\''='\'' -f2-) &&
+              YOUTUBE_USERNAME=$(grep "YOUTUBE_USERNAME" /etc/systemd/system/bradbot.service.backup | cut -d'=' -f2-) &&
+              YOUTUBE_PASSWORD=$(grep "YOUTUBE_PASSWORD" /etc/systemd/system/bradbot.service.backup | cut -d'=' -f2-) &&
               sudo sed -i "/^Environment=YOUTUBE_USERNAME=/d" /etc/systemd/system/bradbot.service &&
               sudo sed -i "/^Environment=YOUTUBE_PASSWORD=/d" /etc/systemd/system/bradbot.service &&
               echo "Environment=YOUTUBE_USERNAME=$YOUTUBE_USERNAME" | sudo tee -a /etc/systemd/system/bradbot.service > /dev/null &&
@@ -69,7 +69,7 @@ jobs:
           sudo systemctl start bradbot &&
           sleep 3 &&
           sudo systemctl status bradbot --no-pager
-        '
+        EOF
         
     - name: Health Check
       run: |
