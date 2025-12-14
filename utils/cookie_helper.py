@@ -8,7 +8,7 @@ from playwright.async_api import async_playwright
 import time
 
 
-def validate_cookies_file(cookie_file_path):
+async def fetch_youtube_cookies():
     """
     Fetch YouTube cookies by logging in automatically if credentials are provided.
     Uses YOUTUBE_USERNAME and YOUTUBE_PASSWORD environment variables.
