@@ -38,10 +38,6 @@ async def fetch_youtube_cookies():
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
-                    "--disable-extensions",
-                    "--disable-plugins",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-web-security",
                 ]
             )
             context = await browser.new_context()
