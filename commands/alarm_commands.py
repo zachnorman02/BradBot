@@ -108,10 +108,15 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                             vc.stop()
                         except Exception:
                             pass
+                        logger.info('Starting playback: guild=%s channel=%s path=%s', guild_id, channel_id, path)
                         vc.play(audio)
+                        # small delay to let playback start, then log state
+                        await asyncio.sleep(0.1)
+                        logger.info('Playback started? is_playing=%s is_paused=%s', vc.is_playing(), vc.is_paused())
                         # wait for playback to finish
                         while vc.is_playing() or vc.is_paused():
                             await asyncio.sleep(0.2)
+                        logger.info('Playback finished: guild=%s channel=%s', guild_id, channel_id)
                     finally:
                         try:
                             os.remove(path)
