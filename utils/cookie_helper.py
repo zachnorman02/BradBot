@@ -16,8 +16,8 @@ import time
 
 def get_chrome_driver():
     """Get a Chrome WebDriver instance configured for headless operation."""
-    # Set display for GUI mode
-    os.environ.setdefault('DISPLAY', ':1')
+    # Set display for GUI mode (not needed for headless)
+    # os.environ.setdefault('DISPLAY', ':1')
     
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -25,10 +25,11 @@ def get_chrome_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--remote-debugging-port=9222")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
-    # Set Chrome binary location
-    chrome_options.binary_location = "/usr/bin/google-chrome"
+    # Set Chrome binary location - try chromium-browser if google-chrome fails
+    chrome_options.binary_location = "/usr/bin/chromium-browser"
     
     # Anti-detection measures
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")

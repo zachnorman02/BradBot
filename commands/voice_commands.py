@@ -247,7 +247,7 @@ class VoiceGroup(app_commands.Group):
                 ydl_opts = {
                     'format': 'bestaudio',
                     'noplaylist': True,
-                    'quiet': True
+                    'quiet': False
                 }
 
                 if cookie_file:
