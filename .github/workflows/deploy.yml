@@ -27,8 +27,19 @@ jobs:
           cd /home/ubuntu/bradbot &&
           git pull origin main &&
           git submodule update --init --recursive &&
-          # Ensure system packages are up-to-date and ffmpeg is installed (Ubuntu)
-          sudo apt-get update && sudo apt-get install -y ffmpeg &&
+          # Create virtual environment if it doesn't exist
+          if [ ! -d "venv" ]; then
+            echo "Creating virtual environment..." &&
+            python3 -m venv venv
+          fi &&
+          # Ensure system packages are up-to-date and install required packages
+          sudo apt-get update && sudo apt-get install -y ffmpeg google-chrome-stable chromium-chromedriver &&
+          # Install Deno if not present
+          if ! command -v deno &> /dev/null; then
+            curl -fsSL https://deno.land/install.sh | sh &&
+            export DENO_INSTALL="$HOME/.deno" &&
+            export PATH="$DENO_INSTALL/bin:$PATH"
+          fi &&
           source venv/bin/activate &&
           pip install -r requirements.txt &&
           echo "Updating systemd service file..." &&
