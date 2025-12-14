@@ -8,17 +8,19 @@ class VoiceGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="voice", description="Voice channel controls")
 
-    @app_commands.command(name="join", description="Make the bot join your current voice channel")
-    async def join(self, interaction: discord.Interaction):
+    @app_commands.command(name="join", description="Make the bot join your current voice channel or a specified one")
+    @app_commands.describe(channel="Optional: Voice channel to join")
+    async def join(self, interaction: discord.Interaction, channel: discord.VoiceChannel = None):
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
 
-        if not interaction.user or not getattr(interaction.user, 'voice', None) or not interaction.user.voice.channel:
-            await interaction.response.send_message("❌ You must be in a voice channel to use this command.", ephemeral=True)
-            return
-
-        channel = interaction.user.voice.channel
+        # Determine target channel: explicit argument takes precedence, otherwise the user's current voice channel
+        if channel is None:
+            if not interaction.user or not getattr(interaction.user, 'voice', None) or not interaction.user.voice.channel:
+                await interaction.response.send_message("❌ You must be in a voice channel or specify one to use this command.", ephemeral=True)
+                return
+            channel = interaction.user.voice.channel
 
         # Verify the invoking user can access/connect to the channel
         user_perms = channel.permissions_for(interaction.user)
@@ -49,7 +51,15 @@ class VoiceGroup(app_commands.Group):
             await channel.connect()
             await interaction.followup.send(f"✅ Joined {channel.mention}", ephemeral=True)
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed to join voice channel: {e}", ephemeral=True)
+            err_str = str(e)
+            # Common error when PyNaCl is missing
+            if "PyNaCl" in err_str or "pynacl" in err_str or "PyNaCl library" in err_str:
+                await interaction.followup.send(
+                    "❌ PyNaCl is required for voice functionality. Install it with `pip install pynacl` and restart the bot.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(f"❌ Failed to join voice channel: {e}", ephemeral=True)
 
     @app_commands.command(name="leave", description="Make the bot leave the current voice channel")
     async def leave(self, interaction: discord.Interaction):
