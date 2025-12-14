@@ -15,7 +15,7 @@ import time
 def get_chrome_driver():
     """Get a Chrome WebDriver instance configured for headless operation."""
     chrome_options = Options()
-    chrome_options.add_argument("--headless")
+    # chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
