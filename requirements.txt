@@ -12,3 +12,4 @@ selenium
 gTTS
 boto3
 playwright
+yt-dlp
