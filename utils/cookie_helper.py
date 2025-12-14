@@ -54,13 +54,23 @@ def fetch_youtube_cookies():
     cookie_file = None
 
     try:
-        driver = get_chrome_driver()
+        print("[COOKIES] Starting YouTube cookie fetch...")
 
         # Get credentials from environment
         username = os.getenv('YOUTUBE_USERNAME')
         password = os.getenv('YOUTUBE_PASSWORD')
 
+        print(f"[COOKIES] Username provided: {bool(username)}")
+        print(f"[COOKIES] Password provided: {bool(password)}")
+
+        if not username or not password:
+            print("[COOKIES] No credentials provided - skipping login")
+            return None
+
+        driver = get_chrome_driver()
+
         # Navigate to YouTube
+        print("[COOKIES] Navigating to YouTube...")
         driver.get("https://www.youtube.com")
 
         # Wait for page to load
@@ -75,51 +85,59 @@ def fetch_youtube_cookies():
             sign_in_button = driver.find_element(By.XPATH, "//a[contains(@href, 'signin')]")
             print("[COOKIES] Sign-in button found - attempting login")
 
-            if username and password:
-                print("[COOKIES] Credentials found - performing automatic login")
+            # Click sign-in button
+            sign_in_button.click()
+            print("[COOKIES] Clicked sign-in button")
 
-                # Click sign-in button
-                sign_in_button.click()
+            # Wait for login page to load
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, "identifierId"))
+            )
+            print("[COOKIES] Login page loaded")
 
-                # Wait for login page to load
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "identifierId"))
+            # Enter email/username
+            email_input = driver.find_element(By.ID, "identifierId")
+            email_input.clear()
+            email_input.send_keys(username)
+            print("[COOKIES] Entered username")
+
+            # Click Next
+            next_button = driver.find_element(By.ID, "identifierNext")
+            next_button.click()
+            print("[COOKIES] Clicked Next after username")
+
+            # Wait for password field
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.NAME, "password"))
+            )
+            print("[COOKIES] Password field loaded")
+
+            # Enter password
+            password_input = driver.find_element(By.NAME, "password")
+            password_input.clear()
+            password_input.send_keys(password)
+            print("[COOKIES] Entered password")
+
+            # Click Next
+            next_button = driver.find_element(By.ID, "passwordNext")
+            next_button.click()
+            print("[COOKIES] Clicked Next after password")
+
+            # Wait for login to complete - look for YouTube homepage or avatar
+            try:
+                WebDriverWait(driver, 30).until(
+                    lambda d: "youtube.com" in d.current_url and not "signin" in d.current_url
                 )
-
-                # Enter email/username
-                email_input = driver.find_element(By.ID, "identifierId")
-                email_input.clear()
-                email_input.send_keys(username)
-
-                # Click Next
-                next_button = driver.find_element(By.ID, "identifierNext")
-                next_button.click()
-
-                # Wait for password field
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.NAME, "password"))
-                )
-
-                # Enter password
-                password_input = driver.find_element(By.NAME, "password")
-                password_input.clear()
-                password_input.send_keys(password)
-
-                # Click Next
-                next_button = driver.find_element(By.ID, "passwordNext")
-                next_button.click()
-
-                # Wait for login to complete - look for YouTube homepage or avatar
-                try:
-                    WebDriverWait(driver, 30).until(
-                        lambda d: "youtube.com" in d.current_url and not "signin" in d.current_url
-                    )
-                    logged_in = True
-                    print("[COOKIES] Login successful")
-                except:
-                    print("[COOKIES] Login may have failed - proceeding anyway")
-
-                # Navigate back to YouTube if we got redirected
+                logged_in = True
+                print("[COOKIES] Login successful - on YouTube homepage")
+            except Exception as e:
+                print(f"[COOKIES] Login completion check failed: {e}")
+                # Check if we're on a 2FA or verification page
+                if "challenge" in driver.current_url or "verify" in driver.current_url:
+                    print("[COOKIES] 2FA/Verification required - cannot proceed automatically")
+                    return None
+                else:
+                    print("[COOKIES] Assuming login succeeded despite timeout")                # Navigate back to YouTube if we got redirected
                 if "accounts.google.com" in driver.current_url:
                     driver.get("https://www.youtube.com")
                     WebDriverWait(driver, 10).until(
@@ -127,16 +145,16 @@ def fetch_youtube_cookies():
                     )
 
             else:
-                print("[COOKIES] No credentials provided - cannot log in automatically")
-                return None
+                print("[COOKIES] No credentials provided - will try to get basic cookies without login")
 
         except Exception as e:
-            # No sign-in button found, assume we're already logged in
-            print("[COOKIES] No sign-in button found - assuming already logged in")
+            # No sign-in button found, assume we're already logged in or can get basic cookies
+            print(f"[COOKIES] No sign-in button found: {e} - assuming already logged in or can get basic cookies")
             logged_in = True
 
         # Get cookies
         cookies = driver.get_cookies()
+        print(f"[COOKIES] Retrieved {len(cookies)} cookies")
 
         if not cookies:
             print("[COOKIES] No cookies found")
@@ -165,6 +183,8 @@ def fetch_youtube_cookies():
 
     except Exception as e:
         print(f"[COOKIES] Failed to fetch cookies: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
     finally:
