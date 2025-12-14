@@ -4,6 +4,21 @@ import logging
 
 logger = logging.getLogger('bradbot.tts')
 
+# Try importing optional providers at module load time so imports live at top-level.
+# If they are unavailable, set the module vars to None and raise later when used.
+try:
+    import boto3
+    _boto3 = boto3
+except Exception:
+    _boto3 = None
+
+try:
+    from gtts import gTTS
+    _gTTS = gTTS
+except Exception:
+    _gTTS = None
+
+
 def synthesize_tts_to_file(text: str, out_path: str) -> None:
     """Synthesize `text` to `out_path` (mp3 recommended).
 
@@ -21,13 +36,11 @@ def synthesize_tts_to_file(text: str, out_path: str) -> None:
     logger.info('TTS provider selected: %s', provider)
 
     if provider == 'polly':
-        try:
-            import boto3
-        except Exception as e:
-            raise RuntimeError('boto3 is required for Polly provider; install boto3') from e
+        if not _boto3:
+            raise RuntimeError('boto3 is required for Polly provider; install boto3')
 
         voice = os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
-        client = boto3.client('polly')
+        client = _boto3.client('polly')
         try:
             # Polly can return an audio stream; write it to file
             resp = client.synthesize_speech(Text=text_to_use, OutputFormat='mp3', VoiceId=voice)
@@ -49,13 +62,11 @@ def synthesize_tts_to_file(text: str, out_path: str) -> None:
                 pass
     else:
         # fallback to gTTS
-        try:
-            from gtts import gTTS
-        except Exception as e:
-            raise RuntimeError('gTTS is required as a fallback provider; install gTTS') from e
+        if not _gTTS:
+            raise RuntimeError('gTTS is required as a fallback provider; install gTTS')
 
         try:
-            t = gTTS(text=text_to_use, lang='en')
+            t = _gTTS(text=text_to_use, lang='en')
             t.save(out_path)
         except Exception as e:
             print(f'[bradbot.tts] gTTS synthesis failed: {e}')

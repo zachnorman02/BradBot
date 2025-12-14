@@ -340,18 +340,18 @@ class VoiceGroup(app_commands.Group):
 
         # No permission gating on TTS
 
-        # Generate TTS audio file
+        # Generate TTS audio file (use provider helper so we can switch to Polly)
         try:
-            try:
-                from gtts import gTTS
-            except Exception:
-                await interaction.response.send_message("❌ `gTTS` is required for TTS. Add it to requirements and install.", ephemeral=True)
-                return
+            from utils.tts_helper import synthesize_tts_to_file
 
             tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3')
             os.close(tmp_fd)
-            t = gTTS(text=text, lang='en')
-            t.save(tmp_path)
+            try:
+                synthesize_tts_to_file(text, tmp_path)
+            except Exception as e:
+                # Report to user and surface logs
+                await interaction.response.send_message(f"❌ TTS synthesis failed: {e}", ephemeral=True)
+                raise
 
             audio = FFmpegPCMAudio(tmp_path)
 
@@ -366,6 +366,64 @@ class VoiceGroup(app_commands.Group):
             await interaction.response.send_message("🔊 Speaking now.", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"❌ TTS failed: {e}", ephemeral=True)
+
+    @app_commands.command(name="debug_tts", description="(Admin) Synthesize a test TTS file and upload it for debugging")
+    @app_commands.describe(text="Text to synthesize (optional)")
+    async def debug_tts(self, interaction: discord.Interaction, text: str = "Debug TTS test"):
+        # Admin-only debug utility to synthesize TTS using the configured provider and upload the result.
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        # Restrict to administrators to avoid abuse
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Only server administrators may run this debug command.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            import utils.tts_helper as thelper
+            from utils.tts_helper import synthesize_tts_to_file
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to import TTS helper: {e}", ephemeral=True)
+            return
+
+        # Prepare temp file
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3', prefix='bradbot_debug_')
+        os.close(tmp_fd)
+        try:
+            # Synthesize
+            try:
+                synthesize_tts_to_file(text, tmp_path)
+            except Exception as e:
+                await interaction.followup.send(f"❌ TTS synthesis failed: {e}", ephemeral=True)
+                raise
+
+            # Build info about provider and module
+            provider = os.getenv('BRADBOT_TTS_PROVIDER', 'gtts')
+            voice = os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
+            module_file = getattr(thelper, '__file__', 'unknown')
+            boto3_avail = getattr(thelper, '_boto3', None) is not None
+            gtts_avail = getattr(thelper, '_gTTS', None) is not None
+
+            info_lines = [
+                f"Provider: {provider}",
+                f"Voice: {voice}",
+                f"Helper module: {module_file}",
+                f"boto3 available: {boto3_avail}",
+                f"gTTS available: {gtts_avail}",
+            ]
+
+            # Send file back to the channel (not ephemeral) so admins can listen
+            discord_file = discord.File(tmp_path, filename='bradbot_debug_tts.mp3')
+            await interaction.followup.send(content="\n".join(info_lines), file=discord_file, ephemeral=False)
+
+        finally:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
     @app_commands.command(name="queue", description="Show the upcoming queue")
     async def queue(self, interaction: discord.Interaction):
