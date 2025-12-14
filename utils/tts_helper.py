@@ -16,6 +16,8 @@ def synthesize_tts_to_file(text: str, out_path: str) -> None:
     provider = os.getenv('BRADBOT_TTS_PROVIDER', 'gtts').strip().lower()
     text_to_use = text or 'Alarm'
 
+    # Print as well as log so systemd/journal captures this even if logging is not configured
+    print(f'[bradbot.tts] TTS provider selected: {provider}')
     logger.info('TTS provider selected: %s', provider)
 
     if provider == 'polly':
@@ -34,7 +36,9 @@ def synthesize_tts_to_file(text: str, out_path: str) -> None:
                 raise RuntimeError('No AudioStream in Polly response')
             with open(out_path, 'wb') as f:
                 f.write(stream.read())
-        except Exception:
+        except Exception as e:
+            # Print to stdout so systemd/journal shows the error even without logging configured
+            print(f'[bradbot.tts] Polly TTS synthesis failed: {e}')
             logger.exception('Polly TTS synthesis failed')
             raise
         finally:
@@ -53,6 +57,7 @@ def synthesize_tts_to_file(text: str, out_path: str) -> None:
         try:
             t = gTTS(text=text_to_use, lang='en')
             t.save(out_path)
-        except Exception:
+        except Exception as e:
+            print(f'[bradbot.tts] gTTS synthesis failed: {e}')
             logger.exception('gTTS synthesis failed')
             raise

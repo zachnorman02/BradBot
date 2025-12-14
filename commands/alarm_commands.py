@@ -197,6 +197,7 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                                         synthesize_tts_to_file(message or 'Alarm', tmp_tts)
                                         await _play_and_wait(tmp_tts)
                                     except Exception as e:
+                                        print(f'[bradbot.alarm] TTS generation/playback failed: {e}')
                                         logger.exception('TTS generation/playback failed: %s', e)
                                         try:
                                             os.remove(tmp_tts)
@@ -257,6 +258,7 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                                             synthesize_tts_to_file(message or 'Alarm', tmp_path)
                                             await _play_and_wait(tmp_path)
                                         except Exception as e:
+                                            print(f'[bradbot.alarm] TTS generation/playback failed: {e}')
                                             logger.exception('TTS generation/playback failed: %s', e)
                                             try:
                                                 os.remove(tmp_path)
