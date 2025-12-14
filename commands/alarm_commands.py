@@ -14,6 +14,7 @@ import logging
 
 from database import db
 from utils.tts_helper import synthesize_tts_to_file
+from utils.ffmpeg_helper import which_ffmpeg
 
 logger = logging.getLogger('bradbot.alarm')
 
@@ -39,6 +40,9 @@ def _seconds_until(fire_at_str: str) -> float:
 
 async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creator_id: int, channel_id: int, message: str, tts: bool, tone: bool, alternate: bool, repeat: int = 1, interval_seconds: int = None):
     try:
+        # Get ffmpeg executable path
+        ffmpeg_exec = which_ffmpeg() or 'ffmpeg'
+
         # fetch the alarm row to get the fire_at
         rows = db.execute_query("SELECT fire_at FROM main.alarms WHERE id = %s", (alarm_id,))
         if not rows:
@@ -94,8 +98,6 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                 async def _play_and_wait(path: str):
                     try:
                         from discord import FFmpegOpusAudio
-                        # prefer system ffmpeg if available
-                        ffmpeg_exec = shutil.which('ffmpeg') or 'ffmpeg'
                         try:
                             # log ffmpeg version for diagnostics
                             ver = subprocess.run([ffmpeg_exec, '-version'], check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=5)
@@ -173,7 +175,7 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                                         os.close(tmp_fd)
                                         try:
                                             subprocess.run([
-                                                'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=2', '-ar', '48000', '-ac', '2', '-y', tmp_tone1
+                                                ffmpeg_exec, '-f', 'lavfi', '-i', 'sine=frequency=880:duration=2', '-ar', '48000', '-ac', '2', '-y', tmp_tone1
                                             ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                                             size = os.path.getsize(tmp_tone1) if os.path.exists(tmp_tone1) else None
                                             logger.info('Generated tone file %s size=%s', tmp_tone1, size)
@@ -210,7 +212,7 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                                         os.close(tmp_fd)
                                         try:
                                             subprocess.run([
-                                                'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=1', '-ar', '48000', '-ac', '2', '-y', tmp_tone2
+                                                ffmpeg_exec, '-f', 'lavfi', '-i', 'sine=frequency=880:duration=1', '-ar', '48000', '-ac', '2', '-y', tmp_tone2
                                             ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                                             size2 = os.path.getsize(tmp_tone2) if os.path.exists(tmp_tone2) else None
                                             logger.info('Generated final tone file %s size=%s', tmp_tone2, size2)
@@ -235,7 +237,7 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                                             os.close(tmp_fd)
                                             try:
                                                 subprocess.run([
-                                                    'ffmpeg', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=4', '-ar', '48000', '-ac', '2', '-y', tmp_path
+                                                    ffmpeg_exec, '-f', 'lavfi', '-i', 'sine=frequency=880:duration=4', '-ar', '48000', '-ac', '2', '-y', tmp_path
                                                 ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                                                 sizep = os.path.getsize(tmp_path) if os.path.exists(tmp_path) else None
                                                 logger.info('Generated fallback tone file %s size=%s', tmp_path, sizep)

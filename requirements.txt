@@ -9,5 +9,6 @@ pynacl
 pillow
 python-dateutil
 yt-dlp
+selenium
 gTTS
 boto3

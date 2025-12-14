@@ -4,6 +4,10 @@ import tempfile
 import discord
 from discord import app_commands
 from discord import FFmpegPCMAudio
+from yt_dlp import YoutubeDL
+from utils.cookie_helper import fetch_youtube_cookies
+from utils.tts_helper import synthesize_tts_to_file
+import utils.tts_helper as tts_helper
 
 
 # Simple per-guild audio player
@@ -243,13 +247,18 @@ class VoiceGroup(app_commands.Group):
         info_title = None
         try:
             if 'youtube.com' in source or 'youtu.be' in source:
-                try:
-                    from yt_dlp import YoutubeDL
-                except Exception:
-                    await interaction.followup.send("❌ `yt-dlp` is required to play YouTube links. Add it to requirements and install.", ephemeral=True)
-                    return
+                # Try to get cookies for age-restricted content
+                cookie_file = fetch_youtube_cookies()
 
-                ydl_opts = {'format': 'bestaudio', 'noplaylist': True, 'quiet': True}
+                ydl_opts = {
+                    'format': 'bestaudio',
+                    'noplaylist': True,
+                    'quiet': True
+                }
+
+                if cookie_file:
+                    ydl_opts['cookiefile'] = cookie_file
+
                 with YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(source, download=False)
                     direct_url = info.get('url')
@@ -342,8 +351,6 @@ class VoiceGroup(app_commands.Group):
 
         # Generate TTS audio file (use provider helper so we can switch to Polly)
         try:
-            from utils.tts_helper import synthesize_tts_to_file
-
             tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3')
             os.close(tmp_fd)
             try:
@@ -382,13 +389,6 @@ class VoiceGroup(app_commands.Group):
 
         await interaction.response.defer(ephemeral=True)
 
-        try:
-            import utils.tts_helper as thelper
-            from utils.tts_helper import synthesize_tts_to_file
-        except Exception as e:
-            await interaction.followup.send(f"❌ Failed to import TTS helper: {e}", ephemeral=True)
-            return
-
         # Prepare temp file
         tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3', prefix='bradbot_debug_')
         os.close(tmp_fd)
@@ -403,9 +403,9 @@ class VoiceGroup(app_commands.Group):
             # Build info about provider and module
             provider = os.getenv('BRADBOT_TTS_PROVIDER', 'gtts')
             voice = os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
-            module_file = getattr(thelper, '__file__', 'unknown')
-            boto3_avail = getattr(thelper, '_boto3', None) is not None
-            gtts_avail = getattr(thelper, '_gTTS', None) is not None
+            module_file = getattr(tts_helper, '__file__', 'unknown')
+            boto3_avail = getattr(tts_helper, '_boto3', None) is not None
+            gtts_avail = getattr(tts_helper, '_gTTS', None) is not None
 
             info_lines = [
                 f"Provider: {provider}",
