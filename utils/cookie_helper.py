@@ -6,6 +6,7 @@ import json
 import tempfile
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -37,7 +38,8 @@ def get_chrome_driver():
     chrome_options.add_argument("--disable-plugins")
 
     # Use webdriver-manager to automatically download correct ChromeDriver
-    driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
     
     # Execute script to remove webdriver property
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
