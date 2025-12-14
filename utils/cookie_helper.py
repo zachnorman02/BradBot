@@ -14,8 +14,11 @@ import time
 
 def get_chrome_driver():
     """Get a Chrome WebDriver instance configured for headless operation."""
+    # Set display for GUI mode
+    os.environ.setdefault('DISPLAY', ':1')
+    
     chrome_options = Options()
-    # chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
@@ -87,6 +90,10 @@ def fetch_youtube_cookies():
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
 
+        # Take screenshot for debugging
+        driver.save_screenshot("/tmp/youtube_homepage.png")
+        print("[COOKIES] Saved screenshot of YouTube homepage")
+
         # Check if we need to log in
         logged_in = False
         try:
@@ -97,23 +104,29 @@ def fetch_youtube_cookies():
             # Click sign-in button
             sign_in_button.click()
             print("[COOKIES] Clicked sign-in button")
+            time.sleep(2)
+            driver.save_screenshot("/tmp/signin_clicked.png")
 
             # Wait for login page to load
             WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.ID, "identifierId"))
             )
             print("[COOKIES] Login page loaded")
+            driver.save_screenshot("/tmp/login_page.png")
 
             # Enter email/username
             email_input = driver.find_element(By.ID, "identifierId")
             email_input.clear()
             email_input.send_keys(username)
             print("[COOKIES] Entered username")
+            driver.save_screenshot("/tmp/username_entered.png")
 
             # Click Next
             next_button = driver.find_element(By.ID, "identifierNext")
             next_button.click()
             print("[COOKIES] Clicked Next after username")
+            time.sleep(3)
+            driver.save_screenshot("/tmp/next_clicked.png")
 
             # Wait for password field
             WebDriverWait(driver, 10).until(
