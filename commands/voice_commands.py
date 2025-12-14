@@ -211,9 +211,11 @@ class VoiceGroup(app_commands.Group):
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
+
         # Require the user to be in voice or specify channel via /voice join first
         if not (getattr(interaction.user, 'voice', None) and getattr(interaction.user.voice, 'channel', None)) and not interaction.guild.voice_client:
-            await interaction.response.send_message("❌ You must be in a voice channel or the bot must already be connected.", ephemeral=True)
+            await interaction.followup.send("❌ You must be in a voice channel or the bot must already be connected.", ephemeral=True)
             return
 
         # Ensure bot is connected to the user's channel if not already
@@ -225,8 +227,6 @@ class VoiceGroup(app_commands.Group):
                 target_channel = interaction.user.voice.channel
 
         # No permission gating: any user who can invoke the command may enqueue
-
-        await interaction.response.defer(ephemeral=True)
 
         # Ensure connected
         try:

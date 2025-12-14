@@ -10,7 +10,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.chrome import ChromeDriverManager, ChromeType
 import time
 
 
@@ -28,8 +28,8 @@ def get_chrome_driver():
     chrome_options.add_argument("--remote-debugging-port=9222")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
-    # Set Chrome binary location - try chromium-browser if google-chrome fails
-    chrome_options.binary_location = "/usr/bin/chromium-browser"
+    # Set Chrome binary location
+    chrome_options.binary_location = "/usr/bin/google-chrome"
     
     # Anti-detection measures
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
@@ -39,7 +39,7 @@ def get_chrome_driver():
     chrome_options.add_argument("--disable-plugins")
 
     # Use webdriver-manager to automatically download correct ChromeDriver
-    service = Service(ChromeDriverManager().install())
+    service = Service(ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     
     # Execute script to remove webdriver property
