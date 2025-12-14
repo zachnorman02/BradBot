@@ -8,3 +8,5 @@ matplotlib
 pynacl
 pillow
 python-dateutil
+yt-dlp
+gTTS

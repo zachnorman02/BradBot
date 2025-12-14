@@ -19,6 +19,7 @@ from commands import (
     PollGroup,
     UtilityGroup,
     VoiceGroup,
+    AlarmGroup,
     tconvert_command,
     timestamp_command
 )
@@ -40,6 +41,7 @@ from core import (
     handle_message_edit,
     handle_message_delete
 )
+from utils.ffmpeg_helper import ensure_ffmpeg, which_ffmpeg
 
 # Import helpers for standalone commands
 from utils.timestamp_helpers import TimestampStyle
@@ -112,6 +114,30 @@ async def on_ready():
             print(f"✅ Initialized conditional roles tables")
         except Exception as table_error:
             print(f"⚠️  Could not initialize conditional roles tables: {table_error}")
+
+        # Initialize alarms table and schedule persisted alarms
+        try:
+            db.init_alarms_table()
+            from commands.alarm_commands import schedule_all_existing_alarms
+            schedule_all_existing_alarms(bot)
+            print("✅ alarms initialized and scheduled")
+        except Exception as e:
+            print(f"⚠️  Could not initialize/schedule alarms: {e}")
+
+        # Ensure ffmpeg is available (try auto-download on Linux if missing)
+        try:
+            ff = which_ffmpeg()
+            if ff:
+                print(f"✅ ffmpeg found at: {ff}")
+            else:
+                print("⚠️ ffmpeg not found on PATH — attempting to download static build (Linux only)")
+                installed = ensure_ffmpeg()
+                if installed:
+                    print(f"✅ ffmpeg installed for runtime at: {installed}")
+                else:
+                    print("⚠️ ffmpeg not available. Please install ffmpeg on the host (apt/dnf/brew) or place binary in PATH.")
+        except Exception as e:
+            print(f"⚠️ ffmpeg check/install failed: {e}")
         
         # Grant admin permissions on all tables
         try:
@@ -146,6 +172,7 @@ async def on_ready():
     bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
     bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
     bot.tree.add_command(VoiceGroup())
+    bot.tree.add_command(AlarmGroup())
     
     try:
         # Sync slash commands

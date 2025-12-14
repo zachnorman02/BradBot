@@ -9,6 +9,7 @@ from .poll_commands import PollGroup
 from .utility_commands import UtilityGroup
 from .standalone_commands import tconvert_command, timestamp_command
 from .voice_commands import VoiceGroup
+from .alarm_commands import AlarmGroup
 
 __all__ = [
     'EmojiGroup',
@@ -19,6 +20,7 @@ __all__ = [
     'PollGroup',
     'UtilityGroup',
     'VoiceGroup',
+    'AlarmGroup',
     'tconvert_command',
     'timestamp_command',
 ]

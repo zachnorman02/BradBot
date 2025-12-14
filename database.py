@@ -915,6 +915,99 @@ class Database:
             pass  # Index creation queued
         
         print("✅ mirrored_messages table initialized")
+
+    # ============================================================================
+    # Alarms
+    # ============================================================================
+
+    def init_alarms_table(self):
+        """Initialize the alarms table for persisted scheduled alarms."""
+        query = """
+        CREATE TABLE IF NOT EXISTS main.alarms (
+            id TEXT PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            creator_id BIGINT,
+            channel_id BIGINT,
+            message TEXT,
+            tts BOOLEAN DEFAULT FALSE,
+            tone BOOLEAN DEFAULT FALSE,
+            alternate BOOLEAN DEFAULT FALSE,
+            repeat INTEGER DEFAULT 1,
+            interval_seconds INTEGER DEFAULT NULL,
+            fire_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            fired BOOLEAN DEFAULT FALSE
+        )
+        """
+        self.execute_query(query, fetch=False)
+
+        # Indexes for faster lookup
+        try:
+            idx_q = """
+            CREATE INDEX ASYNC IF NOT EXISTS idx_alarms_guild
+            ON main.alarms (guild_id)
+            """
+            self.execute_query(idx_q, fetch=False)
+        except Exception:
+            pass
+
+        try:
+            idx_q2 = """
+            CREATE INDEX ASYNC IF NOT EXISTS idx_alarms_fire_at
+            ON main.alarms (fire_at)
+            """
+            self.execute_query(idx_q2, fetch=False)
+        except Exception:
+            pass
+
+        print("✅ alarms table initialized")
+
+    def add_alarm(self, alarm_id: str, guild_id: int, creator_id: int, channel_id: int, message: str, tts: bool, tone: bool, alternate: bool, repeat: int, interval_seconds: int, fire_at: str):
+        """Persist a new alarm. `fire_at` should be a timestamp string accepted by the DB (ISO)."""
+        # Delete any existing row with same id just in case
+        try:
+            delete_q = "DELETE FROM main.alarms WHERE id = %s"
+            self.execute_query(delete_q, (alarm_id,), fetch=False)
+        except Exception:
+            pass
+
+        insert_q = """
+        INSERT INTO main.alarms (id, guild_id, creator_id, channel_id, message, tts, tone, alternate, repeat, interval_seconds, fire_at, created_at, fired)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, FALSE)
+        """
+        # store booleans as 'true'/'false' strings for Aurora DSQL compatibility
+        self.execute_query(insert_q, (
+            alarm_id,
+            guild_id,
+            creator_id,
+            channel_id,
+            message,
+            'true' if tts else 'false',
+            'true' if tone else 'false',
+            'true' if alternate else 'false',
+            int(repeat),
+            int(interval_seconds) if interval_seconds is not None else None,
+            fire_at
+        ), fetch=False)
+
+    def get_all_pending_alarms(self):
+        """Return all non-fired alarms as list of rows."""
+        # include repeat column
+        query = "SELECT id, guild_id, creator_id, channel_id, message, tts, tone, alternate, repeat, interval_seconds, fire_at FROM main.alarms WHERE fired = FALSE"
+        return self.execute_query(query)
+
+    def get_alarms_for_guild(self, guild_id: int):
+        # include repeat column
+        query = "SELECT id, guild_id, creator_id, channel_id, message, tts, tone, alternate, repeat, interval_seconds, fire_at FROM main.alarms WHERE fired = FALSE AND guild_id = %s ORDER BY fire_at"
+        return self.execute_query(query, (guild_id,))
+
+    def mark_alarm_fired(self, alarm_id: str):
+        query = "UPDATE main.alarms SET fired = TRUE WHERE id = %s"
+        self.execute_query(query, (alarm_id,), fetch=False)
+
+    def delete_alarm(self, alarm_id: str):
+        query = "DELETE FROM main.alarms WHERE id = %s"
+        self.execute_query(query, (alarm_id,), fetch=False)
     
     def add_message_mirror(self, guild_id: int, source_channel_id: int, target_channel_id: int):
         """Add a message mirror configuration."""
