@@ -25,6 +25,9 @@ def get_chrome_driver():
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
+    # Set Chrome binary location
+    chrome_options.binary_location = "/usr/bin/google-chrome"
+    
     # Anti-detection measures
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -36,7 +39,8 @@ def get_chrome_driver():
     driver_paths = [
         "/usr/bin/chromedriver",
         "/usr/local/bin/chromedriver",
-        "/opt/homebrew/bin/chromedriver",  # macOS with homebrew
+        "/usr/lib/bin/chromedriver",
+        "/usr/lib/x86_64-linux-gnu/bin/chromedriver",
         "chromedriver"
     ]
 
