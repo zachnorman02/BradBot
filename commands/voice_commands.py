@@ -2,8 +2,7 @@ import asyncio
 import os
 import tempfile
 import discord
-from discord import app_commands
-from discord import FFmpegPCMAudio
+from discord import app_commands, FFmpegPCMAudio
 from yt_dlp import YoutubeDL
 from utils.cookie_helper import fetch_youtube_cookies
 from utils.tts_helper import synthesize_tts_to_file
@@ -224,11 +223,6 @@ class VoiceGroup(app_commands.Group):
         else:
             if getattr(interaction.user, 'voice', None) and getattr(interaction.user.voice, 'channel', None):
                 target_channel = interaction.user.voice.channel
-
-        # Permissions check for user
-        if target_channel and not target_channel.permissions_for(interaction.user).connect:
-            await interaction.response.send_message("❌ You don't have permission to use voice in the target channel.", ephemeral=True)
-            return
 
         # No permission gating: any user who can invoke the command may enqueue
 
