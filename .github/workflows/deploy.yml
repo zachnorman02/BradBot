@@ -34,16 +34,12 @@ jobs:
           echo "Virtual environment created successfully" &&
           # Ensure system packages are up-to-date and install required packages
           sudo apt-get update && sudo apt-get install -y ffmpeg google-chrome-stable python3-venv python3-pip virtualenv jq curl unzip &&
-          # Download matching ChromeDriver
-          CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1) &&
-          echo "Chrome version: $CHROME_VERSION" &&
-          MAJOR_VERSION=$(echo $CHROME_VERSION | cut -d'.' -f1) &&
-          # Try major version first, fallback to latest
-          CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$MAJOR_VERSION" || curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE") &&
+          # Download matching ChromeDriver (new API)
+          CHROMEDRIVER_VERSION=$(curl -s https://googlechromelabs.github.io/chromedriver/LATEST_RELEASE_STABLE) &&
           echo "ChromeDriver version: $CHROMEDRIVER_VERSION" &&
-          curl -o /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip" &&
+          curl -o /tmp/chromedriver.zip "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/$CHROMEDRIVER_VERSION/chromedriver-linux64.zip" &&
           unzip /tmp/chromedriver.zip -d /tmp &&
-          sudo mv /tmp/chromedriver /usr/local/bin/chromedriver &&
+          sudo mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver &&
           sudo chmod +x /usr/local/bin/chromedriver &&
           # Install Deno if not present
           if ! command -v deno &> /dev/null; then
