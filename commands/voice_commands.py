@@ -335,6 +335,7 @@ class VoiceGroup(app_commands.Group):
             if current.lower() in voice.lower()
         ][:25]  # Limit to 25 results
 
+    # Ensure the voice parameter is properly defined with autocomplete
     @app_commands.command(name="tts", description="Speak text via TTS into the voice channel")
     @app_commands.describe(
         text="Text to speak",
@@ -342,7 +343,7 @@ class VoiceGroup(app_commands.Group):
         engine="Engine to use (optional, e.g., 'Neural')",
         language="Language code to use (optional, e.g., 'en-US')"
     )
-    @app_commands.autocomplete(voice=voice_autocomplete)
+    @app_commands.autocomplete(voice=voice_autocomplete)  # Apply autocomplete to the voice parameter
     @app_commands.choices(
         engine=[
             app_commands.Choice(name=engine, value=engine) for engine in ["standard", "neural", "long-form", "generative"]
@@ -353,7 +354,7 @@ class VoiceGroup(app_commands.Group):
             ]
         ]
     )
-    async def tts(self, interaction: discord.Interaction, text: str, voice: str = None, engine: app_commands.Choice[str] = None, language: app_commands.Choice[str] = None):
+    async def tts(self, interaction: discord.Interaction, text: str, voice: app_commands.Choice[str] = None, engine: app_commands.Choice[str] = None, language: app_commands.Choice[str] = None):
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
@@ -374,8 +375,21 @@ class VoiceGroup(app_commands.Group):
         # Process TTS request
         await interaction.response.defer(ephemeral=True)
         try:
-            # Call TTS helper function (assume it handles voice, engine, and language)
-            audio_source = await tts_helper.generate_tts_audio(text, voice, engine.value if engine else None, language.value if language else None)
+            # Create a temporary file for the audio output
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_audio:
+                temp_audio_path = temp_audio.name
+
+            # Generate the TTS audio file
+            synthesize_tts_to_file(
+                text=text,
+                out_path=temp_audio_path,
+                voice=voice.value if voice else None,
+                engine=engine.value if engine else None,
+                language=language.value if language else None
+            )
+
+            # Play the generated audio file
+            audio_source = discord.FFmpegPCMAudio(temp_audio_path)
             vc.play(audio_source)
             await interaction.followup.send(f"✅ Speaking: {text}", ephemeral=True)
         except Exception as e:
