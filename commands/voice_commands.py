@@ -339,22 +339,13 @@ class VoiceGroup(app_commands.Group):
     @app_commands.command(name="tts", description="Speak text via TTS into the voice channel")
     @app_commands.describe(
         text="Text to speak",
-        voice="Voice to use (optional, e.g., 'Joanna')",
-        engine="Engine to use (optional, e.g., 'Neural')",
-        language="Language code to use (optional, e.g., 'en-US')"
+        voice="Voice to use (e.g., 'Joanna')",
+        engine="Engine to use (e.g., 'Neural')",
+        language="Language code to use (e.g., 'en-US')"
     )
-    @app_commands.autocomplete(voice=voice_autocomplete)  # Apply autocomplete to the voice parameter
-    @app_commands.choices(
-        engine=[
-            app_commands.Choice(name=engine, value=engine) for engine in ["standard", "neural", "long-form", "generative"]
-        ],
-        language=[
-            app_commands.Choice(name=lang, value=lang) for lang in [
-                "arb", "cmn-CN", "cy-GB", "da-DK", "de-DE", "en-AU", "en-GB", "en-GB-WLS", "en-IN", "en-US", "es-ES", "es-MX", "es-US", "fr-CA", "fr-FR", "is-IS", "it-IT", "ja-JP", "hi-IN", "ko-KR", "nb-NO", "nl-NL", "pl-PL", "pt-BR", "pt-PT", "ro-RO", "ru-RU", "sv-SE", "tr-TR", "en-NZ", "en-ZA", "ca-ES", "de-AT", "yue-CN", "ar-AE", "fi-FI", "en-IE", "nl-BE", "fr-BE", "cs-CZ", "de-CH", "en-SG"
-            ]
-        ]
-    )
-    async def tts(self, interaction: discord.Interaction, text: str, voice: str = None, engine: app_commands.Choice[str] = None, language: app_commands.Choice[str] = None):
+    async def tts(self, interaction: discord.Interaction, text: str, voice: str = None, engine: str = None, language: str = None):
+        print(f"DEBUG: text={text}, voice={voice}, engine={engine}, language={language}")
+
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
@@ -384,8 +375,8 @@ class VoiceGroup(app_commands.Group):
                 text=text,
                 out_path=temp_audio_path,
                 voice=voice,
-                engine=engine.value if engine else None,
-                language=language.value if language else None
+                engine=engine,
+                language=language
             )
 
             # Play the generated audio file
@@ -480,3 +471,21 @@ class VoiceGroup(app_commands.Group):
             return
 
         await interaction.response.send_message(f"Now playing: {player.current.get('title', 'Unknown')}")
+
+    # Add a new command to display all parameter options
+    @app_commands.command(name="show_tts_options", description="Show all available options for TTS parameters")
+    async def show_tts_options(self, interaction: discord.Interaction):
+        engine_options = ["standard", "neural", "long-form", "generative"]
+        language_options = [
+            "arb", "cmn-CN", "cy-GB", "da-DK", "de-DE", "en-AU", "en-GB", "en-GB-WLS", "en-IN", "en-US", "es-ES", "es-MX", "es-US", "fr-CA", "fr-FR", "is-IS", "it-IT", "ja-JP", "hi-IN", "ko-KR", "nb-NO", "nl-NL", "pl-PL", "pt-BR", "pt-PT", "ro-RO", "ru-RU", "sv-SE", "tr-TR", "en-NZ", "en-ZA", "ca-ES", "de-AT", "yue-CN", "ar-AE", "fi-FI", "en-IE", "nl-BE", "fr-BE", "cs-CZ", "de-CH", "en-SG"
+        ]
+        voice_options = VoiceGroup.AVAILABLE_VOICES
+
+        options_message = (
+            "**TTS Parameter Options:**\n\n"
+            f"**Engines:** {', '.join(engine_options)}\n"
+            f"**Languages:** {', '.join(language_options)}\n"
+            f"**Voices:** {', '.join(voice_options)}"
+        )
+
+        await interaction.response.send_message(options_message, ephemeral=True)
