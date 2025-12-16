@@ -327,7 +327,7 @@ class VoiceGroup(app_commands.Group):
     ]
 
     # Autocomplete handler for voice parameter
-    async def voice_autocomplete(interaction: discord.Interaction, current: str):
+    async def voice_autocomplete(interaction: discord.Interaction, current: str, parameter: app_commands.CommandParameter):
         # Filter voices based on user input
         return [
             app_commands.Choice(name=voice, value=voice)
