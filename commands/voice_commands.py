@@ -354,7 +354,7 @@ class VoiceGroup(app_commands.Group):
             ]
         ]
     )
-    async def tts(self, interaction: discord.Interaction, text: str, voice: app_commands.Choice[str] = None, engine: app_commands.Choice[str] = None, language: app_commands.Choice[str] = None):
+    async def tts(self, interaction: discord.Interaction, text: str, voice: str = None, engine: app_commands.Choice[str] = None, language: app_commands.Choice[str] = None):
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
@@ -383,7 +383,7 @@ class VoiceGroup(app_commands.Group):
             synthesize_tts_to_file(
                 text=text,
                 out_path=temp_audio_path,
-                voice=voice.value if voice else None,
+                voice=voice,
                 engine=engine.value if engine else None,
                 language=language.value if language else None
             )
