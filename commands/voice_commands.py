@@ -499,8 +499,8 @@ class VoiceGroup(app_commands.Group):
     )
     async def filter_voices(self, interaction: discord.Interaction, language: str = None, engine: str = None):
         try:
-            # Initialize the Polly client
-            polly_client = boto3.client('polly')
+            # Initialize the Polly client with a default region
+            polly_client = boto3.client('polly', region_name='us-east-1')
 
             # Fetch voices from AWS Polly
             params = {}
