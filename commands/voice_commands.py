@@ -7,6 +7,7 @@ from yt_dlp import YoutubeDL
 from utils.cookie_helper import fetch_youtube_cookies
 from utils.tts_helper import synthesize_tts_to_file
 import utils.tts_helper as tts_helper
+import boto3
 
 
 # Simple per-guild audio player
@@ -489,3 +490,48 @@ class VoiceGroup(app_commands.Group):
         )
 
         await interaction.response.send_message(options_message, ephemeral=True)
+
+    # Add a command to filter voices based on language and engine
+    @app_commands.command(name="filter_voices", description="Filter available voices by language and engine")
+    @app_commands.describe(
+        language="Optional: Language code to filter by (e.g., 'en-GB')",
+        engine="Optional: Engine to filter by (e.g., 'neural')"
+    )
+    async def filter_voices(self, interaction: discord.Interaction, language: str = None, engine: str = None):
+        try:
+            # Initialize the Polly client
+            polly_client = boto3.client('polly')
+
+            # Fetch voices from AWS Polly
+            params = {}
+            if engine:
+                params['Engine'] = engine
+            response = polly_client.describe_voices(**params)
+            voices = response.get('Voices', [])
+
+            # Filter voices by language if provided
+            if language:
+                voices = [voice for voice in voices if voice['LanguageCode'] == language]
+
+            if not voices:
+                await interaction.response.send_message(
+                    f"❌ No voices found for the given parameters.",
+                    ephemeral=True
+                )
+                return
+
+            # Format and send the response
+            filtered_voices = [
+                f"{voice['Name']} ({voice['Gender']}) - {voice['LanguageName']}"
+                for voice in voices
+            ]
+            voices_message = (
+                f"**Available Voices:**\n"
+                + "\n".join(filtered_voices)
+            )
+            await interaction.response.send_message(voices_message, ephemeral=True)
+
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Failed to fetch voices: {e}", ephemeral=True
+            )
