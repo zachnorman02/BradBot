@@ -321,6 +321,20 @@ class VoiceGroup(app_commands.Group):
         await interaction.response.send_message("⏹️ Stopped and cleared queue.", ephemeral=True)
 
     # -------------------- TTS --------------------
+    # Define a list of available voices
+    AVAILABLE_VOICES = [
+        "Aditi", "Amy", "Astrid", "Bianca", "Brian", "Camila", "Carla", "Carmen", "Celine", "Chantal", "Conchita", "Cristiano", "Dora", "Emma", "Enrique", "Ewa", "Filiz", "Gabrielle", "Geraint", "Giorgio", "Gwyneth", "Hans", "Ines", "Ivy", "Jacek", "Jan", "Joanna", "Joey", "Justin", "Karl", "Kendra", "Kevin", "Kimberly", "Lea", "Liv", "Lotte", "Lucia", "Lupe", "Mads", "Maja", "Marlene", "Mathieu", "Matthew", "Maxim", "Mia", "Miguel", "Mizuki", "Naja", "Nicole", "Olivia", "Penelope", "Raveena", "Ricardo", "Ruben", "Russell", "Salli", "Seoyeon", "Takumi", "Tatyana", "Vicki", "Vitoria", "Zeina", "Zhiyu", "Aria", "Ayanda", "Arlet", "Hannah", "Arthur", "Daniel", "Liam", "Pedro", "Kajal", "Hiujin", "Laura", "Elin", "Ida", "Suvi", "Ola", "Hala", "Andres", "Sergio", "Remi", "Adriano", "Thiago", "Ruth", "Stephen", "Kazuha", "Tomoko", "Niamh", "Sofie", "Lisa", "Isabelle", "Zayd", "Danielle", "Gregory", "Burcu", "Jitka", "Sabrina", "Jasmine", "Jihye"
+    ]
+
+    # Autocomplete handler for voice parameter
+    async def voice_autocomplete(interaction: discord.Interaction, current: str):
+        # Filter voices based on user input
+        return [
+            app_commands.Choice(name=voice, value=voice)
+            for voice in VoiceGroup.AVAILABLE_VOICES  # Reference the class attribute
+            if current.lower() in voice.lower()
+        ][:25]  # Limit to 25 results
+
     @app_commands.command(name="tts", description="Speak text via TTS into the voice channel")
     @app_commands.describe(
         text="Text to speak",
@@ -328,12 +342,8 @@ class VoiceGroup(app_commands.Group):
         engine="Engine to use (optional, e.g., 'Neural')",
         language="Language code to use (optional, e.g., 'en-US')"
     )
+    @app_commands.autocomplete(voice=voice_autocomplete)
     @app_commands.choices(
-        voice=[
-            app_commands.Choice(name=voice, value=voice) for voice in [
-                "Aditi", "Amy", "Astrid", "Bianca", "Brian", "Camila", "Carla", "Carmen", "Celine", "Chantal", "Conchita", "Cristiano", "Dora", "Emma", "Enrique", "Ewa", "Filiz", "Gabrielle", "Geraint", "Giorgio", "Gwyneth", "Hans", "Ines", "Ivy", "Jacek", "Jan", "Joanna", "Joey", "Justin", "Karl", "Kendra", "Kevin", "Kimberly", "Lea", "Liv", "Lotte", "Lucia", "Lupe", "Mads", "Maja", "Marlene", "Mathieu", "Matthew", "Maxim", "Mia", "Miguel", "Mizuki", "Naja", "Nicole", "Olivia", "Penelope", "Raveena", "Ricardo", "Ruben", "Russell", "Salli", "Seoyeon", "Takumi", "Tatyana", "Vicki", "Vitoria", "Zeina", "Zhiyu", "Aria", "Ayanda", "Arlet", "Hannah", "Arthur", "Daniel", "Liam", "Pedro", "Kajal", "Hiujin", "Laura", "Elin", "Ida", "Suvi", "Ola", "Hala", "Andres", "Sergio", "Remi", "Adriano", "Thiago", "Ruth", "Stephen", "Kazuha", "Tomoko", "Niamh", "Sofie", "Lisa", "Isabelle", "Zayd", "Danielle", "Gregory", "Burcu", "Jitka", "Sabrina", "Jasmine", "Jihye"
-            ]
-        ],
         engine=[
             app_commands.Choice(name=engine, value=engine) for engine in ["standard", "neural", "long-form", "generative"]
         ],
@@ -343,7 +353,7 @@ class VoiceGroup(app_commands.Group):
             ]
         ]
     )
-    async def tts(self, interaction: discord.Interaction, text: str, voice: app_commands.Choice[str] = None, engine: app_commands.Choice[str] = None, language: app_commands.Choice[str] = None):
+    async def tts(self, interaction: discord.Interaction, text: str, voice: str = None, engine: app_commands.Choice[str] = None, language: app_commands.Choice[str] = None):
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
@@ -361,36 +371,15 @@ class VoiceGroup(app_commands.Group):
                 await interaction.response.send_message(f"❌ Failed to connect: {e}", ephemeral=True)
                 return
 
-        # Generate TTS audio file (use provider helper so we can switch to Polly)
+        # Process TTS request
+        await interaction.response.defer(ephemeral=True)
         try:
-            tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3')
-            os.close(tmp_fd)
-            try:
-                synthesize_tts_to_file(
-                    text,
-                    tmp_path,
-                    voice=voice.value if voice else None,
-                    engine=engine.value.lower() if engine else None,
-                    language=language.value if language else None
-                )
-            except Exception as e:
-                # Report to user and surface logs
-                await interaction.response.send_message(f"❌ TTS synthesis failed: {e}", ephemeral=True)
-                raise
-
-            audio = FFmpegPCMAudio(tmp_path)
-
-            # Play immediately (do not enqueue)
-            def _after_play(err):
-                try:
-                    os.remove(tmp_path)
-                except Exception:
-                    pass
-
-            vc.play(audio, after=_after_play)
-            await interaction.response.send_message("🔊 Speaking now.", ephemeral=True)
+            # Call TTS helper function (assume it handles voice, engine, and language)
+            audio_source = await tts_helper.generate_tts_audio(text, voice, engine.value if engine else None, language.value if language else None)
+            vc.play(audio_source)
+            await interaction.followup.send(f"✅ Speaking: {text}", ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"❌ TTS failed: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ TTS failed: {e}", ephemeral=True)
 
     @app_commands.command(name="debug_tts", description="(Admin) Synthesize a test TTS file and upload it for debugging")
     @app_commands.describe(text="Text to synthesize (optional)")
