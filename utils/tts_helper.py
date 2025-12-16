@@ -19,14 +19,14 @@ except Exception:
     _gTTS = None
 
 
-def synthesize_tts_to_file(text: str, out_path: str, voice: str = None, engine: str = None) -> None:
+def synthesize_tts_to_file(text: str, out_path: str, voice: str = None, engine: str = None, language: str = None) -> None:
     """Synthesize `text` to `out_path` (mp3 recommended).
 
     Provider selection via env var `BRADBOT_TTS_PROVIDER`:
       - 'gtts' (default): uses gTTS library
       - 'polly': uses AWS Polly (requires boto3 and AWS creds/config)
 
-    Optionally set `voice` and `engine` to customize Polly synthesis.
+    Optionally set `voice`, `engine`, and `language` to customize Polly synthesis.
     """
     # Validate inputs
     if not text:
@@ -52,6 +52,7 @@ def synthesize_tts_to_file(text: str, out_path: str, voice: str = None, engine: 
             raise RuntimeError('boto3 is required for Polly provider; install boto3')
 
         voice_to_use = voice or os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
+        language_to_use = language or os.getenv('BRADBOT_TTS_LANGUAGE', 'en-US')
         region = os.getenv('AWS_REGION') or os.getenv('AWS_DEFAULT_REGION')
         if not region:
             raise RuntimeError("AWS region not configured for Polly. Set AWS_REGION or AWS_DEFAULT_REGION in the environment "
@@ -64,7 +65,8 @@ def synthesize_tts_to_file(text: str, out_path: str, voice: str = None, engine: 
                 Text=text_to_use,
                 OutputFormat='mp3',
                 VoiceId=voice_to_use,
-                Engine=engine_to_use
+                Engine=engine_to_use,
+                LanguageCode=language_to_use
             )
             stream = resp.get('AudioStream')
             if stream is None:
@@ -88,7 +90,7 @@ def synthesize_tts_to_file(text: str, out_path: str, voice: str = None, engine: 
             raise RuntimeError('gTTS is required as a fallback provider; install gTTS')
 
         try:
-            tts = _gTTS(text=text_to_use, lang='en')
+            tts = _gTTS(text=text_to_use, lang=language or 'en')
             tts.save(out_path)
         except Exception as e:
             print(f'[bradbot.tts] gTTS synthesis failed: {e}')
