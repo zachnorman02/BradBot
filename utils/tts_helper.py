@@ -19,39 +19,53 @@ except Exception:
     _gTTS = None
 
 
-def synthesize_tts_to_file(text: str, out_path: str) -> None:
+def synthesize_tts_to_file(text: str, out_path: str, voice: str = None, engine: str = None) -> None:
     """Synthesize `text` to `out_path` (mp3 recommended).
 
     Provider selection via env var `BRADBOT_TTS_PROVIDER`:
       - 'gtts' (default): uses gTTS library
       - 'polly': uses AWS Polly (requires boto3 and AWS creds/config)
 
-    Optionally set `BRADBOT_TTS_VOICE` to select a Polly voice (default 'Matthew').
+    Optionally set `voice` and `engine` to customize Polly synthesis.
     """
+    # Validate inputs
+    if not text:
+        raise ValueError("The 'text' parameter cannot be None or empty.")
+    if not out_path:
+        raise ValueError("The 'out_path' parameter cannot be None or empty.")
+
     provider = os.getenv('BRADBOT_TTS_PROVIDER', 'gtts').strip().lower()
+    engine_to_use = engine or os.getenv('BRADBOT_TTS_ENGINE', 'standard').strip().lower()
     text_to_use = text or 'Alarm'
 
+    # Validate engine
+    valid_engines = ['standard', 'neural', 'long-form', 'generative']
+    if engine_to_use not in valid_engines:
+        raise ValueError(f"Invalid engine '{engine_to_use}'. Valid options are: {', '.join(valid_engines)}")
+
     # Print as well as log so systemd/journal captures this even if logging is not configured
-    print(f'[bradbot.tts] TTS provider selected: {provider}')
-    logger.info('TTS provider selected: %s', provider)
+    print(f'[bradbot.tts] TTS provider selected: {provider}, Engine: {engine_to_use}')
+    logger.info('TTS provider selected: %s, Engine: %s', provider, engine_to_use)
 
     if provider == 'polly':
         if not _boto3:
             raise RuntimeError('boto3 is required for Polly provider; install boto3')
 
-        voice = os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
-        # Determine AWS region: prefer explicit env vars. If missing, raise a helpful error.
+        voice_to_use = voice or os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
         region = os.getenv('AWS_REGION') or os.getenv('AWS_DEFAULT_REGION')
-        if region:
-            client = _boto3.client('polly', region_name=region)
-        else:
-            raise RuntimeError(
-                "AWS region not configured for Polly. Set AWS_REGION or AWS_DEFAULT_REGION in the environment "
-                "(for example, in your systemd unit: Environment=AWS_REGION=us-east-1), or configure a default region in ~/.aws/config or via instance metadata."
+        if not region:
+            raise RuntimeError("AWS region not configured for Polly. Set AWS_REGION or AWS_DEFAULT_REGION in the environment "
+                               "(for example, in your systemd unit: Environment=AWS_REGION=us-east-1), or configure a default region in ~/.aws/config or via instance metadata."
             )
+
+        client = _boto3.client('polly', region_name=region)
         try:
-            # Polly can return an audio stream; write it to file
-            resp = client.synthesize_speech(Text=text_to_use, OutputFormat='mp3', VoiceId=voice)
+            resp = client.synthesize_speech(
+                Text=text_to_use,
+                OutputFormat='mp3',
+                VoiceId=voice_to_use,
+                Engine=engine_to_use
+            )
             stream = resp.get('AudioStream')
             if stream is None:
                 raise RuntimeError('No AudioStream in Polly response')
@@ -74,8 +88,8 @@ def synthesize_tts_to_file(text: str, out_path: str) -> None:
             raise RuntimeError('gTTS is required as a fallback provider; install gTTS')
 
         try:
-            t = _gTTS(text=text_to_use, lang='en')
-            t.save(out_path)
+            tts = _gTTS(text=text_to_use, lang='en')
+            tts.save(out_path)
         except Exception as e:
             print(f'[bradbot.tts] gTTS synthesis failed: {e}')
             logger.exception('gTTS synthesis failed')

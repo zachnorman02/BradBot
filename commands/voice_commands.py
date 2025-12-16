@@ -322,8 +322,28 @@ class VoiceGroup(app_commands.Group):
 
     # -------------------- TTS --------------------
     @app_commands.command(name="tts", description="Speak text via TTS into the voice channel")
-    @app_commands.describe(text="Text to speak")
-    async def tts(self, interaction: discord.Interaction, text: str):
+    @app_commands.describe(
+        text="Text to speak",
+        voice="Voice to use (optional, e.g., 'Joanna')",
+        engine="Engine to use (optional, e.g., 'Neural')",
+        language="Language code to use (optional, e.g., 'en-US')"
+    )
+    @app_commands.choices(
+        voice=[
+            app_commands.Choice(name=voice, value=voice) for voice in [
+                "Aditi", "Amy", "Astrid", "Bianca", "Brian", "Camila", "Carla", "Carmen", "Celine", "Chantal", "Conchita", "Cristiano", "Dora", "Emma", "Enrique", "Ewa", "Filiz", "Gabrielle", "Geraint", "Giorgio", "Gwyneth", "Hans", "Ines", "Ivy", "Jacek", "Jan", "Joanna", "Joey", "Justin", "Karl", "Kendra", "Kevin", "Kimberly", "Lea", "Liv", "Lotte", "Lucia", "Lupe", "Mads", "Maja", "Marlene", "Mathieu", "Matthew", "Maxim", "Mia", "Miguel", "Mizuki", "Naja", "Nicole", "Olivia", "Penelope", "Raveena", "Ricardo", "Ruben", "Russell", "Salli", "Seoyeon", "Takumi", "Tatyana", "Vicki", "Vitoria", "Zeina", "Zhiyu", "Aria", "Ayanda", "Arlet", "Hannah", "Arthur", "Daniel", "Liam", "Pedro", "Kajal", "Hiujin", "Laura", "Elin", "Ida", "Suvi", "Ola", "Hala", "Andres", "Sergio", "Remi", "Adriano", "Thiago", "Ruth", "Stephen", "Kazuha", "Tomoko", "Niamh", "Sofie", "Lisa", "Isabelle", "Zayd", "Danielle", "Gregory", "Burcu", "Jitka", "Sabrina", "Jasmine", "Jihye"
+            ]
+        ],
+        engine=[
+            app_commands.Choice(name=engine, value=engine) for engine in ["standard", "neural", "long-form", "generative"]
+        ],
+        language=[
+            app_commands.Choice(name=lang, value=lang) for lang in [
+                "arb", "cmn-CN", "cy-GB", "da-DK", "de-DE", "en-AU", "en-GB", "en-GB-WLS", "en-IN", "en-US", "es-ES", "es-MX", "es-US", "fr-CA", "fr-FR", "is-IS", "it-IT", "ja-JP", "hi-IN", "ko-KR", "nb-NO", "nl-NL", "pl-PL", "pt-BR", "pt-PT", "ro-RO", "ru-RU", "sv-SE", "tr-TR", "en-NZ", "en-ZA", "ca-ES", "de-AT", "yue-CN", "ar-AE", "fi-FI", "en-IE", "nl-BE", "fr-BE", "cs-CZ", "de-CH", "en-SG"
+            ]
+        ]
+    )
+    async def tts(self, interaction: discord.Interaction, text: str, voice: app_commands.Choice[str] = None, engine: app_commands.Choice[str] = None, language: app_commands.Choice[str] = None):
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
@@ -341,14 +361,18 @@ class VoiceGroup(app_commands.Group):
                 await interaction.response.send_message(f"❌ Failed to connect: {e}", ephemeral=True)
                 return
 
-        # No permission gating on TTS
-
         # Generate TTS audio file (use provider helper so we can switch to Polly)
         try:
             tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3')
             os.close(tmp_fd)
             try:
-                synthesize_tts_to_file(text, tmp_path)
+                synthesize_tts_to_file(
+                    text,
+                    tmp_path,
+                    voice=voice.value if voice else None,
+                    engine=engine.value.lower() if engine else None,
+                    language=language.value if language else None
+                )
             except Exception as e:
                 # Report to user and surface logs
                 await interaction.response.send_message(f"❌ TTS synthesis failed: {e}", ephemeral=True)
