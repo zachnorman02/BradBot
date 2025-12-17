@@ -60,6 +60,36 @@ def synthesize_tts_to_file(text: str, out_path: str, voice: str = None, engine: 
             )
 
         client = _boto3.client('polly', region_name=region)
+        # If the caller didn't specify a voice but did provide a language, try to pick a matching voice automatically.
+        if not voice and language_to_use:
+            try:
+                voice_params = {'LanguageCode': language_to_use}
+                # Engine filtering is only supported for neural/standard in describe_voices
+                if engine_to_use in ('neural', 'standard'):
+                    voice_params['Engine'] = engine_to_use
+                resp_voices = client.describe_voices(**voice_params)
+                voices = resp_voices.get('Voices', [])
+                if voices:
+                    def pick_voice(gender_preference):
+                        return next(
+                            (
+                                v for v in voices
+                                if gender_preference == v.get('Gender')
+                                and (engine_to_use in v.get('SupportedEngines', []) or engine_to_use not in ('neural', 'standard'))
+                            ),
+                            None
+                        )
+
+                    preferred = pick_voice('Male') or pick_voice('Female')
+                    if not preferred:
+                        preferred = next(
+                            (v for v in voices if engine_to_use in v.get('SupportedEngines', [])),
+                            voices[0]
+                        )
+                    voice_to_use = preferred.get('Id') or preferred.get('Name', voice_to_use)
+            except Exception as auto_voice_error:
+                print(f'[bradbot.tts] Could not auto-select voice for {language_to_use}: {auto_voice_error}')
+
         try:
             resp = client.synthesize_speech(
                 Text=text_to_use,
