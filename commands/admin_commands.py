@@ -6,18 +6,41 @@ from discord import app_commands
 from discord.ext import commands
 from discord import ui
 import datetime as dt
+from typing import Optional
 from database import db
 
 
 class AdminSettingsView(ui.View):
     """Interactive admin settings view with toggle buttons"""
     
-    def __init__(self, guild_id: int, persistent: bool = False):
+    def __init__(self, guild_id: int, persistent: bool = False, custom_id_prefix: Optional[str] = None):
         super().__init__(timeout=None if persistent else 180)
         self.guild_id = guild_id
         self.persistent = persistent
+        self.custom_id_prefix = custom_id_prefix
+        if self.persistent:
+            self._set_persistent_custom_ids()
         self.update_buttons()
-    
+
+    def _set_persistent_custom_ids(self):
+        """Assign deterministic custom IDs to buttons for persistent panels."""
+        prefix = self.custom_id_prefix or f"admin_panel:{self.guild_id}"
+        suffixes = [
+            "link",
+            "verify",
+            "booster",
+            "unverified",
+            "reply",
+            "member_send",
+            "auto_kick",
+            "auto_ban",
+            "refresh"
+        ]
+        buttons = [child for child in self.children if isinstance(child, discord.ui.Button)]
+        for button, suffix in zip(buttons, suffixes):
+            button.custom_id = f"{prefix}:{suffix}"
+
+
     def get_embed(self) -> discord.Embed:
         """Generate the settings display embed"""
         # Fetch current settings
@@ -210,9 +233,6 @@ class AdminSettingsView(ui.View):
             await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
             return
         self.update_buttons()
-        await interaction.response.edit_message(embed=self.get_embed(), view=self)
-
-
 class AdminToolsGroup(app_commands.Group):
     """Database and role management tools"""
     
@@ -1929,12 +1949,24 @@ class AdminGroup(app_commands.Group):
             if not db.connection_pool:
                 db.init_pool()
             
-            view = AdminSettingsView(interaction.guild.id, persistent=True)
+            db.init_persistent_panels_table()
+            custom_prefix = f"admin_panel:{interaction.guild.id}:{int(dt.datetime.now(dt.timezone.utc).timestamp())}"
+            view = AdminSettingsView(interaction.guild.id, persistent=True, custom_id_prefix=custom_prefix)
             
             # Send the persistent panel to the channel
-            await interaction.channel.send(
+            message = await interaction.channel.send(
                 embed=view.get_embed(),
                 view=view
+            )
+            interaction.client.add_view(view, message_id=message.id)
+            
+            # Store panel metadata so it can be restored on restart
+            db.save_persistent_panel(
+                message_id=message.id,
+                guild_id=interaction.guild.id,
+                channel_id=interaction.channel.id,
+                panel_type='admin_settings',
+                metadata={'custom_id_prefix': custom_prefix}
             )
             
             # Confirm to the admin

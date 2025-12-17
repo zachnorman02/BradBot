@@ -10,6 +10,7 @@ from .utility_commands import UtilityGroup
 from .standalone_commands import tconvert_command, timestamp_command
 from .voice_commands import VoiceGroup
 from .alarm_commands import AlarmGroup
+from .issues_commands import IssuesGroup
 
 __all__ = [
     'EmojiGroup',
@@ -17,6 +18,7 @@ __all__ = [
     'BoosterRoleGroup',
     'AdminGroup',
     'SettingsGroup',
+    'IssuesGroup',
     'PollGroup',
     'UtilityGroup',
     'VoiceGroup',

@@ -24,6 +24,8 @@ class Database:
         self.use_iam_auth = os.getenv('USE_IAM_AUTH', 'true').lower() == 'true'
         self.region = os.getenv('AWS_REGION', 'us-east-1')
         self.connection_pool: Optional[pool.SimpleConnectionPool] = None
+        self.persistent_panel_ids = set()
+        self._persistent_panels_table_initialized = False
         
     def _get_iam_token(self) -> str:
         """Generate IAM authentication token for Aurora DSQL"""
@@ -580,6 +582,92 @@ class Database:
                 for row in results
             ]
         return []
+
+    # Persistent panel methods
+    def init_persistent_panels_table(self):
+        """Create the persistent_panels table if it does not exist."""
+        if self._persistent_panels_table_initialized:
+            return
+        query = """
+        CREATE TABLE IF NOT EXISTS main.persistent_panels (
+            message_id BIGINT PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            channel_id BIGINT NOT NULL,
+            panel_type VARCHAR(100) NOT NULL,
+            metadata TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        self.execute_query(query, fetch=False)
+        # Make sure updated_at exists for legacy tables
+        try:
+            alter_query = """
+            ALTER TABLE main.persistent_panels
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            """
+            self.execute_query(alter_query, fetch=False)
+        except Exception as e:
+            print(f"Note: Could not ensure updated_at column (may already exist): {e}")
+        self._persistent_panels_table_initialized = True
+        print("✅ persistent_panels table initialized")
+
+    def save_persistent_panel(self, message_id: int, guild_id: int, channel_id: int,
+                               panel_type: str, metadata: Optional[dict] = None):
+        """Insert or update a persistent panel record."""
+        query = """
+        INSERT INTO main.persistent_panels (message_id, guild_id, channel_id, panel_type, metadata, updated_at)
+        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (message_id)
+        DO UPDATE SET
+            guild_id = EXCLUDED.guild_id,
+            channel_id = EXCLUDED.channel_id,
+            panel_type = EXCLUDED.panel_type,
+            metadata = EXCLUDED.metadata,
+            updated_at = CURRENT_TIMESTAMP
+        """
+        metadata_json = json.dumps(metadata) if metadata else None
+        self.execute_query(query, (message_id, guild_id, channel_id, panel_type, metadata_json), fetch=False)
+        self.persistent_panel_ids.add(message_id)
+
+    def delete_persistent_panel(self, message_id: int):
+        """Remove a persistent panel record."""
+        query = "DELETE FROM main.persistent_panels WHERE message_id = %s"
+        self.execute_query(query, (message_id,), fetch=False)
+        self.persistent_panel_ids.discard(message_id)
+
+    def get_persistent_panels(self, panel_type: Optional[str] = None) -> list:
+        """Fetch stored persistent panels, optionally filtered by type."""
+        if panel_type:
+            query = """
+            SELECT message_id, guild_id, channel_id, panel_type, metadata
+            FROM main.persistent_panels
+            WHERE panel_type = %s
+            ORDER BY created_at ASC
+            """
+            params = (panel_type,)
+        else:
+            query = """
+            SELECT message_id, guild_id, channel_id, panel_type, metadata
+            FROM main.persistent_panels
+            ORDER BY created_at ASC
+            """
+            params = None
+        results = self.execute_query(query, params)
+        if not results:
+            return []
+        panels = []
+        for row in results:
+            metadata = json.loads(row[4]) if row[4] else None
+            panels.append({
+                'message_id': row[0],
+                'guild_id': row[1],
+                'channel_id': row[2],
+                'panel_type': row[3],
+                'metadata': metadata
+            })
+            self.persistent_panel_ids.add(row[0])
+        return panels
     
     # Reminder methods
     def create_reminder(self, user_id: int, message: str, remind_at, guild_id: int = None, channel_id: int = None) -> int:

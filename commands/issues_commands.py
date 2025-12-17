@@ -1,0 +1,163 @@
+"""
+Issue command group for GitHub issue submission panels
+"""
+import discord
+from discord import app_commands
+from discord import ui
+from discord.ui import Label
+import datetime as dt
+from typing import Optional
+
+from database import db
+from utils.github_helper import create_issue, GitHubIssueError
+
+
+class IssueReportModal(discord.ui.Modal, title="Submit a GitHub Issue"):
+    """Modal for collecting GitHub issue details."""
+
+    def __init__(self):
+        super().__init__(timeout=300)
+        self.issue_title = discord.ui.TextInput(
+            label="Issue Title",
+            placeholder="Summarize the problem or idea",
+            max_length=100,
+            required=True,
+        )
+        self.add_item(self.issue_title)
+
+        self.issue_description = discord.ui.TextInput(
+            label="Description (optional)",
+            style=discord.TextStyle.paragraph,
+            placeholder="Steps to reproduce, screenshots, context, etc.",
+            required=False,
+            max_length=2000,
+        )
+        self.add_item(self.issue_description)
+
+        options = [
+            discord.SelectOption(label="Bug", value="bug", description="Something is broken", emoji="🐞"),
+            discord.SelectOption(label="Enhancement", value="enhancement", description="New idea or improvement", emoji="✨"),
+        ]
+        options[0].default = True
+        self.issue_type_select = discord.ui.Select(
+            placeholder="Choose an issue type",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="issue_type_select",
+        )
+        self.add_item(discord.ui.Label(text="Issue Type", component=self.issue_type_select))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        issue_type = self.issue_type_select.values[0] if self.issue_type_select.values else "bug"
+        description = (self.issue_description.value or "").strip()
+        if not description:
+            description = "_No description provided._"
+
+        submitter_line = f"Submitted by {interaction.user} (ID: {interaction.user.id})"
+        guild_line = (
+            f"Server: {interaction.guild.name} ({interaction.guild.id})" if interaction.guild else "Server: Direct Message"
+        )
+        body = f"{description}\n\n---\n{submitter_line}\n{guild_line}"
+
+        try:
+            issue = await create_issue(
+                title=self.issue_title.value.strip(),
+                body=body,
+                labels=[issue_type],
+            )
+        except ValueError as config_error:
+            await interaction.response.send_message(
+                "❌ GitHub issue reporting is not configured. Please set GITHUB_REPO and GITHUB_TOKEN.",
+                ephemeral=True,
+            )
+            print(f"[ISSUES] Issue panel misconfigured: {config_error}")
+            return
+        except GitHubIssueError as issue_error:
+            await interaction.response.send_message(
+                f"❌ Failed to create GitHub issue: {issue_error}",
+                ephemeral=True,
+            )
+            return
+        except Exception as e:
+            await interaction.response.send_message(
+                "❌ An unexpected error occurred while creating the issue.",
+                ephemeral=True,
+            )
+            print(f"[ISSUES] Unexpected GitHub issue error: {e}")
+            return
+
+        await interaction.response.send_message(
+            f"✅ Issue created: [{issue.get('title', 'View on GitHub')}]({issue.get('html_url')})",
+            ephemeral=True,
+        )
+
+
+class IssuePanelView(ui.View):
+    """View containing a single button to open the issue submission modal."""
+
+    def __init__(self, guild_id: int, custom_id_prefix: Optional[str] = None):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.custom_id_prefix = custom_id_prefix or f"issue_panel:{guild_id}"
+        self.report_issue_button.custom_id = f"{self.custom_id_prefix}:report"
+
+    @ui.button(label="Submit an Issue", style=discord.ButtonStyle.blurple, emoji="📝")
+    async def report_issue_button(self, interaction: discord.Interaction, button: ui.Button):
+        modal = IssueReportModal()
+        await interaction.response.send_modal(modal)
+
+
+class IssuesGroup(app_commands.Group):
+    """Slash command group for issue reporting utilities."""
+
+    def __init__(self):
+        super().__init__(name="issues", description="GitHub issue reporting commands")
+
+    @app_commands.command(name="panel", description="Create a persistent GitHub issue submission panel")
+    @app_commands.default_permissions(administrator=True)
+    async def issues_panel(self, interaction: discord.Interaction):
+        """Create a panel that lets users submit GitHub issues via a modal."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+
+            db.init_persistent_panels_table()
+            prefix = f"issue_panel:{interaction.guild.id}:{int(dt.datetime.now(dt.timezone.utc).timestamp())}"
+            view = IssuePanelView(interaction.guild.id, custom_id_prefix=prefix)
+
+            embed = discord.Embed(
+                title="🐞 Report an Issue",
+                description=(
+                    "Found a bug or have an idea? Click the button below to submit it directly to GitHub.\n\n"
+                    "You'll be asked for a title, optional description, and whether it's a bug or enhancement."
+                ),
+                color=discord.Color.orange(),
+            )
+            embed.set_footer(text="Issues are created on GitHub with your Discord username.")
+
+            message = await interaction.channel.send(embed=embed, view=view)
+            interaction.client.add_view(view, message_id=message.id)
+
+            db.save_persistent_panel(
+                message_id=message.id,
+                guild_id=interaction.guild.id,
+                channel_id=interaction.channel.id,
+                panel_type='issue_panel',
+                metadata={'custom_id_prefix': prefix},
+            )
+
+            await interaction.response.send_message(
+                "✅ Issue submission panel created! Anyone can now open the modal from this message.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            print(f"[ISSUES] Error creating issues panel: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while creating the issues panel.",
+                ephemeral=True,
+            )

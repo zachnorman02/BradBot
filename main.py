@@ -16,6 +16,7 @@ from commands import (
     BoosterGroup, 
     AdminGroup, 
     SettingsGroup,
+    IssuesGroup,
     PollGroup,
     UtilityGroup,
     VoiceGroup,
@@ -26,6 +27,8 @@ from commands import (
 
 # Import poll views
 from commands.poll_commands import PollView
+from commands.admin_commands import AdminSettingsView
+from commands.issues_commands import IssuePanelView
 
 # Import core functionality
 from core import (
@@ -61,6 +64,7 @@ bot.tree.add_command(EmojiGroup(bot))
 bot.tree.add_command(BoosterGroup())
 bot.tree.add_command(SettingsGroup())
 bot.tree.add_command(AdminGroup())
+bot.tree.add_command(IssuesGroup())
 bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
 bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
 bot.tree.add_command(VoiceGroup())
@@ -173,6 +177,57 @@ async def on_ready():
         print(f"✅ Registered {len(active_polls)} active poll view(s)")
     except Exception as e:
         print(f"⚠️  Failed to register poll views: {e}")
+
+    # Re-register persistent panels (admin + issues)
+    try:
+        db.init_persistent_panels_table()
+        stored_panels = db.get_persistent_panels()
+        restored_counts = {}
+        for panel in stored_panels:
+            metadata = panel.get('metadata') or {}
+            custom_prefix = metadata.get('custom_id_prefix')
+            guild = bot.get_guild(panel['guild_id'])
+            if not guild:
+                db.delete_persistent_panel(panel['message_id'])
+                continue
+            channel = guild.get_channel(panel['channel_id'])
+            if not channel:
+                db.delete_persistent_panel(panel['message_id'])
+                continue
+            try:
+                await channel.fetch_message(panel['message_id'])
+            except discord.NotFound:
+                db.delete_persistent_panel(panel['message_id'])
+                continue
+            except Exception as fetch_error:
+                print(f"⚠️  Could not verify panel message {panel['message_id']}: {fetch_error}")
+                continue
+
+            if panel['panel_type'] == 'admin_settings':
+                view = AdminSettingsView(
+                    guild_id=panel['guild_id'],
+                    persistent=True,
+                    custom_id_prefix=custom_prefix
+                )
+            elif panel['panel_type'] == 'issue_panel':
+                view = IssuePanelView(
+                    guild_id=panel['guild_id'],
+                    custom_id_prefix=custom_prefix
+                )
+            else:
+                print(f"⚠️  Unknown panel type {panel['panel_type']}, skipping.")
+                continue
+
+            bot.add_view(view, message_id=panel['message_id'])
+            restored_counts[panel['panel_type']] = restored_counts.get(panel['panel_type'], 0) + 1
+
+        if restored_counts:
+            summary = ", ".join(f"{ptype}: {count}" for ptype, count in restored_counts.items())
+            print(f"✅ Registered persistent panels ({summary})")
+        else:
+            print("ℹ️ No persistent panels to restore")
+    except Exception as e:
+        print(f"⚠️  Failed to register persistent panels: {e}")
     
     try:
         # Sync slash commands
@@ -261,6 +316,17 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
 async def on_message_delete(message: discord.Message):
     """Handle message deletions for mirrored messages"""
     await handle_message_delete(message)
+
+@bot.event
+async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
+    """Clean up persistent panels when their source message is deleted."""
+    try:
+        if payload.message_id not in getattr(db, 'persistent_panel_ids', set()):
+            return
+        db.delete_persistent_panel(payload.message_id)
+        print(f"🗑️ Removed persistent panel record for message {payload.message_id}")
+    except Exception as e:
+        print(f"⚠️  Error cleaning up persistent panel {payload.message_id}: {e}")
 
 # Manual sync command (useful for testing) - keep as text command
 @bot.command()
