@@ -101,6 +101,8 @@ SHOE_CM_RANGE = {
     "women": (22.8, 29.2)
 }
 
+HALF_STEP_SYSTEMS = {"us", "uk", "au", "eu", "jp", "china", "mex"}
+
 
 def _clamp(value: float, bounds: tuple[float, float] | None) -> float:
     if not bounds:
@@ -142,6 +144,9 @@ def _cm_to_size(system: str, cm_value: float, gender: str) -> float:
         raise ValueError("Unsupported shoe size system")
     size = (cm_value - coeffs["intercept"]) / coeffs["slope"]
     size = _clamp(size, coeffs["range"])
+    if system in HALF_STEP_SYSTEMS:
+        # Round to nearest half-size for numbered systems
+        return round(round(size * 2) / 2, 2)
     return round(size, 2)
 
 
