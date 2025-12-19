@@ -1981,6 +1981,44 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
 
+    @app_commands.command(name="sync", description="Force sync slash commands (bot owner or admin)")
+    @app_commands.describe(scope="Sync globally or just this server")
+    @app_commands.choices(scope=[
+        app_commands.Choice(name="Global (all servers)", value="global"),
+        app_commands.Choice(name="This server only", value="guild")
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def sync_commands(self, interaction: discord.Interaction, scope: app_commands.Choice[str] = None):
+        """Allow admins to trigger a slash-command sync without restarting."""
+        # Only allow in DMs if scope is global; guild-scoped sync requires context.
+        if scope and scope.value == "guild" and not interaction.guild:
+            await interaction.response.send_message(
+                "❌ Guild-only sync must be run inside the server.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        tree = interaction.client.tree
+        try:
+            if scope and scope.value == "guild":
+                synced = await tree.sync(guild=interaction.guild)
+                await interaction.followup.send(
+                    f"✅ Synced {len(synced)} command(s) for **{interaction.guild.name}**.",
+                    ephemeral=True
+                )
+            else:
+                synced = await tree.sync()
+                await interaction.followup.send(
+                    f"✅ Globally synced {len(synced)} command(s).",
+                    ephemeral=True
+                )
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Failed to sync commands: {e}",
+                ephemeral=True
+            )
+
     @app_commands.command(name="sql", description="Execute a SQL query (BOT OWNER ONLY)")
     @app_commands.describe(query="The SQL query to execute")
     async def execute_sql(self, interaction: discord.Interaction, query: str):
