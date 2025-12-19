@@ -355,6 +355,26 @@ async def clearcmds(ctx):
         await ctx.send(f"Failed to clear commands: {e}")
 
 
+@bot.command(name="resync")
+@commands.has_permissions(administrator=True)
+async def resync_commands(ctx, scope: Literal["global", "guild"] = "global"):
+    """Manual text-command sync for admins when slash syncs lag."""
+    if scope == "guild" and not ctx.guild:
+        await ctx.send("❌ Guild-only sync must be run inside a server.")
+        return
+
+    async with ctx.typing():
+        try:
+            if scope == "guild":
+                synced = await bot.tree.sync(guild=ctx.guild)
+                await ctx.send(f"✅ Synced {len(synced)} command(s) for **{ctx.guild.name}**.")
+            else:
+                synced = await bot.tree.sync()
+                await ctx.send(f"✅ Globally synced {len(synced)} command(s).")
+        except Exception as e:
+            await ctx.send(f"❌ Failed to sync commands: {e}")
+
+
 # ============================================================================
 # STANDALONE SLASH COMMANDS  
 # ============================================================================
