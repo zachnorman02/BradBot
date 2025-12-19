@@ -302,7 +302,7 @@ class ConversionGroup(app_commands.Group):
                 ephemeral=True
             )
 
-    @app_commands.command(name="shoe", description="Convert shoe sizes between regions (US/CA, UK, AU, EU, JP, China, Mexico, Korea, Mondopoint, cm, inches)")
+    @app_commands.command(name="shoe", description="Convert shoe sizes between various regions")
     @app_commands.describe(
         value="Shoe size value",
         from_system="Measurement system of the input size",
