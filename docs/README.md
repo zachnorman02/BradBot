@@ -6,6 +6,7 @@ Welcome to BradBot’s documentation hub. Use these pages to get set up quickly,
 
 - [Local development](local-development.md)
 - [Deployment & operations](deployment.md)
+- [Command reference](commands.md)
 - [Feature reference](#feature-reference)
 
 ## Feature Reference

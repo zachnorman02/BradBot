@@ -13,6 +13,7 @@ BradBot is a feature-rich Discord bot that powers moderation tools, boosters, po
 ## Documentation
 
 - [Feature reference](docs/README.md)
+- [Command reference](docs/commands.md)
 - [Local development guide](docs/local-development.md)
 - [Deployment & operations](docs/deployment.md)
 
