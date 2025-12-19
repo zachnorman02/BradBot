@@ -15,8 +15,10 @@ from database import db
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from utils.secrets_manager import load_secret_env
 
 load_dotenv()
+load_secret_env()
 
 def main():
     """Set up default role rules for existing guilds"""

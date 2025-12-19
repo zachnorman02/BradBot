@@ -17,6 +17,7 @@ Environment=BRADBOT_FFMPEG_VOLUME=5.0
 Environment=BRADBOT_TTS_PROVIDER=polly
 Environment=BRADBOT_TTS_VOICE=Matthew
 Environment=GITHUB_REPO=zachnorman02/BradBot
+Environment=SECRETS_MANAGER_ID=BradBot/creds
 ExecStart=/home/ubuntu/bradbot/venv/bin/python main.py
 Restart=always
 RestartSec=10

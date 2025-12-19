@@ -50,9 +50,11 @@ from utils.ffmpeg_helper import ensure_ffmpeg, which_ffmpeg
 
 # Import helpers for standalone commands
 from utils.timestamp_helpers import TimestampStyle
+from utils.secrets_manager import load_secret_env
 
 # Load environment variables from .env file
 load_dotenv()
+load_secret_env()
 
 intents = discord.Intents.default()
 intents.message_content = True
