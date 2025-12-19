@@ -15,6 +15,7 @@ BradBot is typically deployed on an EC2 instance managed by `systemd`. This guid
      "OTHER_SECRET": "value"
    }
    ```
+   BradBot auto-detects GitHub Discussion categories when needed, but you can override them with `GITHUB_DISCUSSION_CATEGORY_*` keys in the same secret if you want fixed IDs.
 5. Ensure the instance role has `secretsmanager:GetSecretValue` on that secret. BradBot will load it automatically on startup (see `utils/secrets_manager.py`).
 
 ## 2. systemd Service

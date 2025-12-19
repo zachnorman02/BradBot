@@ -29,6 +29,7 @@ USE_IAM_AUTH=false
 ```
 
 > **Secrets Manager?** In production BradBot automatically loads AWS Secrets Manager secret `BradBot/creds`. Locally you can skip it (leave `SECRETS_MANAGER_ID` empty) or point to a dev secret if you have one.
+> GitHub Discussion category IDs are auto-detected at runtime, but you can still set `GITHUB_DISCUSSION_CATEGORY_*` if you want to override the detection.
 
 ## 3. Start PostgreSQL
 ### Option A: Docker

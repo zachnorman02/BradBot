@@ -17,7 +17,7 @@ Welcome to BradBot’s documentation hub. Use these pages to get set up quickly,
 - Text command `:resync` — same as `/admin sync`, handy when slash commands fail to register.
 
 ### Community Tools
-- `/issues panel` — GitHub issue reporting modal that posts directly to `GITHUB_REPO`.
+- `/issues panel` — GitHub issue/discussion modal that can open traditional issues or Discussions (Q&A/general) directly in `GITHUB_REPO`; discussion categories are auto-resolved via the GitHub API.
 - `/poll …` — create, refresh, reopen, and analyze rich polls (word clouds, stats, toggle response visibility).
 - `/settings …` — let members control notifications and ping preferences via an ephemeral panel.
 - `/convert …` — temperature/length/weight/timezone utilities plus testosterone calculators and a robust shoe-size converter (men/women, multi-region, half-size rounding).

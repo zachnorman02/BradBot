@@ -4,12 +4,16 @@ Issue command group for GitHub issue submission panels
 import discord
 from discord import app_commands
 from discord import ui
-from discord.ui import Label
 import datetime as dt
 from typing import Optional
 
 from database import db
-from utils.github_helper import create_issue, GitHubIssueError
+from utils.github_helper import (
+    create_issue,
+    GitHubIssueError,
+    create_discussion,
+    GitHubDiscussionError,
+)
 
 
 class IssueReportModal(discord.ui.Modal, title="Submit a GitHub Issue"):
@@ -35,21 +39,43 @@ class IssueReportModal(discord.ui.Modal, title="Submit a GitHub Issue"):
         self.add_item(self.issue_description)
 
         options = [
-            discord.SelectOption(label="Bug", value="bug", description="Something is broken", emoji="🐞"),
-            discord.SelectOption(label="Enhancement", value="enhancement", description="New idea or improvement", emoji="✨"),
+            discord.SelectOption(
+                label="Bug",
+                value="issue:bug",
+                description="Something is broken",
+                emoji="🐞",
+                default=True,
+            ),
+            discord.SelectOption(
+                label="Enhancement",
+                value="issue:enhancement",
+                description="New idea or improvement",
+                emoji="✨",
+            ),
+            discord.SelectOption(
+                label="Question (Q&A Discussion)",
+                value="discussion:qa",
+                description="Post to the Discussions Q&A section",
+                emoji="❓",
+            ),
+            discord.SelectOption(
+                label="General Discussion",
+                value="discussion:general",
+                description="Start a general topic in Discussions",
+                emoji="💬",
+            ),
         ]
-        options[0].default = True
-        self.issue_type_select = discord.ui.Select(
-            placeholder="Choose an issue type",
+        self.submission_type_select = discord.ui.Select(
+            placeholder="Choose what to create",
             min_values=1,
             max_values=1,
             options=options,
             custom_id="issue_type_select",
         )
-        self.add_item(discord.ui.Label(text="Issue Type", component=self.issue_type_select))
+        self.add_item(self.submission_type_select)
 
     async def on_submit(self, interaction: discord.Interaction):
-        issue_type = self.issue_type_select.values[0] if self.issue_type_select.values else "bug"
+        selection = self.submission_type_select.values[0] if self.submission_type_select.values else "issue:bug"
         description = (self.issue_description.value or "").strip()
         if not description:
             description = "_No description provided._"
@@ -60,37 +86,51 @@ class IssueReportModal(discord.ui.Modal, title="Submit a GitHub Issue"):
         )
         body = f"{description}\n\n---\n{submitter_line}\n{guild_line}"
 
+        kind, value = selection.split(":", 1)
         try:
-            issue = await create_issue(
-                title=self.issue_title.value.strip(),
-                body=body,
-                labels=[issue_type],
-            )
+            if kind == "issue":
+                result = await create_issue(
+                    title=self.issue_title.value.strip(),
+                    body=body,
+                    labels=[value],
+                )
+                await interaction.response.send_message(
+                    f"✅ Issue created: [{result.get('title', 'View on GitHub')}]({result.get('html_url')})",
+                    ephemeral=True,
+                )
+            else:
+                discussion = await create_discussion(
+                    title=self.issue_title.value.strip(),
+                    body=body,
+                    category=value,
+                )
+                await interaction.response.send_message(
+                    f"✅ Discussion created: [{discussion.get('title', 'View on GitHub')}]({discussion.get('html_url')})",
+                    ephemeral=True,
+                )
         except ValueError as config_error:
             await interaction.response.send_message(
-                "❌ GitHub issue reporting is not configured. Please set GITHUB_REPO and GITHUB_TOKEN.",
+                "❌ GitHub issue/discussion reporting is not fully configured. Please set GITHUB_REPO, "
+                "GITHUB_TOKEN, and discussion category IDs if using discussions.",
                 ephemeral=True,
             )
-            print(f"[ISSUES] Issue panel misconfigured: {config_error}")
-            return
+            print(f"[ISSUES] Issue/discussion panel misconfigured: {config_error}")
         except GitHubIssueError as issue_error:
             await interaction.response.send_message(
                 f"❌ Failed to create GitHub issue: {issue_error}",
                 ephemeral=True,
             )
-            return
-        except Exception as e:
+        except GitHubDiscussionError as discussion_error:
             await interaction.response.send_message(
-                "❌ An unexpected error occurred while creating the issue.",
+                f"❌ Failed to create GitHub discussion: {discussion_error}",
                 ephemeral=True,
             )
-            print(f"[ISSUES] Unexpected GitHub issue error: {e}")
-            return
-
-        await interaction.response.send_message(
-            f"✅ Issue created: [{issue.get('title', 'View on GitHub')}]({issue.get('html_url')})",
-            ephemeral=True,
-        )
+        except Exception as e:
+            await interaction.response.send_message(
+                "❌ An unexpected error occurred while submitting your request.",
+                ephemeral=True,
+            )
+            print(f"[ISSUES] Unexpected GitHub submission error: {e}")
 
 
 class IssuePanelView(ui.View):
