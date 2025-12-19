@@ -7,10 +7,11 @@ from .admin_commands import AdminGroup
 from .settings_commands import SettingsGroup
 from .poll_commands import PollGroup
 from .utility_commands import UtilityGroup
-from .standalone_commands import tconvert_command, timestamp_command
+from .standalone_commands import timestamp_command, echo_command
 from .voice_commands import VoiceGroup
 from .alarm_commands import AlarmGroup
 from .issues_commands import IssuesGroup
+from .convert_commands import ConversionGroup
 
 __all__ = [
     'EmojiGroup',
@@ -19,10 +20,11 @@ __all__ = [
     'AdminGroup',
     'SettingsGroup',
     'IssuesGroup',
+    'ConversionGroup',
     'PollGroup',
     'UtilityGroup',
     'VoiceGroup',
     'AlarmGroup',
-    'tconvert_command',
     'timestamp_command',
+    'echo_command',
 ]

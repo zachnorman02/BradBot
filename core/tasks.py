@@ -858,6 +858,44 @@ async def poll_auto_close_check(bot):
             print(f"Error in poll auto-close check: {e}")
 
 
+async def poll_results_refresh(bot):
+    """Periodically refresh poll embeds that display live responses."""
+    await bot.wait_until_ready()
+    from commands.poll_commands import update_poll_embed  # Lazy import to avoid circular deps
+
+    while not bot.is_closed():
+        try:
+            await asyncio.sleep(120)
+
+            if not db.connection_pool:
+                db.init_pool()
+
+            polls = db.execute_query("""
+                SELECT id, guild_id, channel_id, message_id
+                FROM main.polls
+                WHERE show_responses = TRUE AND message_id IS NOT NULL
+            """)
+
+            if not polls:
+                continue
+
+            for poll_id, guild_id, channel_id, message_id in polls:
+                guild = bot.get_guild(guild_id)
+                if not guild:
+                    continue
+                channel = guild.get_channel(channel_id)
+                if not channel:
+                    continue
+                try:
+                    await update_poll_embed(poll_id, channel, message_id)
+                except discord.NotFound:
+                    continue
+                except Exception as e:
+                    print(f"[POLL] Failed to auto-refresh poll {poll_id}: {e}")
+        except Exception as e:
+            print(f"Error in poll results refresh task: {e}")
+
+
 # ============================================================================
 # REMINDER TASK
 # ============================================================================

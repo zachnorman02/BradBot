@@ -560,7 +560,12 @@ class Database:
         """Reopen a poll to allow new responses"""
         query = "UPDATE main.polls SET is_active = TRUE WHERE id = %s"
         self.execute_query(query, (poll_id,), fetch=False)
-    
+
+    def set_poll_show_responses(self, poll_id: int, show_responses: bool):
+        """Update whether a poll shows responses on its message"""
+        query = "UPDATE main.polls SET show_responses = %s WHERE id = %s"
+        self.execute_query(query, ('true' if show_responses else 'false', poll_id), fetch=False)
+
     def get_active_polls(self, guild_id: int) -> list:
         """Get all active polls in a guild"""
         query = """

@@ -94,8 +94,14 @@ class GuildPlayer:
             audio = source.get('audio')
             volume = source.get('volume', 0.5)
             player = discord.PCMVolumeTransformer(audio, volume=volume)
+            cleanup = source.get('cleanup')
 
             def _after(err):
+                if cleanup:
+                    try:
+                        cleanup()
+                    except Exception as cleanup_error:
+                        print(f"[VOICE] Cleanup error: {cleanup_error}")
                 if err:
                     print(f"[VOICE] Playback error: {err}")
                 # schedule next
@@ -203,124 +209,6 @@ class VoiceGroup(app_commands.Group):
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to disconnect: {e}", ephemeral=True)
 
-    # -------------------- Playback --------------------
-    @app_commands.command(name="play", description="Play audio from a URL (YouTube or direct audio).")
-    @app_commands.describe(source="URL to play (YouTube link or direct audio URL)")
-    async def play(self, interaction: discord.Interaction, source: str):
-        """Enqueue and play an audio source. Uses yt-dlp for YouTube URLs if available."""
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        # Require the user to be in voice or specify channel via /voice join first
-        if not (getattr(interaction.user, 'voice', None) and getattr(interaction.user.voice, 'channel', None)) and not interaction.guild.voice_client:
-            await interaction.followup.send("❌ You must be in a voice channel or the bot must already be connected.", ephemeral=True)
-            return
-
-        # Ensure bot is connected to the user's channel if not already
-        target_channel = None
-        if interaction.guild.voice_client and interaction.guild.voice_client.is_connected():
-            target_channel = interaction.guild.voice_client.channel
-        else:
-            if getattr(interaction.user, 'voice', None) and getattr(interaction.user.voice, 'channel', None):
-                target_channel = interaction.user.voice.channel
-
-        # No permission gating: any user who can invoke the command may enqueue
-
-        # Ensure connected
-        try:
-            if not interaction.guild.voice_client or not interaction.guild.voice_client.is_connected():
-                await target_channel.connect()
-        except Exception as e:
-            await interaction.followup.send(f"❌ Failed to connect: {e}", ephemeral=True)
-            return
-
-        # Extract direct audio URL if yt-dlp available and URL looks like YouTube
-        direct_url = source
-        info_title = None
-        try:
-            if 'youtube.com' in source or 'youtu.be' in source:
-                # Try to get cookies for age-restricted content
-                cookie_file = await fetch_youtube_cookies()
-
-                ydl_opts = {
-                    'format': 'bestaudio',
-                    'noplaylist': True,
-                    'quiet': False
-                }
-
-                if cookie_file:
-                    ydl_opts['cookiefile'] = cookie_file
-
-                with YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(source, download=False)
-                    direct_url = info.get('url')
-                    info_title = info.get('title')
-
-        except Exception as e:
-            print(f"[VOICE] yt-dlp extract error: {e}")
-
-        # Prepare ffmpeg audio source
-        ff_opts = "-vn -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
-        try:
-            audio = FFmpegPCMAudio(direct_url, options=ff_opts)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Failed to prepare audio source: {e}", ephemeral=True)
-            return
-
-        guild_id = interaction.guild.id
-        player = PLAYERS.get(guild_id)
-        if not player:
-            player = GuildPlayer(guild_id, interaction.client)
-            PLAYERS[guild_id] = player
-
-        await player.enqueue({'audio': audio, 'title': info_title or source})
-
-        await interaction.followup.send(f"✅ Queued: {info_title or source}", ephemeral=True)
-
-    @app_commands.command(name="skip", description="Skip the current track")
-    async def skip(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
-            return
-
-        vc = interaction.guild.voice_client
-        if not vc or not vc.is_connected():
-            await interaction.response.send_message("ℹ️ I'm not connected to voice.", ephemeral=True)
-            return
-
-        # No permission gating on skip
-
-        vc.stop()
-        await interaction.response.send_message("⏭️ Skipped.", ephemeral=True)
-
-    @app_commands.command(name="stop", description="Stop playback and clear the queue")
-    async def stop(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
-            return
-
-        vc = interaction.guild.voice_client
-        if not vc or not vc.is_connected():
-            await interaction.response.send_message("ℹ️ I'm not connected to voice.", ephemeral=True)
-            return
-
-        # No permission gating on stop
-
-        # Clear queue
-        player = PLAYERS.get(interaction.guild.id)
-        if player:
-            while not player.queue.empty():
-                try:
-                    player.queue.get_nowait()
-                except Exception:
-                    break
-
-        vc.stop()
-        await interaction.response.send_message("⏹️ Stopped and cleared queue.", ephemeral=True)
-
     # -------------------- TTS --------------------
     # Define a list of available voices
     AVAILABLE_VOICES = [
@@ -342,10 +230,21 @@ class VoiceGroup(app_commands.Group):
         text="Text to speak",
         voice="Voice to use (e.g., 'Joanna')",
         engine="Engine to use (e.g., 'Neural')",
-        language="Language code to use (e.g., 'en-US')"
+        language="Language code to use (e.g., 'en-US')",
+        announce_author="Say who submitted the TTS before speaking the text",
+        post_text="Also post the spoken text in this channel"
     )
-    async def tts(self, interaction: discord.Interaction, text: str, voice: str = None, engine: str = None, language: str = None):
-        print(f"DEBUG: text={text}, voice={voice}, engine={engine}, language={language}")
+    async def tts(
+        self,
+        interaction: discord.Interaction,
+        text: str,
+        voice: str = None,
+        engine: str = None,
+        language: str = None,
+        announce_author: bool = False,
+        post_text: bool = True
+    ):
+        print(f"DEBUG: text={text}, voice={voice}, engine={engine}, language={language}, announce_author={announce_author}, post_text={post_text}")
 
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
@@ -353,12 +252,17 @@ class VoiceGroup(app_commands.Group):
 
         # Ensure bot is connected or user's in voice
         vc = interaction.guild.voice_client
-        if not vc or not vc.is_connected():
-            if not (getattr(interaction.user, 'voice', None) and getattr(interaction.user.voice, 'channel', None)):
+        target_channel = None
+        if vc and vc.is_connected():
+            target_channel = vc.channel
+        else:
+            if getattr(interaction.user, 'voice', None) and getattr(interaction.user.voice, 'channel', None):
+                target_channel = interaction.user.voice.channel
+            else:
                 await interaction.response.send_message("❌ You must be in a voice channel or the bot must be connected.", ephemeral=True)
                 return
             try:
-                await interaction.user.voice.channel.connect()
+                await target_channel.connect()
                 vc = interaction.guild.voice_client
             except Exception as e:
                 await interaction.response.send_message(f"❌ Failed to connect: {e}", ephemeral=True)
@@ -367,23 +271,62 @@ class VoiceGroup(app_commands.Group):
         # Process TTS request
         await interaction.response.defer(ephemeral=True)
         try:
-            # Create a temporary file for the audio output
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_audio:
-                temp_audio_path = temp_audio.name
+            fd, temp_audio_path = tempfile.mkstemp(suffix=".mp3", prefix="bradbot_tts_")
+            os.close(fd)
+            spoken_text = text
+            if announce_author:
+                spoken_text = f"{interaction.user.display_name} says: {text}"
 
-            # Generate the TTS audio file
-            synthesize_tts_to_file(
-                text=text,
-                out_path=temp_audio_path,
-                voice=voice,
-                engine=engine,
-                language=language
-            )
+            try:
+                synthesize_tts_to_file(
+                    text=spoken_text,
+                    out_path=temp_audio_path,
+                    voice=voice,
+                    engine=engine,
+                    language=language
+                )
+            except Exception:
+                try:
+                    os.remove(temp_audio_path)
+                except FileNotFoundError:
+                    pass
+                raise
 
-            # Play the generated audio file
-            audio_source = discord.FFmpegPCMAudio(temp_audio_path)
-            vc.play(audio_source)
-            await interaction.followup.send(f"✅ Speaking: {text}", ephemeral=True)
+            try:
+                audio_source = FFmpegPCMAudio(temp_audio_path)
+            except Exception:
+                try:
+                    os.remove(temp_audio_path)
+                except FileNotFoundError:
+                    pass
+                raise
+
+            def _cleanup():
+                try:
+                    audio_source.cleanup()
+                except Exception:
+                    pass
+                try:
+                    os.remove(temp_audio_path)
+                except FileNotFoundError:
+                    pass
+
+            guild_id = interaction.guild.id
+            player = PLAYERS.get(guild_id)
+            if not player:
+                player = GuildPlayer(guild_id, interaction.client)
+                PLAYERS[guild_id] = player
+
+            await player.enqueue({
+                'audio': audio_source,
+                'title': f"TTS from {interaction.user.display_name}",
+                'cleanup': _cleanup
+            })
+
+            await interaction.followup.send("✅ Added to the TTS queue.", ephemeral=True)
+            if post_text:
+                spoken_preview = spoken_text if announce_author else text
+                await interaction.channel.send(f"🗣️ {interaction.user.mention}: {spoken_preview}")
         except Exception as e:
             await interaction.followup.send(f"❌ TTS failed: {e}", ephemeral=True)
 
@@ -438,41 +381,6 @@ class VoiceGroup(app_commands.Group):
             except Exception:
                 pass
 
-    @app_commands.command(name="queue", description="Show the upcoming queue")
-    async def queue(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
-            return
-
-        player = PLAYERS.get(interaction.guild.id)
-        if not player or (not player._pending and not player.current):
-            await interaction.response.send_message("Queue is empty.", ephemeral=True)
-            return
-
-        lines = []
-        if player.current:
-            lines.append(f"Now playing: {player.current.get('title', 'Unknown')}")
-
-        if player._pending:
-            lines.append("Upcoming:")
-            for i, item in enumerate(player._pending[:25], start=1):
-                lines.append(f"{i}. {item.get('title', 'Unknown')}")
-
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
-
-    @app_commands.command(name="nowplaying", description="Show the currently playing track")
-    async def nowplaying(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
-            return
-
-        player = PLAYERS.get(interaction.guild.id)
-        if not player or not player.current:
-            await interaction.response.send_message("Nothing is playing right now.", ephemeral=True)
-            return
-
-        await interaction.response.send_message(f"Now playing: {player.current.get('title', 'Unknown')}")
-
     # Add a new command to display all parameter options
     @app_commands.command(name="show_tts_options", description="Show all available options for TTS parameters")
     async def show_tts_options(self, interaction: discord.Interaction):
@@ -492,12 +400,17 @@ class VoiceGroup(app_commands.Group):
         await interaction.response.send_message(options_message, ephemeral=True)
 
     # Add a command to filter voices based on language and engine
-    @app_commands.command(name="filter_voices", description="Filter available voices by language and engine")
+    @app_commands.command(name="filter_voices", description="Filter available voices by language, engine, or gender")
     @app_commands.describe(
         language="Optional: Language code to filter by (e.g., 'en-GB')",
-        engine="Optional: Engine to filter by (e.g., 'neural')"
+        engine="Optional: Engine to filter by (e.g., 'neural')",
+        gender="Optional: Voice gender to filter by (male/female)"
     )
-    async def filter_voices(self, interaction: discord.Interaction, language: str = None, engine: str = None):
+    @app_commands.choices(gender=[
+        app_commands.Choice(name="Male", value="Male"),
+        app_commands.Choice(name="Female", value="Female"),
+    ])
+    async def filter_voices(self, interaction: discord.Interaction, language: str = None, engine: str = None, gender: app_commands.Choice[str] = None):
         try:
             # Initialize the Polly client with a default region
             polly_client = boto3.client('polly', region_name='us-east-1')
@@ -512,6 +425,9 @@ class VoiceGroup(app_commands.Group):
             # Filter voices by language if provided
             if language:
                 voices = [voice for voice in voices if voice['LanguageCode'] == language]
+
+            if gender:
+                voices = [voice for voice in voices if voice.get('Gender') == gender.value]
 
             if not voices:
                 await interaction.response.send_message(

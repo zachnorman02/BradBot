@@ -4,23 +4,29 @@ Standalone utility commands and their helpers
 import discord
 from discord import app_commands
 from utils.timestamp_helpers import TimestampStyle, create_discord_timestamp, format_timestamp_examples
-from utils.conversion_helpers import ConversionType, convert_testosterone
+
+async def echo_command(
+    interaction: discord.Interaction,
+    message: str,
+    allow_mentions: bool = False,
+):
+    """Echo a message to the current channel."""
+    if not interaction.guild:
+        await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        return
+
+    allowed = discord.AllowedMentions.all() if allow_mentions else discord.AllowedMentions.none()
+    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.channel.send(message, allowed_mentions=allowed)
+        await interaction.followup.send("✅ Message sent.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Failed to send message: {e}", ephemeral=True)
 
 
 # ============================================================================
 # STANDALONE COMMANDS
 # ============================================================================
-async def tconvert_command(
-    interaction: discord.Interaction,
-    starting_type: str,
-    dose: float,
-    frequency: int
-):
-    """Converts between testosterone cypionate and gel doses."""
-    response = convert_testosterone(starting_type, dose, frequency)
-    await interaction.response.send_message(response)
-
-
 async def timestamp_command(
     interaction: discord.Interaction,
     date: str = None,

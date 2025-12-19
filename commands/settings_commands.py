@@ -11,7 +11,7 @@ class SettingsView(discord.ui.View):
     """Interactive view for user settings"""
     
     def __init__(self, user_id: int, guild_id: int = None):
-        super().__init__(timeout=180)  # 3 minute timeout
+        super().__init__(timeout=600)  # keep the view alive for the session
         self.user_id = user_id
         self.guild_id = guild_id
         self.update_buttons()
@@ -29,14 +29,17 @@ class SettingsView(discord.ui.View):
             for item in self.children:
                 if isinstance(item, discord.ui.Button):
                     if item.custom_id == 'toggle_send_pings':
-                        item.label = "Enabled ✓" if send_pings else "Disabled"
-                        item.style = discord.ButtonStyle.success if send_pings else discord.ButtonStyle.secondary
+                        item.label = f"🔔 Send Reply Pings {'✓' if send_pings else '✗'}"
+                        item.style = discord.ButtonStyle.green if send_pings else discord.ButtonStyle.gray
                     elif item.custom_id == 'toggle_receive_pings':
-                        item.label = "Enabled ✓" if receive_pings else "Disabled"
-                        item.style = discord.ButtonStyle.success if receive_pings else discord.ButtonStyle.secondary
+                        item.label = f"📩 Receive Notifications {'✓' if receive_pings else '✗'}"
+                        item.style = discord.ButtonStyle.green if receive_pings else discord.ButtonStyle.gray
                     elif item.custom_id == 'toggle_scope':
-                        # Update scope toggle button label
-                        item.label = "Switch to This Server" if self.guild_id is None else "Switch to All Servers"
+                        item.label = "🌐 Switch to This Server" if self.guild_id is None else "🌍 Switch to All Servers"
+                        item.style = discord.ButtonStyle.primary
+                    elif item.custom_id == 'refresh_settings':
+                        item.label = "🔄 Refresh"
+                        item.style = discord.ButtonStyle.blurple
         except Exception as e:
             print(f"Error updating buttons: {e}")
     
@@ -82,7 +85,7 @@ class SettingsView(discord.ui.View):
                 color=discord.Color.red()
             )
     
-    @discord.ui.button(label="Enabled ✓", style=discord.ButtonStyle.success, custom_id="toggle_send_pings", row=0)
+    @discord.ui.button(label="🔔 Send Reply Pings", style=discord.ButtonStyle.success, custom_id="toggle_send_pings", row=0)
     async def toggle_send_pings(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Toggle send pings setting"""
         if interaction.user.id != self.user_id:
@@ -108,7 +111,7 @@ class SettingsView(discord.ui.View):
             print(f"Error toggling send pings: {e}")
             await interaction.response.send_message("❌ An error occurred", ephemeral=True)
     
-    @discord.ui.button(label="Enabled ✓", style=discord.ButtonStyle.success, custom_id="toggle_receive_pings", row=1)
+    @discord.ui.button(label="📩 Receive Notifications", style=discord.ButtonStyle.success, custom_id="toggle_receive_pings", row=0)
     async def toggle_receive_pings(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Toggle receive pings setting"""
         if interaction.user.id != self.user_id:
@@ -135,7 +138,7 @@ class SettingsView(discord.ui.View):
             print(f"Error toggling receive pings: {e}")
             await interaction.response.send_message("❌ An error occurred", ephemeral=True)
     
-    @discord.ui.button(label="Switch to All Servers", style=discord.ButtonStyle.primary, custom_id="toggle_scope", row=2)
+    @discord.ui.button(label="🌍 Switch Scope", style=discord.ButtonStyle.primary, custom_id="toggle_scope", row=1)
     async def toggle_scope(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Toggle between server-specific and global settings"""
         if interaction.user.id != self.user_id:
@@ -156,6 +159,16 @@ class SettingsView(discord.ui.View):
                 await interaction.response.send_message("❌ Cannot switch to server settings outside of a server!", ephemeral=True)
                 return
         
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.blurple, custom_id="refresh_settings", row=1)
+    async def refresh_panel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Refresh the embed to show latest settings."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ These are not your settings!", ephemeral=True)
+            return
+
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
@@ -288,4 +301,3 @@ class SettingsGroup(app_commands.Group):
                 "❌ An error occurred while updating your notification preference. Please try again later.",
                 ephemeral=True
             )
-

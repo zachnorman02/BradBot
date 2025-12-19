@@ -403,6 +403,55 @@ class PollGroup(app_commands.Group):
                 "❌ An error occurred while fetching poll results.",
                 ephemeral=True
             )
+
+    @app_commands.command(name="toggle_show_responses", description="Toggle whether a poll shows responses in its message")
+    @app_commands.describe(
+        poll_id="The ID of the poll to update",
+        show_responses="Enable or disable showing responses in the poll embed"
+    )
+    @app_commands.checks.has_permissions(manage_messages=True)
+    async def toggle_show_responses(self, interaction: discord.Interaction, poll_id: int, show_responses: bool):
+        """Allow creators/admins to toggle response visibility on the poll embed."""
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+
+            poll_info = db.get_poll(poll_id)
+            if not poll_info:
+                await interaction.response.send_message("❌ Poll not found.", ephemeral=True)
+                return
+
+            is_creator = poll_info['creator_id'] == interaction.user.id
+            has_manage = interaction.user.guild_permissions.manage_messages
+            if not (is_creator or has_manage):
+                await interaction.response.send_message(
+                    "❌ You don't have permission to update this poll.",
+                    ephemeral=True
+                )
+                return
+
+            db.set_poll_show_responses(poll_id, show_responses)
+
+            # Update message if it exists
+            if poll_info.get('message_id'):
+                channel = interaction.guild.get_channel(poll_info['channel_id'])
+                if channel:
+                    try:
+                        await update_poll_embed(poll_id, channel, poll_info['message_id'])
+                    except Exception as e:
+                        print(f"[POLL] Could not refresh poll embed after toggling responses: {e}")
+
+            status = "now showing" if show_responses else "no longer showing"
+            await interaction.response.send_message(
+                f"✅ Poll #{poll_id} is {status} responses in its panel.",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"[POLL] Error toggling show_responses: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while updating the poll.",
+                ephemeral=True
+            )
     
     @app_commands.command(name="close", description="Close a poll and prevent new responses")
     @app_commands.describe(poll_id="The ID of the poll to close")
@@ -910,4 +959,3 @@ class PollGroup(app_commands.Group):
             await interaction.followup.send(
                 f"❌ An error occurred while generating statistics: {str(e)[:200]}"
             )
-

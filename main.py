@@ -17,12 +17,13 @@ from commands import (
     AdminGroup, 
     SettingsGroup,
     IssuesGroup,
+    ConversionGroup,
     PollGroup,
     UtilityGroup,
     VoiceGroup,
     AlarmGroup,
-    tconvert_command,
-    timestamp_command
+    timestamp_command,
+    echo_command
 )
 
 # Import poll views
@@ -34,6 +35,7 @@ from commands.issues_commands import IssuePanelView
 from core import (
     daily_booster_role_check,
     poll_auto_close_check,
+    poll_results_refresh,
     reminder_check,
     timer_check,
     on_member_update_handler,
@@ -48,7 +50,6 @@ from utils.ffmpeg_helper import ensure_ffmpeg, which_ffmpeg
 
 # Import helpers for standalone commands
 from utils.timestamp_helpers import TimestampStyle
-from utils.conversion_helpers import ConversionType
 
 # Load environment variables from .env file
 load_dotenv()
@@ -65,6 +66,7 @@ bot.tree.add_command(BoosterGroup())
 bot.tree.add_command(SettingsGroup())
 bot.tree.add_command(AdminGroup())
 bot.tree.add_command(IssuesGroup())
+bot.tree.add_command(ConversionGroup())
 bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
 bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
 bot.tree.add_command(VoiceGroup())
@@ -241,6 +243,9 @@ async def on_ready():
     
     # Start poll auto-close check task
     bot.loop.create_task(poll_auto_close_check(bot))
+
+    # Start poll results refresh task
+    bot.loop.create_task(poll_results_refresh(bot))
     
     # Start reminder check task
     bot.loop.create_task(reminder_check(bot))
@@ -353,24 +358,19 @@ async def clearcmds(ctx):
 # ============================================================================
 # STANDALONE SLASH COMMANDS  
 # ============================================================================
-@bot.tree.command(name="tconvert", description="Convert between testosterone cypionate and gel")
+@bot.tree.command(name="echo", description="Have the bot repeat a message in this channel")
 @app_commands.describe(
-    starting_type="Type of testosterone (cypionate or gel)",
-    dose="Dose amount (in mg or ml)",
-    frequency="Frequency of dose (in days)"
+    message="What should the bot say?",
+    allow_mentions="Allow mentions in the echoed message (default: disabled)"
 )
-@app_commands.choices(starting_type=[
-    app_commands.Choice(name="Cypionate", value=ConversionType.CYPIONATE.value),
-    app_commands.Choice(name="Gel", value=ConversionType.GEL.value)
-])
-async def tconvert(
+async def echo(
     interaction: discord.Interaction,
-    starting_type: str,
-    dose: float,
-    frequency: int
+    message: str,
+    allow_mentions: bool = False
 ):
-    """Converts between testosterone cypionate and gel doses."""
-    await tconvert_command(interaction, starting_type, dose, frequency)
+    """Echo helper."""
+    await echo_command(interaction, message, allow_mentions)
+
 
 @bot.tree.command(name="timestamp", description="Generate a Discord timestamp")
 @app_commands.describe(
