@@ -1,107 +1,39 @@
-# BradBot Features
-_Note: commands that currently do not work, and restricted commands (such as bot owner commands), will not be listed here_
+# BradBot
 
-## /admin 
-_for those with admin privileges only_
+BradBot is a feature-rich Discord bot that powers moderation tools, boosters, polls, TTS utilities, and GitHub integrations across multiple communities.
 
-**/admin auditlog:** query audit log with SQL-like syntax
+## Highlights
 
-**/admin maintenance assignlvl0:** assign level 0 role to all verified members without another level role
+- **Admin automation**: interactive settings panels, conditional roles, booster-role management, and `/admin sync` to refresh slash commands instantly.
+- **Community engagement**: GitHub issue forms, advanced polls (stats, word clouds, persistent panels), reminder/timer utilities, and an `/echo` helper.
+- **Voice & TTS**: Polly-backed `/voice tts` queue with default voice/language selection plus `/voice filter_voices`, `/voice join/leave`, and `/voice show_tts_options`.
+- **Conversion suite**: `/convert` commands for testosterone calculations, temperature/length/weight/timezones, and an international shoe-size converter that supports men/women with half-size rounding.
+- **Secrets-aware deployment**: Automatically hydrates sensitive values from AWS Secrets Manager (`BradBot/creds`) so tokens never live in plain text on the box.
 
-**/admin maintanence kickunverified:** Kick unverified members with no open ticket after 30 days. Optional dry run parameter to see who would get kicked before actually kicking- defaults to true
+## Documentation
 
-**/admin menu:** Open server settings menu
+- [Feature reference](docs/README.md)
+- [Local development guide](docs/local-development.md)
+- [Deployment & operations](docs/deployment.md)
 
-**/admin panel:** Same as menu, except a persistent message rather than a temporary one
+## Quick Start
 
-**/admin tools autorole:** Configure automatic rule assignment rules. Role parameters are comma-delimited (ie @lvl0, @lvl1, ...)
+```bash
+git clone https://github.com/your-org/BradBot.git
+cd BradBot
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # edit with your tokens + DB config
+python scripts/migrate.py
+python main.py
+```
 
-**/admin tools channelrestriction:** Configure channel access restrictions based on roles
+Use `/admin sync` or the owner-only `:resync` text command whenever you change slash command definitions to ensure Discord picks them up immediately.
 
-**/admin tools conditionalrole:** Manage conditional role assignments w/ blocking roles
+## Deployment Notes
 
-**/admin tools loadboosterroles:** Load existing booster roles into the database
+- Production instances should run via `systemd` (`bradbot.service`) and set `SECRETS_MANAGER_ID=BradBot/creds`.
+- Grant the EC2 IAM role `secretsmanager:GetSecretValue` on that secret; BradBot will fetch `DISCORD_TOKEN`, `GITHUB_TOKEN`, and other sensitive values automatically at startup.
+- Polls, reminders, boosters, and conditional roles rely on the background tasks in `core/tasks.py`. Restarting the bot will respawn the tasks if needed.
 
-**/admin tools messagemirror:** Configure message mirroring between channels
-
-**/admin tools saveboosterrole:** Manually save a booster role to the database. Can manually set a particular user or user_id who the role belongs to if it doesn't currently belong to anyone
-
-## /booster
-_Note: these apply to the user running the command_
-
-**/booster role color**: Set color on personal booster role. Hex values all optional for holographic, hex3 optional for gradient, hex2 optional for solid
-
-**/booster role icon:** Set icon url for booster role
-
-**/booste role label:** Set booster role name
-
-## /emoji
-_Requires perms for emoji management. Also allows sticker management_
-
-**/emoji copy:** Copy emoji from a message
-
-**/emoji db list:** List saved emojis/stickers
-
-**/emoji db load:** Add saved emoji/sticker from database
-
-**/emoji db save:** Save emoji/sticker to database to reference later
-
-**/emoji db saveserver:** Save emojis from the server to the database
-
-**/emoji from_attachment:** Create emoji from a message attachment
-
-**/emoji reaction:** Save emoji from a message reaction
-
-**/emoji remove:** Remove emoji/sticker from server
-
-**/emoji rename:** Rename emoji/sticker
-
-**/emoji upload:** Upload custom emoji from image URL
-
-## /issues
-**/issues panel:** Persistent panel for GitHub issue submission
-
-## /poll
-**/poll close :** Close particular poll
-
-**/poll create:** Create new poll
-
-**/poll list:** List all active polls in the server
-
-**/poll refresh:** Refresh poll to fix button issues
-
-**/poll reopen:** Reopen closed poll
-
-**/poll results:** View responses to a poll
-
-**/poll stats:** View stats of a poll
-
-**/poll wordcloud:** Make wordcloud of poll responses 
-
-## /settings
-**/settings menu:** Open user-level settings for BradBot
-
-**/settings notify:** Toggle reply notificatons if someone replies to your fixed links
-
-**/settings sendpings:** Toggle whether your replies trigger a ping to the original poster
-
-## Other commands
-**/tconvert :** Convert between injection and gel dosage
-
-**/timestamp:** Generate Discord timestamps
-
-## /utility
-**/utility remind:** Set reminder 
-
-**/utility timer:** Set timer
-
-## /voice
-**/voice filter_voices:** Filter available voices by language and engine
-
-**/voice join:** Join either current vc or specified channel
-
-**/voice leave:** Leave vc
-
-**/voice show_tts_options:** Show all available options for TTS parameters
-
-**/voice tts:** Speak text via TTS into the voice channel
+See the docs directory for full instructions, troubleshooting tips, and command-by-command breakdowns.

@@ -9,5 +9,4 @@ pynacl
 pillow
 python-dateutil
 gTTS
-boto3
 yt-dlp
