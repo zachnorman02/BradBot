@@ -11,10 +11,10 @@ This document catalogs BradBot’s major slash command groups, their parameters,
 | `/admin sync` | `scope` (`global` or `guild`, default `global`) | Forces Discord to sync slash commands. Guild scope must be run inside a server. |
 | `/admin tools loadboosterroles` | — | Scans boosters, finds their custom roles and saves them to the DB. Runs in-channel with an ephemeral summary. |
 | `/admin tools saveboosterrole` | `role` (required), `user` (optional), `user_id` (optional) | Manually save a booster role to the DB. Use `user_id` if the owner left the server. |
-| `/admin tools autorole` | `action` (`add`, `remove`, `list`, `check-all`), `rule_name`, `trigger_role`, `roles_to_add`, `roles_to_remove` | Create/update/delete/list automated role rules that run when a trigger role is added. Role lists are comma-delimited. |
-| `/admin tools channelrestriction` | `action`, `channel`, `role`, `threshold`, `scope` | Configure channel access restrictions (full parameter set documented inline in `admin_commands.py`). |
-| `/admin tools messagemirror` | `action`, `source_channel`, `target_channel`, `limit`, `sync_edits`, `sync_deletes` | Mirrors all messages between channels and keeps them synced. |
-| `/admin tools conditionalrole` | `action`, `role`, `blocking_roles`, `deferral_roles` | Manage conditional roles with lists of blocking/deferral roles. |
+| `/admin tools autorole` | `action` (choice), `rule_name`, `trigger_role`, `roles_to_add`, `roles_to_remove` | Creates automations that run when a member gains `trigger_role`. <br>• `action=add` — define/update a rule. Provide `roles_to_add` / `roles_to_remove` as comma-separated mentions or IDs. <br>• `remove` — delete by `rule_name`. <br>• `list` — show all rules. <br>• `check-all` — re-run every rule against the guild (deferred). |
+| `/admin tools channelrestriction` | `action`, `channel`, `role`, `threshold`, `scope` | Defines gated channels (e.g., “only lvl 5 can talk”). <br>• `action=add` — set `channel`, gating `role`, optional `threshold` (minutes before access) and `scope` (e.g., `messages`, `joins`). <br>• `remove/list` — manage existing rules. Enforcement happens via background tasks. |
+| `/admin tools messagemirror` | `action`, `source_channel`, `target_channel`, `limit`, `sync_edits`, `sync_deletes` | Copies existing history (up to `limit`) then mirrors future messages. `sync_edits/deletes` keep mirrored content up to date. |
+| `/admin tools conditionalrole` | `action`, `role`, `blocking_roles`, `deferral_roles` | Prevents `role` from being added if members already have any `blocking_roles`. `deferral_roles` postpone auto-assignments routed through other automations. Use comma-separated IDs or mentions. |
 | `/admin maintenance assignlvl0` | — | Assign “lvl 0” to every verified user without another level role. |
 | `/admin maintenance kickunverified` | `dry_run` (bool) | Removes unverified members with no ticket after 30 days. Use `dry_run=true` to preview. |
 | `/admin sql` | `query` | Bot-owner only: run arbitrary SQL and return results (truncated). |
@@ -27,16 +27,16 @@ This document catalogs BradBot’s major slash command groups, their parameters,
 
 ## Issues (`/issues panel`)
 
-Creates a persistent panel with one “Submit” button. Modal fields:
-- Title (required)
-- Description (optional)
-- Dropdown with four options:
-  - Bug (issue, “bug” label)
-  - Enhancement (issue, “enhancement” label)
-  - Question (discussion, Q&A category)
-  - General Discussion (discussion, General category)
+Posts a persistent embed with a single “Submit an Issue” button. When clicked, the modal prompts for:
+- **Title** (required)
+- **Description** (optional)
+- **Submission type** dropdown inside the modal with four options:
+  - Bug (GitHub Issue, `bug` label)
+  - Enhancement (GitHub Issue, `enhancement` label)
+  - Question (GitHub Discussion, Q&A category)
+  - General Discussion (GitHub Discussion, General category)
 
-Discussions categories are auto-detected via GitHub’s API each time someone submits (cached per repo). You can override via `GITHUB_DISCUSSION_CATEGORY_*` env vars if necessary.
+Discussion categories are auto-resolved via GitHub’s API (cached per repo), with optional overrides via `GITHUB_DISCUSSION_CATEGORY_*`.
 
 ## Polls (`/poll …`)
 
@@ -95,11 +95,19 @@ Helpers in `commands/voice_commands.py` manage connection, queue, and playback l
 
 ## Emoji (`/emoji …`)
 
-- `/emoji copy`, `/emoji upload`, `/emoji from_attachment`, `/emoji reaction` — ingest emoji/stickers from messages, attachments, or reactions.
-- `/emoji db save`, `/emoji db load`, `/emoji db list`, `/emoji db saveServer`, `/emoji db delete` — manage stored emoji library.
-- `/emoji rename`, `/emoji remove` — rename or delete server emoji.
-
-See `commands/emoji_commands.py` for exact parameter lists—each subcommand includes descriptive parameter names (URL, message link, item type).
+| Command | Parameters | Description |
+| --- | --- | --- |
+| `/emoji copy` | `message_link`, `which` (`emoji`, `sticker`, `auto`), `create_sticker`, `replace_existing` | Pulls emoji/stickers from a specific message (by link). Downloads the asset and uploads it to the current server, optionally converting to a sticker. |
+| `/emoji from_attachment` | `message_link`, `name`, `which`, `create_sticker` | Same as copy but lets you select which attachment to use and assign a name. |
+| `/emoji reaction` | `message_link`, `which`, `create_sticker` | Copies reactions off a message. |
+| `/emoji upload` | `name`, `url`, `create_sticker`, `replace_existing` | Uploads directly from a URL. |
+| `/emoji rename` | `current_name`, `new_name`, `is_sticker` | Renames an existing emoji or sticker. |
+| `/emoji remove` | `name`, `is_sticker` | Deletes the asset from the guild. |
+| `/emoji db save` | `item` (`emoji`/`sticker`), `is_sticker`, `name`, `notes`, `message_link` | Saves an asset into the bot’s database (optionally grabbing from a message). |
+| `/emoji db load` | `search`, `force_type`, `replace_existing` | Loads a saved emoji/sticker into the current server. |
+| `/emoji db list` | `search`, `filter_type` | Lists stored assets with metadata. |
+| `/emoji db saveServer` | `scope` (`all`, `emoji`, `stickers`), `emoji_name`, `custom_name`, `notes` | Bulk-saves server emoji/stickers into the DB. |
+| `/emoji db delete` | `emoji_id` | Removes a saved entry from the DB (bot owner only). |
 
 ## Booster (`/booster role …`)
 

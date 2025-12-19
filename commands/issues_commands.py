@@ -16,7 +16,7 @@ from utils.github_helper import (
 )
 
 
-class IssueReportModal(discord.ui.Modal, title="Submit a GitHub Issue"):
+class IssueReportModal(discord.ui.Modal, title="Submit to GitHub"):
     """Modal for collecting GitHub issue details."""
 
     def __init__(self):
@@ -72,7 +72,14 @@ class IssueReportModal(discord.ui.Modal, title="Submit a GitHub Issue"):
             options=options,
             custom_id="issue_type_select",
         )
-        self.add_item(self.submission_type_select)
+        self.add_item(
+            discord.ui.Label(
+                text="Select submission type:",
+                description="Choose what kind of GitHub submission to create",
+                component=self.submission_type_select
+            )
+            
+        )
 
     async def on_submit(self, interaction: discord.Interaction):
         selection = self.submission_type_select.values[0] if self.submission_type_select.values else "issue:bug"
@@ -171,10 +178,10 @@ class IssuesGroup(app_commands.Group):
             view = IssuePanelView(interaction.guild.id, custom_id_prefix=prefix)
 
             embed = discord.Embed(
-                title="🐞 Report an Issue",
+                title="🐞 Report an Issue or Discussion",
                 description=(
-                    "Found a bug or have an idea? Click the button below to submit it directly to GitHub.\n\n"
-                    "You'll be asked for a title, optional description, and whether it's a bug or enhancement."
+                    "Found a bug or have an idea? Click below to submit directly to GitHub.\n\n"
+                    "The modal lets you choose between Bug, Enhancement, Q&A discussion, or General discussion."
                 ),
                 color=discord.Color.orange(),
             )
