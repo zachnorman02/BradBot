@@ -78,7 +78,6 @@ class IssueReportModal(discord.ui.Modal, title="Submit to GitHub"):
                 description="Choose what kind of GitHub submission to create",
                 component=self.submission_type_select
             )
-            
         )
 
     async def on_submit(self, interaction: discord.Interaction):
