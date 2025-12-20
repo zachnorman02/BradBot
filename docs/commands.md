@@ -130,5 +130,5 @@ Helpers in `commands/voice_commands.py` manage connection, queue, and playback l
 
 ## GitHub Issues/Discussions (`/issues panel`)
 - See “Issues” section above. Requires `GITHUB_REPO` and `GITHUB_TOKEN`; discussion category IDs auto-resolve via GraphQL, falling back to `GITHUB_DISCUSSION_CATEGORY_*` env overrides.
-- `/link edit` — `message_link`, `new_text`; edits the bot’s link replacement message (content will be reformatted as `<@you>: new_text` while preserving any trailing embed lines).
+- `/link edit` — `message_link`; opens a modal pre-filled with the current text so the original author can edit it. The updated text is re-run through the link-replacement pipeline and trailing embed helper lines (`-# ...`) are preserved.
 - `/link delete` — `message_link`; deletes the replacement message outright.

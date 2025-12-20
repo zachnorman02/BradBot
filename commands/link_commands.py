@@ -1,8 +1,11 @@
 import re
+from types import SimpleNamespace
 from typing import Optional
 
 import discord
 from discord import app_commands
+
+from core.message_processing import process_message_links
 
 
 MESSAGE_LINK_RE = re.compile(
@@ -21,6 +24,52 @@ def _parse_message_link(link: str) -> Optional[tuple[int, int, int]]:
     return int(guild_id), int(match.group("channel_id")), int(match.group("message_id"))
 
 
+class LinkEditModal(discord.ui.Modal):
+    def __init__(self, message: discord.Message, mention: str, outer_group: "LinkGroup"):
+        super().__init__(title="Edit replaced message", timeout=300)
+        self.message = message
+        self.mention = mention
+        self.outer = outer_group
+        self.text_input = discord.ui.TextInput(
+            label="Message content",
+            style=discord.TextStyle.paragraph,
+            max_length=1900,
+            default=message.content,
+        )
+        self.add_item(self.text_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        new_content = self.text_input.value.strip()
+        if not new_content:
+            await interaction.response.send_message("❌ Message cannot be empty.", ephemeral=True)
+            return
+
+        base_text, extra_lines = self.outer._split_user_text(new_content, self.mention)
+        if not base_text:
+            await interaction.response.send_message("❌ Message cannot be empty.", ephemeral=True)
+            return
+
+        dummy_message = SimpleNamespace(
+            content=base_text,
+            guild=interaction.guild,
+            author=interaction.user,
+            reference=None,
+        )
+        processed = await process_message_links(dummy_message)
+        if processed and processed.get("content_changed"):
+            final_content = processed["new_content"]
+        else:
+            final_content = f"{self.mention}: {base_text}"
+            if extra_lines:
+                final_content += "\n" + "\n".join(extra_lines)
+
+        try:
+            await self.message.edit(content=final_content)
+            await interaction.response.send_message("✅ Message updated.", ephemeral=True)
+        except discord.DiscordException as e:
+            await interaction.response.send_message(f"❌ Failed to edit message: {e}", ephemeral=True)
+
+
 class LinkGroup(app_commands.Group):
     """Commands for editing or deleting bot-created link replacement messages."""
 
@@ -31,7 +80,7 @@ class LinkGroup(app_commands.Group):
         self,
         interaction: discord.Interaction,
         message_link: str,
-    ) -> discord.Message:
+    ) -> tuple[discord.Message, str]:
         parsed = _parse_message_link(message_link)
         if not parsed:
             raise app_commands.AppCommandError("Invalid message link.")
@@ -59,40 +108,42 @@ class LinkGroup(app_commands.Group):
         mention_match = MENTION_PREFIX_RE.match(message.content.strip())
         if not mention_match or int(mention_match.group(1)) != interaction.user.id:
             raise app_commands.AppCommandError("You can only modify your own replaced messages.")
-        return message
+        mention_str = mention_match.group(0)[:-1]  # remove trailing colon
+        return message, mention_str
 
-    def _preserve_extra_lines(self, content: str) -> list[str]:
-        lines = content.split("\n")
-        return [line for line in lines[1:] if line.startswith("-# ")]
+    def _split_user_text(self, content: str, mention: str) -> tuple[str, list[str]]:
+        text = content
+        prefix = f"{mention}:"
+        if text.startswith(prefix):
+            text = text[len(prefix):].lstrip()
+        lines = text.split("\n")
+        main_lines = []
+        extra_lines = []
+        for line in lines:
+            if line.strip().startswith("-# "):
+                extra_lines.append(line.strip())
+            else:
+                main_lines.append(line)
+        base_text = "\n".join(main_lines).strip()
+        return base_text, extra_lines
 
     @app_commands.command(name="edit", description="Edit your replaced link message")
-    @app_commands.describe(message_link="Link to the bot's message", new_text="Replacement text (without mention)")
-    async def edit(self, interaction: discord.Interaction, message_link: str, new_text: str):
-        if not new_text or not new_text.strip():
-            await interaction.response.send_message("❌ New text cannot be empty.", ephemeral=True)
-            return
+    @app_commands.describe(message_link="Link to the bot's message")
+    async def edit(self, interaction: discord.Interaction, message_link: str):
         try:
-            message = await self._fetch_and_validate_message(interaction, message_link)
+            message, mention = await self._fetch_and_validate_message(interaction, message_link)
         except app_commands.AppCommandError as e:
             await interaction.response.send_message(f"❌ {e}", ephemeral=True)
             return
 
-        extra_lines = self._preserve_extra_lines(message.content)
-        new_content = f"{interaction.user.mention}: {new_text.strip()}"
-        if extra_lines:
-            new_content += "\n" + "\n".join(extra_lines)
-
-        try:
-            await message.edit(content=new_content)
-            await interaction.response.send_message("✅ Message updated.", ephemeral=True)
-        except discord.DiscordException as e:
-            await interaction.response.send_message(f"❌ Failed to edit message: {e}", ephemeral=True)
+        modal = LinkEditModal(message=message, mention=mention, outer_group=self)
+        await interaction.response.send_modal(modal)
 
     @app_commands.command(name="delete", description="Delete your replaced link message")
     @app_commands.describe(message_link="Link to the bot's message you want to delete")
     async def delete(self, interaction: discord.Interaction, message_link: str):
         try:
-            message = await self._fetch_and_validate_message(interaction, message_link)
+            message, _ = await self._fetch_and_validate_message(interaction, message_link)
         except app_commands.AppCommandError as e:
             await interaction.response.send_message(f"❌ {e}", ephemeral=True)
             return

@@ -156,7 +156,7 @@ class VoiceGroup(app_commands.Group):
             await interaction.response.send_message("❌ I don't have permission to connect to that voice channel.", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
 
         try:
             vc = interaction.guild.voice_client
@@ -323,10 +323,11 @@ class VoiceGroup(app_commands.Group):
                 'cleanup': _cleanup
             })
 
-            await interaction.followup.send("✅ Added to the TTS queue.", ephemeral=True)
             if post_text:
                 spoken_preview = spoken_text if announce_author else text
                 await interaction.channel.send(f"🗣️ {interaction.user.mention}: {spoken_preview}")
+            else:
+                await interaction.followup.send("✅ Added to the TTS queue.", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ TTS failed: {e}", ephemeral=True)
 

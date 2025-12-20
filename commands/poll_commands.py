@@ -232,7 +232,7 @@ class PollGroup(app_commands.Group):
         public_results="Allow anyone to view results (default: yes, only creator+admins if no)",
         allow_multiple="Allow users to submit multiple responses (default: yes)"
     )
-    @app_commands.checks.has_permissions(manage_messages=True)
+    @app_commands.checks.has_permissions(send_polls=True)
     async def create_poll(self, interaction: discord.Interaction, question: str, 
                          max_responses: int = None, duration_minutes: int = None,
                          show_responses: bool = False, public_results: bool = True,
@@ -313,6 +313,22 @@ class PollGroup(app_commands.Group):
                 "❌ An error occurred while creating the poll. Please try again.",
                 ephemeral=True
             )
+
+    @create_poll.error
+    async def create_poll_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.MissingPermissions):
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ You need the **Create Polls** permission to use this command.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "❌ You need the **Create Polls** permission to use this command.",
+                    ephemeral=True
+                )
+        else:
+            raise error
     
     @app_commands.command(name="results", description="View responses to a poll")
     @app_commands.describe(poll_id="The ID of the poll (shown in the poll's footer)")
