@@ -326,6 +326,7 @@ class VoiceGroup(app_commands.Group):
             if post_text:
                 spoken_preview = spoken_text if announce_author else text
                 await interaction.channel.send(f"🗣️ {interaction.user.mention}: {spoken_preview}")
+                await interaction.followup.send("✅ Added to the TTS queue.", ephemeral=True)
             else:
                 await interaction.followup.send("✅ Added to the TTS queue.", ephemeral=True)
         except Exception as e:
