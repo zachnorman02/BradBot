@@ -6,6 +6,7 @@ BradBot is a feature-rich Discord bot that powers moderation tools, boosters, po
 
 - **Admin automation**: interactive settings panels, conditional roles, booster-role management, and `/admin sync` to refresh slash commands instantly.
 - **Community engagement**: GitHub issue forms, advanced polls (stats, word clouds, persistent panels), reminder/timer utilities, and an `/echo` helper.
+- **Link control**: `/link edit` and `/link delete` let users fix or remove the bot’s link-replacement posts without staff intervention.
 - **Voice & TTS**: Polly-backed `/voice tts` queue with default voice/language selection plus `/voice filter_voices`, `/voice join/leave`, and `/voice show_tts_options`.
 - **Conversion suite**: `/convert` commands for testosterone calculations, temperature/length/weight/timezones, and an international shoe-size converter that supports men/women with half-size rounding.
 - **Secrets-aware deployment**: Automatically hydrates sensitive values from AWS Secrets Manager (`BradBot/creds`) so tokens never live in plain text on the box.

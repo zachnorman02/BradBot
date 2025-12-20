@@ -22,6 +22,7 @@ from commands import (
     UtilityGroup,
     VoiceGroup,
     AlarmGroup,
+    LinkGroup,
     timestamp_command,
     echo_command
 )
@@ -73,6 +74,7 @@ bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-
 bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
 bot.tree.add_command(VoiceGroup())
 bot.tree.add_command(AlarmGroup())
+bot.tree.add_command(LinkGroup())
 
 
 # ============================================================================

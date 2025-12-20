@@ -12,6 +12,7 @@ from .voice_commands import VoiceGroup
 from .alarm_commands import AlarmGroup
 from .issues_commands import IssuesGroup
 from .convert_commands import ConversionGroup
+from .link_commands import LinkGroup
 
 __all__ = [
     'EmojiGroup',
@@ -23,6 +24,7 @@ __all__ = [
     'ConversionGroup',
     'PollGroup',
     'UtilityGroup',
+    'LinkGroup',
     'VoiceGroup',
     'AlarmGroup',
     'timestamp_command',
