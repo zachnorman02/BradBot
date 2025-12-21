@@ -23,6 +23,7 @@ from commands import (
     VoiceGroup,
     AlarmGroup,
     LinkGroup,
+    StarboardGroup,
     timestamp_command,
     echo_command
 )
@@ -47,6 +48,7 @@ from core import (
     handle_message_edit,
     handle_message_delete
 )
+from core import starboard as starboard_core
 from utils.ffmpeg_helper import ensure_ffmpeg, which_ffmpeg
 
 # Import helpers for standalone commands
@@ -75,6 +77,7 @@ bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and tim
 bot.tree.add_command(VoiceGroup())
 bot.tree.add_command(AlarmGroup())
 bot.tree.add_command(LinkGroup())
+bot.tree.add_command(StarboardGroup())
 
 
 # ============================================================================
@@ -336,6 +339,16 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
         print(f"🗑️ Removed persistent panel record for message {payload.message_id}")
     except Exception as e:
         print(f"⚠️  Error cleaning up persistent panel {payload.message_id}: {e}")
+
+
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    await starboard_core.handle_raw_reaction(bot, payload)
+
+
+@bot.event
+async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
+    await starboard_core.handle_raw_reaction(bot, payload)
 
 # Manual sync command (useful for testing) - keep as text command
 @bot.command()

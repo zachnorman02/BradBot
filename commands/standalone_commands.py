@@ -18,7 +18,7 @@ async def echo_command(
     allowed = discord.AllowedMentions.all() if allow_mentions else discord.AllowedMentions.none()
     await interaction.response.defer(ephemeral=True)
     try:
-        await interaction.channel.send(message, allowed_mentions=allowed)
+        await interaction.channel.send(message, allowed_mentions=allowed, silent=not allow_mentions)
         await interaction.followup.send("✅ Message sent.", ephemeral=True)
     except Exception as e:
         await interaction.followup.send(f"❌ Failed to send message: {e}", ephemeral=True)

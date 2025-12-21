@@ -11,6 +11,11 @@ from utils.websites import websites, get_site_name
 # List of sites that support EmbedEZ (Instagram handled separately)
 EMBEDEZ_SITES = {'snapchat', 'ifunny', 'weibo', 'rule34'}
 
+def _strip_trailing_slash(url: str) -> str:
+    if url.endswith('/') and not re.match(r'^https?://$', url):
+        return url.rstrip('/')
+    return url
+
 
 async def handle_reply_notification(message: discord.Message, bot: discord.Client):
     """
@@ -164,6 +169,7 @@ async def process_message_links(message: discord.Message) -> dict | None:
                     instagram_embed_url = website.get_embed_url()
                 
                 fixed_url = await website.render()
+                fixed_url = _strip_trailing_slash(fixed_url) if fixed_url else fixed_url
                 if fixed_url and fixed_url != url:
                     fixed_urls[url] = fixed_url
                 break
@@ -255,7 +261,21 @@ async def send_processed_message(message: discord.Message, processed_result: dic
     
     # If original message was a reply, make the new message a reply too
     reference = message.reference
-    sent_message = await message.channel.send(processed_result['new_content'], reference=reference, silent=True)
+    allowed_users = [user for user in message.mentions if user.id != message.author.id]
+    allowed_mentions = discord.AllowedMentions(
+        everyone=True,
+        roles=True,
+        users=allowed_users,
+        replied_user=False
+    )
+    silent_flag = '@silent' in message.content
+    sent_message = await message.channel.send(
+        processed_result['new_content'],
+        reference=reference,
+        allowed_mentions=allowed_mentions,
+        mention_author=False,
+        silent=silent_flag
+    )
     
     # Store message tracking for reply notifications
     if sent_message and message.guild:

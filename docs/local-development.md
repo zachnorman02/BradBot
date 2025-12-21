@@ -1,24 +1,29 @@
 # Local Development
 
-BradBot targets Python 3.10+ and PostgreSQL. You can run the database via Docker (recommended) or a local instance.
+BradBot targets Python 3.10+ and PostgreSQL. You can run Postgres in Docker (recommended) or locally.
 
-## Prerequisites
-- Python 3.10+
-- Discord bot token
+## 1. Prerequisites
+
+- Python 3.10 or newer
+- Discord bot token (dev bot)
 - PostgreSQL 13+ (Docker or local install)
+- `ffmpeg` (for voice/TTS)
 
-## 1. Clone & Install
+## 2. Clone & Install
+
 ```bash
-git clone https://github.com/your-org/BradBot.git
+git clone https://github.com/<owner>/BradBot.git
 cd BradBot
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 2. Configure Environment
-Copy `.env.example` to `.env` and edit the values. For local work you typically want:
+## 3. Configure Environment
+
+Copy `.env.example` to `.env` and edit:
+
 ```env
-DISCORD_TOKEN=your_local_dev_token
+DISCORD_TOKEN=your_dev_bot_token
 
 DB_HOST=localhost
 DB_PORT=5432
@@ -28,45 +33,52 @@ DB_PASSWORD=bradbot_dev
 USE_IAM_AUTH=false
 ```
 
-> **Secrets Manager?** In production BradBot automatically loads AWS Secrets Manager secret `BradBot/creds`. Locally you can skip it (leave `SECRETS_MANAGER_ID` empty) or point to a dev secret if you have one.
-> GitHub Discussion category IDs are auto-detected at runtime, but you can still set `GITHUB_DISCUSSION_CATEGORY_*` if you want to override the detection.
+> Tip: production loads AWS Secrets Manager (`SECRETS_MANAGER_ID=BradBot/creds`) automatically, but for local dev you usually keep everything in `.env`.
 
-## 3. Start PostgreSQL
-### Option A: Docker
+## 4. Start PostgreSQL
+
+### Docker
 ```bash
 docker-compose up -d
 ```
 
-### Option B: Local Postgres
-Install Postgres, create a database/user, and ensure the credentials match your `.env`.
+### Local install
+- macOS: `brew install postgresql@16 && brew services start postgresql@16`
+- Ubuntu: `sudo apt install postgresql postgresql-contrib`
 
-## 4. Run Migrations
+Create the database/user if necessary.
+
+## 5. Run Migrations
+
 ```bash
 python scripts/migrate.py
 ```
 
-## 5. Launch the Bot
+## 6. Run BradBot
+
 ```bash
 python main.py
 ```
 
-Use Discord’s `/sync` or the local `:sync`/`:resync` commands if you add new slash commands during development.
+Invite your dev bot to a test guild and run `/admin sync` (or `:resync`) after you change slash commands.
 
-## Common Issues
+## 7. Troubleshooting
 
-| Problem | Fix |
+| Issue | Fix |
 | --- | --- |
-| `psycopg2.OperationalError` | Verify Postgres is running; check host/port/user/password. |
-| Slash command changes not showing | Run `:resync` in your dev guild or restart the bot. |
-| Missing env vars | Ensure `.env` exists and matches `.env.example`. |
+| `psycopg2.OperationalError` | Ensure Postgres is running; verify host/port/user/password in `.env`. |
+| Slash command changes not showing | Run `/admin sync` or `:resync` in your dev guild. |
+| Missing env vars | Double-check `.env` lives next to `main.py` and is loaded before `load_secret_env()`. |
+| Voice/TTS errors | Confirm `ffmpeg` is installed and on your `PATH`. |
 
-## Useful Commands
+## 8. Useful Commands
+
 ```bash
-# Inspect tables (Docker example)
+# Inspect DB tables (Docker example)
 docker-compose exec postgres psql -U bradbot -d bradbot
 \dt main.*
 
-# Drop & recreate database
+# Drop & recreate DB
 docker-compose down -v && docker-compose up -d
 python scripts/migrate.py
 ```

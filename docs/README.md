@@ -1,42 +1,39 @@
-# BradBot Documentation
+# BradBot Wiki
 
-Welcome to BradBot’s documentation hub. Use these pages to get set up quickly, understand the available commands, and keep production deployments healthy.
+Welcome! This wiki mirrors the most important information about running and extending BradBot so teammates can self-serve without digging through the repository.
 
-## Quick Links
+## 📚 Quick Links
 
-- [Local development](local-development.md)
-- [Deployment & operations](deployment.md)
-- [Command reference](commands.md)
-- [Feature reference](#feature-reference)
+- [Local Development](Local-Development) – set up Python, Postgres, and the `.env`.
+- [Deployment & Operations](Deployment) – systemd service, Secrets Manager, syncing commands.
+- [Command Reference](Commands) – every slash command group with parameters + tips.
 
-## Feature Reference
+## ✨ Highlights
 
-### Admin & Ops
-- `/admin menu` / `/admin panel` — interactive guild configuration, with a persistent panel option.
-- `/admin sync` — force Discord to refresh slash commands (global or guild scope).
-- `/admin tools …` — utilities for autoroles, channel restrictions, message mirroring, and booster-role management.
-- Text command `:resync` — same as `/admin sync`, handy when slash commands fail to register.
+- **Admin automation:** interactive `/admin menu`, persistent panels, autoroles/conditional roles, `/admin sync`, and text `:resync`.
+- **Community engagement:** `/issues panel` (issues or discussions), feature-rich `/poll` suite, reminders/timers, `/echo`, `/link edit|delete`.
+- **Voice & TTS:** `/voice tts` with queues, default voices, `/voice filter_voices`, `/voice join/leave`, `/voice show_tts_options`.
+- **Conversion tools:** `/convert testosterone/temperature/length/weight/timezone/shoe`.
+- **Secrets-aware deployment:** loads `.env` then automatically hydrates secrets from AWS Secrets Manager (`BradBot/creds` by default).
 
-### Community Tools
-- `/issues panel` — GitHub issue/discussion modal that can open traditional issues or Discussions (Q&A/general) directly in `GITHUB_REPO`; discussion categories are auto-resolved via the GitHub API.
-- `/poll …` — create, refresh, reopen, and analyze rich polls (word clouds, stats, toggle response visibility).
-- `/link edit|delete` — lets the original poster edit or remove their link-replacement messages by supplying the message link.
-- `/settings …` — let members control notifications and ping preferences via an ephemeral panel.
-- `/convert …` — temperature/length/weight/timezone utilities plus testosterone calculators and a robust shoe-size converter (men/women, multi-region, half-size rounding).
+## 🚀 Quick Start
 
-### Voice & Fun
-- `/voice tts` — Polly-backed TTS with queues, language/voice defaults, and optional sender call-outs.
-- `/voice filter_voices`, `/voice join/leave`, `/voice show_tts_options` — voice-session management.
-- `/echo` (slash) and `:echo` (text) — have BradBot repeat a message with optional mention safety.
-- `/utility remind` & `/utility timer` — personal reminders and timers.
+```bash
+git clone https://github.com/<owner>/BradBot.git
+cd BradBot
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env  # edit with tokens + DB config
+python scripts/migrate.py
+python main.py
+```
 
-### Automation & Background Tasks
-- Booster role restore/checks, conditional roles, reminders/timers, and poll refresh tasks live in `core/tasks.py`.
-- Task logs are queryable via `/admin tasklogs`.
+After you change slash commands, run `/admin sync` or `:resync` so Discord sees the updates.
 
-## Secrets & Configuration
+## 🛟 Getting Help
 
-- BradBot loads `.env`, then automatically fetches AWS Secrets Manager secret `BradBot/creds` (override via `SECRETS_MANAGER_ID` or `AWS_SECRET_ID`) to hydrate sensitive values like `DISCORD_TOKEN` and `GITHUB_TOKEN`.
-- Production deployments (systemd service) should set `SECRETS_MANAGER_ID` and ensure the EC2 role has `secretsmanager:GetSecretValue` on that secret.
+- Review the [Command Reference](Commands) for parameters and behaviors.
+- Check [Local Development](Local-Development) and [Deployment](Deployment) for environment setup, secrets, and troubleshooting tips.
+- If you add or change commands, update the wiki/docs and remind admins to run `/admin sync`.
 
-For deeper instructions, continue to the development and deployment guides.
+Happy hacking!

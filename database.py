@@ -430,6 +430,41 @@ class Database:
         """
         self.execute_query(query, (new_role_id, user_id, guild_id), fetch=False)
     
+    def init_starboard_tables(self):
+        """Initialize starboard tables if needed"""
+        if getattr(self, '_starboard_tables_initialized', False):
+            return
+        create_boards = """
+        CREATE TABLE IF NOT EXISTS main.starboard_boards (
+            id INTEGER PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            channel_id BIGINT NOT NULL,
+            emoji TEXT NOT NULL,
+            threshold INTEGER NOT NULL,
+            allow_nsfw BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        create_posts = """
+        CREATE TABLE IF NOT EXISTS main.starboard_posts (
+            message_id BIGINT NOT NULL,
+            board_id INTEGER NOT NULL,
+            star_message_id BIGINT,
+            guild_id BIGINT NOT NULL,
+            channel_id BIGINT NOT NULL,
+            author_id BIGINT NOT NULL,
+            current_count INTEGER DEFAULT 0,
+            forced BOOLEAN DEFAULT FALSE,
+            blocked BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (message_id, board_id)
+        )
+        """
+        self.execute_query(create_boards, fetch=False)
+        self.execute_query(create_posts, fetch=False)
+        self._starboard_tables_initialized = True
+
     # Poll methods
     def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str, 
                     max_responses: int = None, close_at = None, show_responses: bool = False,
@@ -517,6 +552,200 @@ class Database:
             VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             """
             self.execute_query(query, (next_id, poll_id, user_id, username, response_text), fetch=False)
+
+    # Starboard methods
+    def upsert_starboard_board(self, guild_id: int, channel_id: int, emoji: str, threshold: int, allow_nsfw: bool) -> int:
+        """Create or update a starboard for a guild/channel."""
+        self.init_starboard_tables()
+        existing = self.execute_query(
+            "SELECT id FROM main.starboard_boards WHERE guild_id = %s AND channel_id = %s",
+            (guild_id, channel_id)
+        )
+        if existing:
+            board_id = existing[0][0]
+            update_query = """
+            UPDATE main.starboard_boards
+            SET emoji = %s, threshold = %s, allow_nsfw = %s, created_at = created_at
+            WHERE id = %s
+            """
+            self.execute_query(update_query, (emoji, threshold, allow_nsfw, board_id), fetch=False)
+            return board_id
+        next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.starboard_boards")[0][0]
+        insert_query = """
+        INSERT INTO main.starboard_boards (id, guild_id, channel_id, emoji, threshold, allow_nsfw)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        self.execute_query(insert_query, (next_id, guild_id, channel_id, emoji, threshold, allow_nsfw), fetch=False)
+        return next_id
+
+    def delete_starboard_board(self, guild_id: int, channel_id: int):
+        self.execute_query(
+            "DELETE FROM main.starboard_boards WHERE guild_id = %s AND channel_id = %s",
+            (guild_id, channel_id),
+            fetch=False
+        )
+
+    def get_starboard_boards(self, guild_id: int) -> list[dict]:
+        self.init_starboard_tables()
+        query = """
+        SELECT id, channel_id, emoji, threshold, allow_nsfw
+        FROM main.starboard_boards
+        WHERE guild_id = %s
+        ORDER BY channel_id
+        """
+        rows = self.execute_query(query, (guild_id,))
+        return [
+            {
+                'id': row[0],
+                'channel_id': row[1],
+                'emoji': row[2],
+                'threshold': row[3],
+                'allow_nsfw': row[4]
+            } for row in rows
+        ]
+
+    def get_starboard_board(self, guild_id: int, channel_id: int) -> Optional[dict]:
+        query = """
+        SELECT id, channel_id, emoji, threshold, allow_nsfw
+        FROM main.starboard_boards
+        WHERE guild_id = %s AND channel_id = %s
+        """
+        rows = self.execute_query(query, (guild_id, channel_id))
+        if rows:
+            row = rows[0]
+            return {
+                'id': row[0],
+                'channel_id': row[1],
+                'emoji': row[2],
+                'threshold': row[3],
+                'allow_nsfw': row[4]
+            }
+        return None
+
+    def get_starboard_boards_by_emoji(self, guild_id: int, emoji: str) -> list[dict]:
+        query = """
+        SELECT id, channel_id, emoji, threshold, allow_nsfw
+        FROM main.starboard_boards
+        WHERE guild_id = %s AND emoji = %s
+        """
+        rows = self.execute_query(query, (guild_id, emoji))
+        return [
+            {
+                'id': row[0],
+                'channel_id': row[1],
+                'emoji': row[2],
+                'threshold': row[3],
+                'allow_nsfw': row[4]
+            } for row in rows
+        ]
+
+    def get_starboard_post(self, message_id: int, board_id: int) -> Optional[dict]:
+        query = """
+        SELECT message_id, board_id, star_message_id, guild_id, channel_id, author_id,
+               current_count, forced, blocked
+        FROM main.starboard_posts
+        WHERE message_id = %s AND board_id = %s
+        """
+        rows = self.execute_query(query, (message_id, board_id))
+        if rows:
+            row = rows[0]
+            return {
+                'message_id': row[0],
+                'board_id': row[1],
+                'star_message_id': row[2],
+                'guild_id': row[3],
+                'channel_id': row[4],
+                'author_id': row[5],
+                'current_count': row[6],
+                'forced': row[7],
+                'blocked': row[8],
+            }
+        return None
+
+    def upsert_starboard_post(
+        self,
+        message_id: int,
+        board_id: int,
+        guild_id: int,
+        channel_id: int,
+        author_id: int,
+        star_message_id: int = None,
+        count: int = 0,
+        forced: bool = False,
+        blocked: bool = False
+    ):
+        existing = self.get_starboard_post(message_id, board_id)
+        if existing:
+            update_query = """
+            UPDATE main.starboard_posts
+            SET star_message_id = %s,
+                current_count = %s,
+                forced = %s,
+                blocked = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE message_id = %s AND board_id = %s
+            """
+            self.execute_query(
+                update_query,
+                (star_message_id, count, forced, blocked, message_id, board_id),
+                fetch=False
+            )
+        else:
+            insert_query = """
+            INSERT INTO main.starboard_posts
+            (message_id, board_id, star_message_id, guild_id, channel_id, author_id, current_count, forced, blocked)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            self.execute_query(
+                insert_query,
+                (message_id, board_id, star_message_id, guild_id, channel_id, author_id, count, forced, blocked),
+                fetch=False
+            )
+
+    def update_starboard_post(self, message_id: int, board_id: int, **fields):
+        if not fields:
+            return
+        updates = []
+        params = []
+        for key, value in fields.items():
+            updates.append(f"{key} = %s")
+            params.append(value)
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.extend([message_id, board_id])
+        query = f"""
+        UPDATE main.starboard_posts
+        SET {', '.join(updates)}
+        WHERE message_id = %s AND board_id = %s
+        """
+        self.execute_query(query, tuple(params), fetch=False)
+
+    def delete_starboard_post(self, message_id: int, board_id: int):
+        self.execute_query(
+            "DELETE FROM main.starboard_posts WHERE message_id = %s AND board_id = %s",
+            (message_id, board_id),
+            fetch=False
+        )
+
+    def list_top_starboard_posts(self, board_id: int, limit: int = 10) -> list[dict]:
+        query = """
+        SELECT message_id, star_message_id, channel_id, author_id, current_count, forced, blocked
+        FROM main.starboard_posts
+        WHERE board_id = %s
+        ORDER BY current_count DESC, created_at ASC
+        LIMIT %s
+        """
+        rows = self.execute_query(query, (board_id, limit))
+        return [
+            {
+                'message_id': row[0],
+                'star_message_id': row[1],
+                'channel_id': row[2],
+                'author_id': row[3],
+                'current_count': row[4],
+                'forced': row[5],
+                'blocked': row[6],
+            } for row in rows
+        ]
             
             # Check if poll should auto-close due to max_responses
             if poll['max_responses']:

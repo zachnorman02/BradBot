@@ -1,74 +1,84 @@
 # Deployment & Operations
 
-BradBot is typically deployed on an EC2 instance managed by `systemd`. This guide covers configuration, secrets, and common operational tasks.
+BradBot typically runs on an EC2 instance under `systemd`. This page captures the key steps.
 
-## 1. Environment & Secrets
+## 1. Environment Setup
 
-1. Install system dependencies (Python 3.10, ffmpeg, git, Postgres client).
-2. Clone the repo to `/home/ubuntu/bradbot` (or your preferred path) and create a virtualenv.
+1. Install system packages: Python 3.10, ffmpeg, git, Postgres client, build tools.
+2. Clone the repo to `/home/ubuntu/bradbot` (or similar) and create a virtualenv.
 3. Copy `.env.example` to `.env` for non-sensitive defaults (DB host, region, etc.).
-4. **Secrets Manager**: Store sensitive values in AWS Secrets Manager secret `BradBot/creds` as JSON, e.g.
-   ```json
-   {
-     "DISCORD_TOKEN": "abc",
-     "GITHUB_TOKEN": "ghp_xyz",
-     "OTHER_SECRET": "value"
-   }
-   ```
-   BradBot auto-detects GitHub Discussion categories when needed, but you can override them with `GITHUB_DISCUSSION_CATEGORY_*` keys in the same secret if you want fixed IDs.
-5. Ensure the instance role has `secretsmanager:GetSecretValue` on that secret. BradBot will load it automatically on startup (see `utils/secrets_manager.py`).
+4. **Secrets Manager:** store sensitive values—`DISCORD_TOKEN`, `GITHUB_TOKEN`, etc.—in AWS Secrets Manager secret `BradBot/creds` as JSON. BradBot automatically loads `.env` first, then overlays secrets from this secret (override via `SECRETS_MANAGER_ID`).
+5. Attach or update the EC2 IAM role to grant `secretsmanager:GetSecretValue` on `BradBot/creds`.
 
 ## 2. systemd Service
 
-`bradbot.service` example:
+`/etc/systemd/system/bradbot.service` example:
+
 ```
+[Unit]
+Description=BradBot Discord Bot
+After=network.target
+
 [Service]
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/bradbot
-Environment=PATH=/home/ubuntu/bradbot/venv/bin:/home/ubuntu/.deno/bin
+Environment=PATH=/home/ubuntu/bradbot/venv/bin:/usr/bin
 Environment=SECRETS_MANAGER_ID=BradBot/creds
 Environment=AWS_REGION=us-east-1
 Environment=GITHUB_REPO=zachnorman02/BradBot
 ExecStart=/home/ubuntu/bradbot/venv/bin/python main.py
 Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-Reload and enable:
+Reload + enable:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now bradbot
 journalctl -u bradbot -f
 ```
 
-## 3. Command Syncing
+## 3. Syncing Commands
 
-After code changes that modify slash commands:
-- Run `/admin sync` (global or guild scope) or the text command `:resync [global|guild]`.
-- Watch logs for `Failed to upload commands` errors; they usually indicate a validation/syntax issue.
+When you change slash commands, run `/admin sync` (global or guild scope) or the text command `:resync [global|guild]`. Always watch logs for `Failed to upload commands` errors.
 
 ## 4. Updating Secrets
 
-1. Update the JSON secret in Secrets Manager.
-2. Restart the service (`sudo systemctl restart bradbot`) so the new values load.
-3. (Optional) Run `/admin sync` if the change impacts slash commands.
+1. Edit the JSON secret in Secrets Manager.
+2. Restart the service: `sudo systemctl restart bradbot`.
+3. (Optional) `/admin sync` if command signatures changed.
 
 ## 5. Troubleshooting
 
-| Issue | Action |
+| Problem | Action |
 | --- | --- |
-| Service won’t start | `journalctl -u bradbot -n 200` for stack traces; confirm Secrets Manager access. |
-| Unknown interaction errors | Ensure commands respond or defer within 3 seconds; look for blockers in logs. |
-| Slash commands missing | Run `:resync` or `/admin sync`, reboot if Discord caches old signatures. |
-| Database connection errors | Check IAM auth vs. password mode, verify env vars (DB host/user). |
+| Service won’t start | `journalctl -u bradbot -n 200` for stack traces; verify IAM permissions for Secrets Manager. |
+| Slash commands missing | `/admin sync` or `:resync`. Remember Discord caches global commands for up to an hour. |
+| “Unknown interaction” errors | Ensure interactions are deferred/responded to within 3 seconds; look for blockers in logs. |
+| Database auth failures | Confirm `DB_HOST`, `DB_USER`, and IAM auth vs password (`USE_IAM_AUTH`). |
+| Voice/TTS issues | Ensure `ffmpeg` is installed and the `BRADBOT_TTS_PROVIDER`/voice defaults are set. |
 
 ## 6. Background Tasks
 
-Located in `core/tasks.py`. If tasks stop running:
-- Restart the bot to re-create loops.
-- Check `/admin tasklogs` for failures.
+- Poll auto-refresh/close, reminders, timers, conditional roles, booster checks are in `core/tasks.py`.
+- Use `/admin tasklogs` (bot owner only) to inspect the last N runs.
 
-## 7. Manual Utilities
+## 7. Useful Commands
 
-- `/admin sql` and `/admin tasklogs` are bot-owner only.
-- `scripts/migrate_role_rules.py` connects to Discord using the same secrets loader—ensure the environment variables/instance role are available when running manually.
+```bash
+# Detect running service
+systemctl status bradbot
+
+# Tail logs
+journalctl -u bradbot -f
+
+# Manual sync fallback
+:resync guild
+```
+
+Need to update docs? Edit the wiki or `/docs` in the repo and link them here.
