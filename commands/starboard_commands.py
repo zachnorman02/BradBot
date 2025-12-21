@@ -19,8 +19,10 @@ def _parse_message_link(link: str):
     return int(match.group("guild_id")), int(match.group("channel_id")), int(match.group("message_id"))
 
 
-def _normalize_emoji_str(emoji: discord.PartialEmoji) -> str:
-    return emoji.to_str()
+def _normalize_emoji_str(emoji: discord.PartialEmoji | str) -> str:
+    if isinstance(emoji, discord.PartialEmoji):
+        return emoji.to_str()
+    return emoji
 
 
 class StarboardGroup(app_commands.Group):
@@ -50,7 +52,7 @@ class StarboardGroup(app_commands.Group):
         self,
         interaction: discord.Interaction,
         channel: discord.TextChannel,
-        emoji: discord.PartialEmoji,
+        emoji: str,
         threshold: app_commands.Range[int, 1, None],
         allow_nsfw: bool = False
     ):
@@ -58,7 +60,7 @@ class StarboardGroup(app_commands.Group):
             await interaction.response.send_message("❌ You need Manage Server to do that.", ephemeral=True)
             return
         await self._ensure_tables()
-        emoji_str = _normalize_emoji_str(emoji)
+        emoji_str = _normalize_emoji_str(discord.PartialEmoji.from_str(emoji) or emoji)
         board_id = db.upsert_starboard_board(interaction.guild.id, channel.id, emoji_str, threshold, allow_nsfw)
         await interaction.response.send_message(
             f"✅ Starboard set for {channel.mention} ({emoji_str} × {threshold}, NSFW allowed: {allow_nsfw}).",
