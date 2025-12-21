@@ -278,13 +278,22 @@ class VoiceGroup(app_commands.Group):
             if announce_author:
                 spoken_text = f"{interaction.user.display_name} says: {text}"
 
+            provider = os.getenv('BRADBOT_TTS_PROVIDER', 'gtts').strip().lower()
+            engine_to_use = engine or os.getenv('BRADBOT_TTS_ENGINE', 'standard').strip().lower()
+            if provider == 'polly':
+                voice_to_use = voice or os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
+                language_to_use = language or os.getenv('BRADBOT_TTS_LANGUAGE', 'en-US')
+            else:
+                voice_to_use = voice  # gTTS does not use a named voice
+                language_to_use = language or 'en'
+
             try:
                 synthesize_tts_to_file(
                     text=spoken_text,
                     out_path=temp_audio_path,
-                    voice=voice,
-                    engine=engine,
-                    language=language
+                    voice=voice_to_use,
+                    engine=engine_to_use,
+                    language=language_to_use
                 )
             except Exception:
                 try:
@@ -344,9 +353,9 @@ class VoiceGroup(app_commands.Group):
                     target_channel.id if target_channel else None,
                     sent_message_id,
                     text,
-                    voice,
-                    engine,
-                    language,
+                    voice_to_use,
+                    engine_to_use,
+                    language_to_use,
                     announce_author,
                     post_text
                 )
