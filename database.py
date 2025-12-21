@@ -475,6 +475,7 @@ class Database:
             id BIGINT PRIMARY KEY,
             guild_id BIGINT NOT NULL,
             user_id BIGINT NOT NULL,
+            username TEXT NOT NULL,
             channel_id BIGINT NOT NULL,
             message_id BIGINT,
             message TEXT NOT NULL,
@@ -487,8 +488,12 @@ class Database:
                 "ALTER TABLE main.echo_logs ADD COLUMN IF NOT EXISTS message_id BIGINT",
                 fetch=False
             )
+            self.execute_query(
+                "ALTER TABLE main.echo_logs ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT ''",
+                fetch=False
+            )
         except Exception as e:
-            print(f"Failed to ensure echo_logs.message_id column: {e}")
+            print(f"Failed to ensure echo_logs columns: {e}")
         self._echo_logs_table_initialized = True
 
     # Poll methods
@@ -784,6 +789,7 @@ class Database:
         self,
         guild_id: int,
         user_id: int,
+        username: str,
         channel_id: int,
         message: str,
         message_id: int | None = None
@@ -792,12 +798,12 @@ class Database:
         self.init_echo_logs_table()
         next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.echo_logs")[0][0]
         query = """
-        INSERT INTO main.echo_logs (id, guild_id, user_id, channel_id, message_id, message)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO main.echo_logs (id, guild_id, user_id, username, channel_id, message_id, message)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         self.execute_query(
             query,
-            (next_id, guild_id, user_id, channel_id, message_id, message),
+            (next_id, guild_id, user_id, username, channel_id, message_id, message),
             fetch=False
         )
     

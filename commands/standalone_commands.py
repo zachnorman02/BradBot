@@ -28,6 +28,7 @@ async def echo_command(
             db.log_echo_message(
                 interaction.guild.id,
                 interaction.user.id,
+                interaction.user.name,
                 interaction.channel.id,
                 message,
                 sent_message.id
