@@ -2173,6 +2173,13 @@ class AdminGroup(app_commands.Group):
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
             return
+
+        if not interaction.user.guild_permissions.view_audit_log:
+            await interaction.response.send_message(
+                "❌ You need the View Audit Log permission to use this command.",
+                ephemeral=True
+            )
+            return
         
         # Check if bot has view_audit_log permission
         bot_member = interaction.guild.get_member(interaction.client.user.id)

@@ -7,6 +7,7 @@ from yt_dlp import YoutubeDL
 from utils.cookie_helper import fetch_youtube_cookies
 from utils.tts_helper import synthesize_tts_to_file
 import utils.tts_helper as tts_helper
+from database import db
 import boto3
 
 
@@ -323,12 +324,34 @@ class VoiceGroup(app_commands.Group):
                 'cleanup': _cleanup
             })
 
+            sent_message_id = None
             if post_text:
                 spoken_preview = spoken_text if announce_author else text
-                await interaction.channel.send(f"🗣️ {interaction.user.mention}: {spoken_preview}")
+                sent_message = await interaction.channel.send(
+                    f"🗣️ {interaction.user.mention}: {spoken_preview}"
+                )
+                sent_message_id = sent_message.id
                 await interaction.followup.send("✅ Added to the TTS queue.", ephemeral=True)
             else:
                 await interaction.followup.send("✅ Added to the TTS queue.", ephemeral=True)
+
+            try:
+                db.log_tts_message(
+                    interaction.guild.id,
+                    interaction.user.id,
+                    interaction.user.name,
+                    interaction.channel.id,
+                    target_channel.id if target_channel else None,
+                    sent_message_id,
+                    text,
+                    voice,
+                    engine,
+                    language,
+                    announce_author,
+                    post_text
+                )
+            except Exception as log_error:
+                print(f"Failed to log TTS message: {log_error}")
         except Exception as e:
             await interaction.followup.send(f"❌ TTS failed: {e}", ephemeral=True)
 

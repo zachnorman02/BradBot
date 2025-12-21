@@ -27,6 +27,7 @@ class Database:
         self.persistent_panel_ids = set()
         self._persistent_panels_table_initialized = False
         self._echo_logs_table_initialized = False
+        self._tts_logs_table_initialized = False
         
     def _get_iam_token(self) -> str:
         """Generate IAM authentication token for Aurora DSQL"""
@@ -496,6 +497,66 @@ class Database:
             print(f"Failed to ensure echo_logs columns: {e}")
         self._echo_logs_table_initialized = True
 
+    def init_tts_logs_table(self):
+        """Create the tts_logs table if it does not exist."""
+        if self._tts_logs_table_initialized:
+            return
+        query = """
+        CREATE TABLE IF NOT EXISTS main.tts_logs (
+            id BIGINT PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            username TEXT NOT NULL,
+            channel_id BIGINT NOT NULL,
+            voice_channel_id BIGINT,
+            message_id BIGINT,
+            text TEXT NOT NULL,
+            voice TEXT,
+            engine TEXT,
+            language TEXT,
+            announce_author BOOLEAN DEFAULT FALSE,
+            post_text BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        self.execute_query(query, fetch=False)
+        try:
+            self.execute_query(
+                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT ''",
+                fetch=False
+            )
+            self.execute_query(
+                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS voice_channel_id BIGINT",
+                fetch=False
+            )
+            self.execute_query(
+                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS message_id BIGINT",
+                fetch=False
+            )
+            self.execute_query(
+                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS voice TEXT",
+                fetch=False
+            )
+            self.execute_query(
+                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS engine TEXT",
+                fetch=False
+            )
+            self.execute_query(
+                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS language TEXT",
+                fetch=False
+            )
+            self.execute_query(
+                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS announce_author BOOLEAN DEFAULT FALSE",
+                fetch=False
+            )
+            self.execute_query(
+                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS post_text BOOLEAN DEFAULT TRUE",
+                fetch=False
+            )
+        except Exception as e:
+            print(f"Failed to ensure tts_logs columns: {e}")
+        self._tts_logs_table_initialized = True
+
     # Poll methods
     def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str, 
                     max_responses: int = None, close_at = None, show_responses: bool = False,
@@ -804,6 +865,62 @@ class Database:
         self.execute_query(
             query,
             (next_id, guild_id, user_id, username, channel_id, message_id, message),
+            fetch=False
+        )
+
+    def log_tts_message(
+        self,
+        guild_id: int,
+        user_id: int,
+        username: str,
+        channel_id: int,
+        voice_channel_id: int | None,
+        message_id: int | None,
+        text: str,
+        voice: str | None,
+        engine: str | None,
+        language: str | None,
+        announce_author: bool,
+        post_text: bool
+    ):
+        """Store a record of a /voice tts command."""
+        self.init_tts_logs_table()
+        next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.tts_logs")[0][0]
+        query = """
+        INSERT INTO main.tts_logs (
+            id,
+            guild_id,
+            user_id,
+            username,
+            channel_id,
+            voice_channel_id,
+            message_id,
+            text,
+            voice,
+            engine,
+            language,
+            announce_author,
+            post_text
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        self.execute_query(
+            query,
+            (
+                next_id,
+                guild_id,
+                user_id,
+                username,
+                channel_id,
+                voice_channel_id,
+                message_id,
+                text,
+                voice,
+                engine,
+                language,
+                announce_author,
+                post_text
+            ),
             fetch=False
         )
     
