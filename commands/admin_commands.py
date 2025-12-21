@@ -10,6 +10,30 @@ from typing import Optional
 from database import db
 
 
+async def _enforce_default_permissions(interaction: discord.Interaction) -> bool:
+    command = interaction.command
+    if not command:
+        return True
+    required = getattr(command, "default_permissions", None)
+    if required is None:
+        return True
+    if not interaction.guild:
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "❌ This command can only be used in a server!",
+                ephemeral=True
+            )
+        return False
+    if interaction.user.guild_permissions.is_superset(required):
+        return True
+    if not interaction.response.is_done():
+        await interaction.response.send_message(
+            "❌ You don't have permission to use this command.",
+            ephemeral=True
+        )
+    return False
+
+
 class AdminSettingsView(ui.View):
     """Interactive admin settings view with toggle buttons"""
     
@@ -238,6 +262,9 @@ class AdminToolsGroup(app_commands.Group):
     
     def __init__(self):
         super().__init__(name="tools", description="Database and role management tools")
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await _enforce_default_permissions(interaction)
     
     def _should_defer_assignment(self, member: discord.Member, config: dict) -> bool:
         """Check if role assignment should be deferred based on config.
@@ -1728,6 +1755,9 @@ class AdminMaintenanceGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="maintenance", description="Server maintenance and moderation tools")
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await _enforce_default_permissions(interaction)
+
     @app_commands.command(name="assignlvl0", description="Assign lvl 0 to all verified members without a level role")
     @app_commands.checks.has_permissions(manage_roles=True)
     async def assign_lvl0(self, interaction: discord.Interaction):
@@ -1911,6 +1941,9 @@ class AdminGroup(app_commands.Group):
         self.add_command(self.tools)
         self.add_command(self.maintenance)
         # Note: Toggle commands removed - use /admin menu or /admin panel instead
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await _enforce_default_permissions(interaction)
     
     @app_commands.command(name="menu", description="Open server settings menu")
     @app_commands.default_permissions(administrator=True)

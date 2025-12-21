@@ -5,6 +5,7 @@ import discord
 import datetime as dt
 import asyncio
 from database import db
+from collections import defaultdict
 
 
 # ============================================================================
@@ -152,7 +153,6 @@ async def handle_channel_restrictions(before: discord.Member, after: discord.Mem
             return  # No restrictions configured
         
         # Group restrictions by blocking role for efficiency
-        from collections import defaultdict
         channels_by_role = defaultdict(list)
         for r in restrictions:
             channels_by_role[r['blocking_role_id']].append(r['channel_id'])
@@ -979,6 +979,12 @@ async def timer_check(bot):
             
             for timer in active_timers:
                 try:
+                    end_time = timer.get('end_time')
+                    if end_time and end_time.tzinfo is None:
+                        # Stored as naive timestamp; treat as UTC.
+                        end_time = end_time.replace(tzinfo=dt.timezone.utc)
+                        timer['end_time'] = end_time
+
                     guild = bot.get_guild(timer['guild_id'])
                     if not guild:
                         db.mark_timer_complete(timer['id'])
