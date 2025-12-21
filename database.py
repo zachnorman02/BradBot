@@ -677,6 +677,7 @@ class Database:
             voice TEXT,
             engine TEXT,
             language TEXT,
+            provider TEXT DEFAULT 'gtts',
             announce_author BOOLEAN DEFAULT FALSE,
             post_text BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -1070,11 +1071,13 @@ class Database:
         voice: str | None,
         engine: str | None,
         language: str | None,
+        provider: str,
         announce_author: bool,
         post_text: bool
     ):
         """Store a record of a /voice tts command."""
         self.init_tts_logs_table()
+        provider_to_store = provider or 'gtts'
         next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.tts_logs")[0][0]
         query = """
         INSERT INTO main.tts_logs (
@@ -1089,10 +1092,11 @@ class Database:
             voice,
             engine,
             language,
+            provider,
             announce_author,
             post_text
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         self.execute_query(
             query,
@@ -1108,6 +1112,7 @@ class Database:
                 voice,
                 engine,
                 language,
+                provider_to_store,
                 announce_author,
                 post_text
             ),

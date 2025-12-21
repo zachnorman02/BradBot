@@ -278,14 +278,17 @@ class VoiceGroup(app_commands.Group):
             if announce_author:
                 spoken_text = f"{interaction.user.display_name} says: {text}"
 
-            provider = os.getenv('BRADBOT_TTS_PROVIDER', 'gtts').strip().lower()
-            engine_to_use = engine or os.getenv('BRADBOT_TTS_ENGINE', 'standard').strip().lower()
+            provider = (os.getenv('BRADBOT_TTS_PROVIDER') or 'gtts').strip().lower() or 'gtts'
+            engine_to_use_raw = engine or os.getenv('BRADBOT_TTS_ENGINE') or 'standard'
+            engine_to_use = engine_to_use_raw.strip().lower() or 'standard'
             if provider == 'polly':
                 voice_to_use = voice or os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
                 language_to_use = language or os.getenv('BRADBOT_TTS_LANGUAGE', 'en-US')
+                engine_for_log = engine_to_use
             else:
                 voice_to_use = voice  # gTTS does not use a named voice
                 language_to_use = language or 'en'
+                engine_for_log = None
 
             try:
                 synthesize_tts_to_file(
@@ -332,12 +335,14 @@ class VoiceGroup(app_commands.Group):
                 'title': f"TTS from {interaction.user.display_name}",
                 'cleanup': _cleanup
             })
+            provider_for_log = provider or 'gtts'
 
             sent_message_id = None
             if post_text:
                 spoken_preview = spoken_text if announce_author else text
                 sent_message = await interaction.channel.send(
-                    f"🗣️ {interaction.user.mention}: {spoken_preview}"
+                    f"🗣️ {interaction.user.mention}: {spoken_preview}",
+                    silent=True
                 )
                 sent_message_id = sent_message.id
                 await interaction.followup.send("✅ Added to the TTS queue.", ephemeral=True)
@@ -354,8 +359,9 @@ class VoiceGroup(app_commands.Group):
                     sent_message_id,
                     text,
                     voice_to_use,
-                    engine_to_use,
+                    engine_for_log,
                     language_to_use,
+                    provider_for_log,
                     announce_author,
                     post_text
                 )
