@@ -26,6 +26,7 @@ class Database:
         self.connection_pool: Optional[pool.SimpleConnectionPool] = None
         self.persistent_panel_ids = set()
         self._persistent_panels_table_initialized = False
+        self._echo_logs_table_initialized = False
         
     def _get_iam_token(self) -> str:
         """Generate IAM authentication token for Aurora DSQL"""
@@ -465,6 +466,31 @@ class Database:
         self.execute_query(create_posts, fetch=False)
         self._starboard_tables_initialized = True
 
+    def init_echo_logs_table(self):
+        """Create the echo_logs table if it does not exist."""
+        if self._echo_logs_table_initialized:
+            return
+        query = """
+        CREATE TABLE IF NOT EXISTS main.echo_logs (
+            id BIGINT PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            channel_id BIGINT NOT NULL,
+            message_id BIGINT,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        self.execute_query(query, fetch=False)
+        try:
+            self.execute_query(
+                "ALTER TABLE main.echo_logs ADD COLUMN IF NOT EXISTS message_id BIGINT",
+                fetch=False
+            )
+        except Exception as e:
+            print(f"Failed to ensure echo_logs.message_id column: {e}")
+        self._echo_logs_table_initialized = True
+
     # Poll methods
     def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str, 
                     max_responses: int = None, close_at = None, show_responses: bool = False,
@@ -752,6 +778,28 @@ class Database:
                 'blocked': row[6],
             } for row in rows
         ]
+
+    # Echo log methods
+    def log_echo_message(
+        self,
+        guild_id: int,
+        user_id: int,
+        channel_id: int,
+        message: str,
+        message_id: int | None = None
+    ):
+        """Store a record of an /echo command."""
+        self.init_echo_logs_table()
+        next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.echo_logs")[0][0]
+        query = """
+        INSERT INTO main.echo_logs (id, guild_id, user_id, channel_id, message_id, message)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        self.execute_query(
+            query,
+            (next_id, guild_id, user_id, channel_id, message_id, message),
+            fetch=False
+        )
     
     def get_poll_responses(self, poll_id: int) -> list:
         """Get all responses for a poll"""

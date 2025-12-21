@@ -3,6 +3,7 @@ Standalone utility commands and their helpers
 """
 import discord
 from discord import app_commands
+from database import db
 from utils.timestamp_helpers import TimestampStyle, create_discord_timestamp, format_timestamp_examples
 
 async def echo_command(
@@ -18,7 +19,21 @@ async def echo_command(
     allowed = discord.AllowedMentions.all() if allow_mentions else discord.AllowedMentions.none()
     await interaction.response.defer(ephemeral=True)
     try:
-        await interaction.channel.send(message, allowed_mentions=allowed, silent=not allow_mentions)
+        sent_message = await interaction.channel.send(
+            message,
+            allowed_mentions=allowed,
+            silent=not allow_mentions
+        )
+        try:
+            db.log_echo_message(
+                interaction.guild.id,
+                interaction.user.id,
+                interaction.channel.id,
+                message,
+                sent_message.id
+            )
+        except Exception as log_error:
+            print(f"Failed to log echo message: {log_error}")
         await interaction.followup.send("✅ Message sent.", ephemeral=True)
     except Exception as e:
         await interaction.followup.send(f"❌ Failed to send message: {e}", ephemeral=True)
