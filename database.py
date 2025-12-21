@@ -552,6 +552,12 @@ class Database:
             VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             """
             self.execute_query(query, (next_id, poll_id, user_id, username, response_text), fetch=False)
+        
+        # Check if poll should auto-close due to max_responses
+        if poll['max_responses']:
+            response_count = self.get_poll_response_count(poll_id)
+            if response_count >= poll['max_responses']:
+                self.close_poll(poll_id)
 
     # Starboard methods
     def upsert_starboard_board(self, guild_id: int, channel_id: int, emoji: str, threshold: int, allow_nsfw: bool) -> int:
@@ -746,12 +752,6 @@ class Database:
                 'blocked': row[6],
             } for row in rows
         ]
-            
-            # Check if poll should auto-close due to max_responses
-            if poll['max_responses']:
-                response_count = self.get_poll_response_count(poll_id)
-                if response_count >= poll['max_responses']:
-                    self.close_poll(poll_id)
     
     def get_poll_responses(self, poll_id: int) -> list:
         """Get all responses for a poll"""
