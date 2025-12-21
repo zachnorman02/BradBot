@@ -8,9 +8,9 @@ from database import db
 
 def _normalize_emoji(value) -> str:
     if isinstance(value, discord.PartialEmoji):
-        return value.to_str()
+        return str(value)
     if isinstance(value, discord.Emoji):
-        return value.__str__()
+        return str(value)
     if isinstance(value, discord.Reaction):
         return _normalize_emoji(value.emoji)
     return str(value)
