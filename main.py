@@ -24,6 +24,7 @@ from commands import (
     AlarmGroup,
     LinkGroup,
     StarboardGroup,
+    BirthdayGroup,
     timestamp_command,
     echo_command
 )
@@ -40,6 +41,7 @@ from core import (
     poll_results_refresh,
     reminder_check,
     timer_check,
+    birthday_check,
     on_member_update_handler,
     handle_reply_notification,
     process_message_links,
@@ -78,6 +80,7 @@ bot.tree.add_command(VoiceGroup())
 bot.tree.add_command(AlarmGroup())
 bot.tree.add_command(LinkGroup())
 bot.tree.add_command(StarboardGroup())
+bot.tree.add_command(BirthdayGroup())
 
 
 # ============================================================================
@@ -259,6 +262,9 @@ async def on_ready():
     
     # Start timer check task
     bot.loop.create_task(timer_check(bot))
+
+    # Start birthday check task
+    bot.loop.create_task(birthday_check(bot))
     
 @bot.event
 async def on_message(message):

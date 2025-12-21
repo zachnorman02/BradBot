@@ -1059,6 +1059,65 @@ async def timer_check(bot):
 
 
 # ============================================================================
+# BIRTHDAY TASK
+# ============================================================================
+
+async def birthday_check(bot):
+    """Background task to announce birthdays once per day."""
+    await bot.wait_until_ready()
+
+    while not bot.is_closed():
+        try:
+            await asyncio.sleep(3600)  # Check hourly
+
+            if not db.connection_pool:
+                db.init_pool()
+            db.init_birthdays_table()
+
+            today = dt.datetime.now(dt.timezone.utc).date()
+            settings = db.get_guild_settings_by_name('birthday_channel_id')
+            for setting in settings:
+                try:
+                    channel_value = (setting.get('setting_value') or '').strip()
+                    if not channel_value.isdigit():
+                        continue
+                    guild_id = setting['guild_id']
+                    channel_id = int(channel_value)
+
+                    guild = bot.get_guild(guild_id)
+                    if not guild:
+                        continue
+
+                    channel = guild.get_channel(channel_id)
+                    if not channel:
+                        continue
+
+                    birthdays = db.get_birthdays_for_date(guild_id, today.month, today.day)
+                    if not birthdays:
+                        continue
+
+                    for birthday in birthdays:
+                        last_announced = birthday.get('last_announced')
+                        if last_announced == today:
+                            continue
+
+                        member = guild.get_member(birthday['user_id'])
+                        if not member:
+                            continue
+
+                        try:
+                            await channel.send(f"🎉 Happy birthday {member.mention}!")
+                            db.mark_birthday_announced(guild_id, birthday['user_id'], today)
+                        except Exception as e:
+                            print(f"Error announcing birthday for {birthday['user_id']}: {e}")
+                except Exception as e:
+                    print(f"Error processing birthday settings for guild {setting.get('guild_id')}: {e}")
+        except Exception as e:
+            print(f"Error in birthday check: {e}")
+            await asyncio.sleep(30)
+
+
+# ============================================================================
 # LEGACY ALIAS (for backwards compatibility)
 # ============================================================================
 

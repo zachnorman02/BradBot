@@ -28,6 +28,7 @@ class Database:
         self._persistent_panels_table_initialized = False
         self._echo_logs_table_initialized = False
         self._tts_logs_table_initialized = False
+        self._birthdays_table_initialized = False
         
     def _get_iam_token(self) -> str:
         """Generate IAM authentication token for Aurora DSQL"""
@@ -304,6 +305,168 @@ class Database:
         VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (guild_id, setting_name, setting_value), fetch=False)
+
+    def get_guild_settings_by_name(self, setting_name: str) -> list[dict]:
+        """Get all guild settings for a given setting name."""
+        query = """
+        SELECT guild_id, setting_value
+        FROM main.guild_settings
+        WHERE setting_name = %s
+        ORDER BY guild_id
+        """
+        rows = self.execute_query(query, (setting_name,))
+        return [
+            {
+                'guild_id': row[0],
+                'setting_value': row[1]
+            } for row in rows
+        ]
+
+    # Birthday methods
+    def set_birthday(
+        self,
+        guild_id: int,
+        user_id: int,
+        year: Optional[int],
+        month: int,
+        day: Optional[int]
+    ):
+        """Set or update a user's birthday for a guild."""
+        self.init_birthdays_table()
+        delete_query = """
+        DELETE FROM main.birthdays
+        WHERE guild_id = %s AND user_id = %s
+        """
+        self.execute_query(delete_query, (guild_id, user_id), fetch=False)
+        insert_query = """
+        INSERT INTO main.birthdays (guild_id, user_id, year, month, day, last_announced, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """
+        self.execute_query(insert_query, (guild_id, user_id, year, month, day), fetch=False)
+
+    def clear_birthday(self, guild_id: int, user_id: int):
+        """Remove a user's birthday for a guild."""
+        self.init_birthdays_table()
+        query = """
+        DELETE FROM main.birthdays
+        WHERE guild_id = %s AND user_id = %s
+        """
+        self.execute_query(query, (guild_id, user_id), fetch=False)
+
+    def get_birthday(self, guild_id: int, user_id: int) -> Optional[dict]:
+        """Get a user's birthday for a guild."""
+        self.init_birthdays_table()
+        query = """
+        SELECT guild_id, user_id, year, month, day, last_announced
+        FROM main.birthdays
+        WHERE guild_id = %s AND user_id = %s
+        """
+        rows = self.execute_query(query, (guild_id, user_id))
+        if rows:
+            row = rows[0]
+            return {
+                'guild_id': row[0],
+                'user_id': row[1],
+                'year': row[2],
+                'month': row[3],
+                'day': row[4],
+                'last_announced': row[5]
+            }
+        return None
+
+    def get_birthdays_for_date(self, guild_id: int, month: int, day: int) -> list[dict]:
+        """Get all birthdays for a guild on a specific month/day."""
+        self.init_birthdays_table()
+        query = """
+        SELECT guild_id, user_id, year, month, day, last_announced
+        FROM main.birthdays
+        WHERE guild_id = %s AND month = %s AND day = %s
+        ORDER BY user_id
+        """
+        rows = self.execute_query(query, (guild_id, month, day))
+        return [
+            {
+                'guild_id': row[0],
+                'user_id': row[1],
+                'year': row[2],
+                'month': row[3],
+                'day': row[4],
+                'last_announced': row[5]
+            } for row in rows
+        ]
+
+    def get_birthdays_for_month(self, guild_id: int, month: int) -> list[dict]:
+        """Get all birthdays for a guild in a specific month."""
+        self.init_birthdays_table()
+        query = """
+        SELECT guild_id, user_id, year, month, day, last_announced
+        FROM main.birthdays
+        WHERE guild_id = %s AND month = %s
+        ORDER BY day NULLS LAST, user_id
+        """
+        rows = self.execute_query(query, (guild_id, month))
+        return [
+            {
+                'guild_id': row[0],
+                'user_id': row[1],
+                'year': row[2],
+                'month': row[3],
+                'day': row[4],
+                'last_announced': row[5]
+            } for row in rows
+        ]
+
+    def get_birthdays_for_guild(self, guild_id: int) -> list[dict]:
+        """Get all birthdays for a guild."""
+        self.init_birthdays_table()
+        query = """
+        SELECT guild_id, user_id, year, month, day, last_announced
+        FROM main.birthdays
+        WHERE guild_id = %s
+        ORDER BY month ASC, day NULLS LAST, user_id
+        """
+        rows = self.execute_query(query, (guild_id,))
+        return [
+            {
+                'guild_id': row[0],
+                'user_id': row[1],
+                'year': row[2],
+                'month': row[3],
+                'day': row[4],
+                'last_announced': row[5]
+            } for row in rows
+        ]
+
+    def get_birthdays_with_year_and_day(self, guild_id: int) -> list[dict]:
+        """Get birthdays with full date (year/month/day) for a guild."""
+        self.init_birthdays_table()
+        query = """
+        SELECT guild_id, user_id, year, month, day, last_announced
+        FROM main.birthdays
+        WHERE guild_id = %s AND year IS NOT NULL AND day IS NOT NULL
+        ORDER BY user_id
+        """
+        rows = self.execute_query(query, (guild_id,))
+        return [
+            {
+                'guild_id': row[0],
+                'user_id': row[1],
+                'year': row[2],
+                'month': row[3],
+                'day': row[4],
+                'last_announced': row[5]
+            } for row in rows
+        ]
+
+    def mark_birthday_announced(self, guild_id: int, user_id: int, announced_date):
+        """Update last_announced for a user's birthday."""
+        self.init_birthdays_table()
+        query = """
+        UPDATE main.birthdays
+        SET last_announced = %s, updated_at = CURRENT_TIMESTAMP
+        WHERE guild_id = %s AND user_id = %s
+        """
+        self.execute_query(query, (announced_date, guild_id, user_id), fetch=False)
     
     # Message tracking methods
     def store_message_tracking(self, bot_message_id: int, user_id: int, guild_id: int, 
@@ -556,6 +719,33 @@ class Database:
         except Exception as e:
             print(f"Failed to ensure tts_logs columns: {e}")
         self._tts_logs_table_initialized = True
+
+    def init_birthdays_table(self):
+        """Create the birthdays table if it does not exist."""
+        if self._birthdays_table_initialized:
+            return
+        query = """
+        CREATE TABLE IF NOT EXISTS main.birthdays (
+            guild_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            year INTEGER,
+            month INTEGER NOT NULL,
+            day INTEGER,
+            last_announced DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (guild_id, user_id)
+        )
+        """
+        self.execute_query(query, fetch=False)
+        try:
+            self.execute_query(
+                "ALTER TABLE main.birthdays ALTER COLUMN day DROP NOT NULL",
+                fetch=False
+            )
+        except Exception:
+            pass
+        self._birthdays_table_initialized = True
 
     # Poll methods
     def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str, 

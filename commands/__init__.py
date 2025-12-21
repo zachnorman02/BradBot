@@ -14,6 +14,7 @@ from .issues_commands import IssuesGroup
 from .convert_commands import ConversionGroup
 from .link_commands import LinkGroup
 from .starboard_commands import StarboardGroup
+from .birthday_commands import BirthdayGroup
 
 __all__ = [
     'EmojiGroup',
@@ -27,6 +28,7 @@ __all__ = [
     'UtilityGroup',
     'LinkGroup',
     'StarboardGroup',
+    'BirthdayGroup',
     'VoiceGroup',
     'AlarmGroup',
     'timestamp_command',
