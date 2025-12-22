@@ -103,10 +103,12 @@ class CommandToggleView(ui.View):
     def update_buttons(self):
         echo_enabled = self._is_enabled('echo')
         tts_enabled = self._is_enabled('tts')
-        self.children[0].style = discord.ButtonStyle.green if echo_enabled else discord.ButtonStyle.gray
-        self.children[0].label = "Echo " + ("✓" if echo_enabled else "✗")
-        self.children[1].style = discord.ButtonStyle.green if tts_enabled else discord.ButtonStyle.gray
-        self.children[1].label = "TTS " + ("✓" if tts_enabled else "✗")
+        if len(self.children) >= 1:
+            self.children[0].style = discord.ButtonStyle.green if echo_enabled else discord.ButtonStyle.gray
+            self.children[0].label = "Echo " + ("✓" if echo_enabled else "✗")
+        if len(self.children) >= 2:
+            self.children[1].style = discord.ButtonStyle.green if tts_enabled else discord.ButtonStyle.gray
+            self.children[1].label = "TTS " + ("✓" if tts_enabled else "✗")
 
     async def _ensure_admin(self, interaction: discord.Interaction) -> bool:
         if not interaction.user.guild_permissions.administrator:
@@ -2146,12 +2148,12 @@ class AdminGroup(app_commands.Group):
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(
-                        "❌ An error occurred while creating the command panel.",
+                        f"❌ An error occurred while creating the command panel: {e}",
                         ephemeral=True
                     )
                 else:
                     await interaction.response.send_message(
-                        "❌ An error occurred while creating the command panel.",
+                        f"❌ An error occurred while creating the command panel: {e}",
                         ephemeral=True
                     )
             except Exception:
