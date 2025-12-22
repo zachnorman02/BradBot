@@ -2139,7 +2139,6 @@ class AdminGroup(app_commands.Group):
             view.update_buttons()
 
             message = await interaction.channel.send(
-                content="Command toggles panel (echo/TTS)",
                 embed=view.get_embed(),
                 view=view
             )
