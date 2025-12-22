@@ -2117,6 +2117,8 @@ class AdminGroup(app_commands.Group):
             return
 
         try:
+            await interaction.response.defer(ephemeral=True)
+
             db.init_persistent_panels_table()
             custom_prefix = f"command_panel:{interaction.guild.id}:{int(dt.datetime.now(dt.timezone.utc).timestamp())}"
             view = CommandToggleView(interaction.guild.id, persistent=True, custom_id_prefix=custom_prefix)
@@ -2135,16 +2137,25 @@ class AdminGroup(app_commands.Group):
                 metadata={'custom_id_prefix': custom_prefix}
             )
 
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "✅ Persistent command panel created! Administrators can toggle echo/TTS here.",
                 ephemeral=True
             )
         except Exception as e:
             print(f"Error creating command panel: {e}")
-            await interaction.response.send_message(
-                "❌ An error occurred while creating the command panel.",
-                ephemeral=True
-            )
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "❌ An error occurred while creating the command panel.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "❌ An error occurred while creating the command panel.",
+                        ephemeral=True
+                    )
+            except Exception:
+                pass
 
     @app_commands.command(name="sync", description="Force sync slash commands (bot owner or admin)")
     @app_commands.describe(scope="Sync globally or just this server")
