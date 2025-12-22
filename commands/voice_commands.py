@@ -251,6 +251,16 @@ class VoiceGroup(app_commands.Group):
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
 
+        if db.is_command_disabled(interaction.guild.id, 'tts'):
+            await interaction.response.send_message("❌ TTS is disabled in this server.", ephemeral=True)
+            return
+
+        banned, ban_reason = db.is_user_banned_for_command(interaction.guild.id, interaction.user.id, 'tts')
+        if banned:
+            reason_note = f" Reason: {ban_reason}" if ban_reason else ""
+            await interaction.response.send_message(f"❌ You are banned from using TTS in this server.{reason_note}", ephemeral=True)
+            return
+
         # Ensure bot is connected or user's in voice
         vc = interaction.guild.voice_client
         target_channel = None

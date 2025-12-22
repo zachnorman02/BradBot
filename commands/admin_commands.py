@@ -2052,6 +2052,82 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
 
+    @app_commands.command(name="command_ban", description="Ban a user from using a command (echo or tts)")
+    @app_commands.describe(user="User to ban", command="Command to ban", reason="Optional reason for the ban")
+    @app_commands.choices(command=[
+        app_commands.Choice(name="Echo", value="echo"),
+        app_commands.Choice(name="TTS", value="tts"),
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def command_ban(self, interaction: discord.Interaction, user: discord.Member, command: app_commands.Choice[str], reason: str = None):
+        """Prevent a member from using echo or TTS commands in this server."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        db.ban_user_for_command(interaction.guild.id, user.id, command.value, reason or "", interaction.user.id)
+        await interaction.response.send_message(
+            f"✅ Banned {user.display_name} from using {command.value} in this server.",
+            ephemeral=True
+        )
+
+    @app_commands.command(name="command_unban", description="Remove a command ban for a user")
+    @app_commands.describe(user="User to unban", command="Command to unban")
+    @app_commands.choices(command=[
+        app_commands.Choice(name="Echo", value="echo"),
+        app_commands.Choice(name="TTS", value="tts"),
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def command_unban(self, interaction: discord.Interaction, user: discord.Member, command: app_commands.Choice[str]):
+        """Remove a member's echo or TTS ban in this server."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        db.unban_user_for_command(interaction.guild.id, user.id, command.value)
+        await interaction.response.send_message(
+            f"✅ Unbanned {user.display_name} for {command.value} in this server.",
+            ephemeral=True
+        )
+
+    @app_commands.command(name="command_disable", description="Disable a command in this server")
+    @app_commands.describe(command="Command to disable")
+    @app_commands.choices(command=[
+        app_commands.Choice(name="Echo", value="echo"),
+        app_commands.Choice(name="TTS", value="tts"),
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def command_disable(self, interaction: discord.Interaction, command: app_commands.Choice[str]):
+        """Disable echo or TTS for everyone in this server."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        db.set_command_enabled(interaction.guild.id, command.value, False)
+        await interaction.response.send_message(
+            f"✅ Disabled {command.value} in this server.",
+            ephemeral=True
+        )
+
+    @app_commands.command(name="command_enable", description="Enable a command in this server")
+    @app_commands.describe(command="Command to enable")
+    @app_commands.choices(command=[
+        app_commands.Choice(name="Echo", value="echo"),
+        app_commands.Choice(name="TTS", value="tts"),
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def command_enable(self, interaction: discord.Interaction, command: app_commands.Choice[str]):
+        """Enable echo or TTS for everyone in this server."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        db.set_command_enabled(interaction.guild.id, command.value, True)
+        await interaction.response.send_message(
+            f"✅ Enabled {command.value} in this server.",
+            ephemeral=True
+        )
+
     @app_commands.command(name="sql", description="Execute a SQL query (BOT OWNER ONLY)")
     @app_commands.describe(query="The SQL query to execute")
     async def execute_sql(self, interaction: discord.Interaction, query: str):

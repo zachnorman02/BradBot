@@ -29,6 +29,8 @@ class Database:
         self._echo_logs_table_initialized = False
         self._tts_logs_table_initialized = False
         self._birthdays_table_initialized = False
+        self._command_bans_table_initialized = False
+        self._command_toggles_table_initialized = False
         
     def _get_iam_token(self) -> str:
         """Generate IAM authentication token for Aurora DSQL"""
@@ -748,6 +750,40 @@ class Database:
             pass
         self._birthdays_table_initialized = True
 
+    def init_command_toggles_table(self):
+        """Create the command_toggles table if it does not exist."""
+        if self._command_toggles_table_initialized:
+            return
+        query = """
+        CREATE TABLE IF NOT EXISTS main.command_toggles (
+            guild_id BIGINT NOT NULL,
+            command TEXT NOT NULL,
+            enabled BOOLEAN DEFAULT TRUE,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (guild_id, command)
+        )
+        """
+        self.execute_query(query, fetch=False)
+        self._command_toggles_table_initialized = True
+
+    def init_command_bans_table(self):
+        """Create the command_bans table if it does not exist."""
+        if self._command_bans_table_initialized:
+            return
+        query = """
+        CREATE TABLE IF NOT EXISTS main.command_bans (
+            guild_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            command TEXT NOT NULL,
+            reason TEXT DEFAULT '',
+            banned_by BIGINT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (guild_id, user_id, command)
+        )
+        """
+        self.execute_query(query, fetch=False)
+        self._command_bans_table_initialized = True
+
     # Poll methods
     def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str, 
                     max_responses: int = None, close_at = None, show_responses: bool = False,
@@ -1058,6 +1094,93 @@ class Database:
             (next_id, guild_id, user_id, username, channel_id, message_id, message),
             fetch=False
         )
+
+    # Command bans
+    def ban_user_for_command(
+        self,
+        guild_id: int,
+        user_id: int,
+        command: str,
+        reason: str = "",
+        banned_by: int | None = None
+    ):
+        """Ban a user from a specific command."""
+        self.init_command_bans_table()
+        command_key = command.lower()
+        # Aurora DSQL lacks ON CONFLICT; delete then insert.
+        self.execute_query(
+            "DELETE FROM main.command_bans WHERE guild_id = %s AND user_id = %s AND command = %s",
+            (guild_id, user_id, command_key),
+            fetch=False
+        )
+        self.execute_query(
+            """
+            INSERT INTO main.command_bans (guild_id, user_id, command, reason, banned_by, created_at)
+            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            """,
+            (guild_id, user_id, command_key, reason or '', banned_by),
+            fetch=False
+        )
+
+    def unban_user_for_command(self, guild_id: int, user_id: int, command: str):
+        """Remove a user's ban for a specific command."""
+        self.init_command_bans_table()
+        self.execute_query(
+            "DELETE FROM main.command_bans WHERE guild_id = %s AND user_id = %s AND command = %s",
+            (guild_id, user_id, command.lower()),
+            fetch=False
+        )
+
+    def is_user_banned_for_command(self, guild_id: int, user_id: int, command: str) -> tuple[bool, str | None]:
+        """Return whether a user is banned for a command and the stored reason."""
+        self.init_command_bans_table()
+        result = self.execute_query(
+            """
+            SELECT reason FROM main.command_bans
+            WHERE guild_id = %s AND user_id = %s AND command = %s
+            LIMIT 1
+            """,
+            (guild_id, user_id, command.lower())
+        )
+        if result:
+            reason = result[0][0]
+            return True, reason if reason else None
+        return False, None
+
+    # Command toggles (per guild)
+    def set_command_enabled(self, guild_id: int, command: str, enabled: bool):
+        """Enable or disable a command for a guild."""
+        self.init_command_toggles_table()
+        command_key = command.lower()
+        # Aurora DSQL lacks ON CONFLICT; delete then insert.
+        self.execute_query(
+            "DELETE FROM main.command_toggles WHERE guild_id = %s AND command = %s",
+            (guild_id, command_key),
+            fetch=False
+        )
+        self.execute_query(
+            """
+            INSERT INTO main.command_toggles (guild_id, command, enabled, updated_at)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+            """,
+            (guild_id, command_key, enabled),
+            fetch=False
+        )
+
+    def is_command_disabled(self, guild_id: int, command: str) -> bool:
+        """Return True if the command is disabled in the guild."""
+        self.init_command_toggles_table()
+        result = self.execute_query(
+            """
+            SELECT enabled FROM main.command_toggles
+            WHERE guild_id = %s AND command = %s
+            LIMIT 1
+            """,
+            (guild_id, command.lower())
+        )
+        if result:
+            return not result[0][0]
+        return False
 
     def log_tts_message(
         self,
