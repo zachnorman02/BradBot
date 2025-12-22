@@ -31,7 +31,7 @@ from commands import (
 
 # Import poll views
 from commands.poll_commands import PollView
-from commands.admin_commands import AdminSettingsView
+from commands.admin_commands import AdminSettingsView, CommandToggleView
 from commands.issues_commands import IssuePanelView
 
 # Import core functionality
@@ -217,6 +217,12 @@ async def on_ready():
 
             if panel['panel_type'] == 'admin_settings':
                 view = AdminSettingsView(
+                    guild_id=panel['guild_id'],
+                    persistent=True,
+                    custom_id_prefix=custom_prefix
+                )
+            elif panel['panel_type'] == 'command_settings':
+                view = CommandToggleView(
                     guild_id=panel['guild_id'],
                     persistent=True,
                     custom_id_prefix=custom_prefix

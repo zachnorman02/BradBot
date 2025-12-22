@@ -65,6 +65,74 @@ class AdminSettingsView(ui.View):
             button.custom_id = f"{prefix}:{suffix}"
 
 
+class CommandToggleView(ui.View):
+    """Panel to toggle commands like echo and TTS per guild."""
+
+    def __init__(self, guild_id: int, persistent: bool = False, custom_id_prefix: Optional[str] = None):
+        super().__init__(timeout=None if persistent else 180)
+        self.guild_id = guild_id
+        self.persistent = persistent
+        self.custom_id_prefix = custom_id_prefix
+        if self.persistent:
+            self._set_persistent_custom_ids()
+        self.update_buttons()
+
+    def _set_persistent_custom_ids(self):
+        prefix = self.custom_id_prefix or f"command_panel:{self.guild_id}"
+        suffixes = ["echo", "tts"]
+        buttons = [child for child in self.children if isinstance(child, discord.ui.Button)]
+        for button, suffix in zip(buttons, suffixes):
+            button.custom_id = f"{prefix}:{suffix}"
+
+    def _is_enabled(self, command_name: str) -> bool:
+        return not db.is_command_disabled(self.guild_id, command_name)
+
+    def get_embed(self) -> discord.Embed:
+        echo_enabled = self._is_enabled('echo')
+        tts_enabled = self._is_enabled('tts')
+        embed = discord.Embed(
+            title="🎚️ Command Toggles",
+            description="Enable or disable commands server-wide.",
+            color=discord.Color.dark_grey()
+        )
+        embed.add_field(name="Echo", value="🟢 Enabled" if echo_enabled else "🔴 Disabled", inline=True)
+        embed.add_field(name="TTS", value="🟢 Enabled" if tts_enabled else "🔴 Disabled", inline=True)
+        embed.set_footer(text="Admins can toggle commands for this server.")
+        return embed
+
+    def update_buttons(self):
+        echo_enabled = self._is_enabled('echo')
+        tts_enabled = self._is_enabled('tts')
+        self.children[0].style = discord.ButtonStyle.green if echo_enabled else discord.ButtonStyle.gray
+        self.children[0].label = "Echo " + ("✓" if echo_enabled else "✗")
+        self.children[1].style = discord.ButtonStyle.green if tts_enabled else discord.ButtonStyle.gray
+        self.children[1].label = "TTS " + ("✓" if tts_enabled else "✗")
+
+    async def _ensure_admin(self, interaction: discord.Interaction) -> bool:
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return False
+        return True
+
+    @ui.button(label="Echo", style=discord.ButtonStyle.gray, row=0)
+    async def toggle_echo(self, interaction: discord.Interaction, button: ui.Button):
+        if not await self._ensure_admin(interaction):
+            return
+        new_enabled = not self._is_enabled('echo')
+        db.set_command_enabled(self.guild_id, 'echo', new_enabled)
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @ui.button(label="TTS", style=discord.ButtonStyle.gray, row=0)
+    async def toggle_tts(self, interaction: discord.Interaction, button: ui.Button):
+        if not await self._ensure_admin(interaction):
+            return
+        new_enabled = not self._is_enabled('tts')
+        db.set_command_enabled(self.guild_id, 'tts', new_enabled)
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+
     def get_embed(self) -> discord.Embed:
         """Generate the settings display embed"""
         # Fetch current settings
@@ -1932,7 +2000,11 @@ class AdminGroup(app_commands.Group):
     """Admin commands for server management"""
     
     def __init__(self):
-        super().__init__(name="admin", description="Admin server management commands")
+        super().__init__(
+            name="admin",
+            description="Admin server management commands",
+            default_permissions=discord.Permissions(administrator=True)
+        )
         
         # Add subgroups
         self.tools = AdminToolsGroup()
@@ -2014,6 +2086,66 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
 
+    @app_commands.command(name="commands_menu", description="Open command toggles menu")
+    @app_commands.default_permissions(administrator=True)
+    async def commands_menu(self, interaction: discord.Interaction):
+        """Open interactive command toggle menu (echo/TTS)."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        try:
+            view = CommandToggleView(interaction.guild.id)
+            await interaction.response.send_message(
+                embed=view.get_embed(),
+                view=view,
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error opening command toggle menu: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while opening the command toggle menu.",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="commands_panel", description="Create a persistent command toggles panel in this channel")
+    @app_commands.default_permissions(administrator=True)
+    async def commands_panel(self, interaction: discord.Interaction):
+        """Create a persistent panel to toggle echo/TTS commands."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        try:
+            db.init_persistent_panels_table()
+            custom_prefix = f"command_panel:{interaction.guild.id}:{int(dt.datetime.now(dt.timezone.utc).timestamp())}"
+            view = CommandToggleView(interaction.guild.id, persistent=True, custom_id_prefix=custom_prefix)
+
+            message = await interaction.channel.send(
+                embed=view.get_embed(),
+                view=view
+            )
+            interaction.client.add_view(view, message_id=message.id)
+
+            db.save_persistent_panel(
+                message_id=message.id,
+                guild_id=interaction.guild.id,
+                channel_id=interaction.channel.id,
+                panel_type='command_settings',
+                metadata={'custom_id_prefix': custom_prefix}
+            )
+
+            await interaction.response.send_message(
+                "✅ Persistent command panel created! Administrators can toggle echo/TTS here.",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Error creating command panel: {e}")
+            await interaction.response.send_message(
+                "❌ An error occurred while creating the command panel.",
+                ephemeral=True
+            )
+
     @app_commands.command(name="sync", description="Force sync slash commands (bot owner or admin)")
     @app_commands.describe(scope="Sync globally or just this server")
     @app_commands.choices(scope=[
@@ -2053,21 +2185,81 @@ class AdminGroup(app_commands.Group):
             )
 
     @app_commands.command(name="command_ban", description="Ban a user from using a command (echo or tts)")
-    @app_commands.describe(user="User to ban", command="Command to ban", reason="Optional reason for the ban")
+    @app_commands.describe(
+        user="User to ban (optional if message_link provided)",
+        command="Command to ban",
+        reason="Optional reason for the ban",
+        message_link="Optional message link; will ban the author of that message"
+    )
     @app_commands.choices(command=[
         app_commands.Choice(name="Echo", value="echo"),
         app_commands.Choice(name="TTS", value="tts"),
     ])
     @app_commands.default_permissions(administrator=True)
-    async def command_ban(self, interaction: discord.Interaction, user: discord.Member, command: app_commands.Choice[str], reason: str = None):
+    async def command_ban(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member = None,
+        command: app_commands.Choice[str] = None,
+        reason: str = None,
+        message_link: str = None
+    ):
         """Prevent a member from using echo or TTS commands in this server."""
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
+        if command is None:
+            await interaction.response.send_message("❌ Choose a command to ban (echo or tts).", ephemeral=True)
+            return
 
-        db.ban_user_for_command(interaction.guild.id, user.id, command.value, reason or "", interaction.user.id)
+        target_member = user
+        # If a message link is provided, resolve the author of that message
+        if message_link:
+            try:
+                parts = [p for p in message_link.split('/') if p]
+                guild_id_str, channel_id_str, message_id_str = parts[-3:]
+                link_guild_id = int(guild_id_str)
+                channel_id = int(channel_id_str)
+                message_id = int(message_id_str)
+            except Exception:
+                await interaction.response.send_message("❌ Invalid message link format.", ephemeral=True)
+                return
+
+            if link_guild_id != interaction.guild.id:
+                await interaction.response.send_message("❌ The message link is for a different server.", ephemeral=True)
+                return
+
+            channel = interaction.client.get_channel(channel_id)
+            if channel is None:
+                try:
+                    channel = await interaction.client.fetch_channel(channel_id)
+                except Exception:
+                    channel = None
+
+            if channel is None or getattr(channel, "guild", None) != interaction.guild:
+                await interaction.response.send_message("❌ Could not access that channel in this server.", ephemeral=True)
+                return
+
+            try:
+                message = await channel.fetch_message(message_id)
+            except Exception:
+                await interaction.response.send_message("❌ Could not fetch that message.", ephemeral=True)
+                return
+
+            target_member = interaction.guild.get_member(message.author.id)
+            if target_member is None:
+                try:
+                    target_member = await interaction.guild.fetch_member(message.author.id)
+                except Exception:
+                    target_member = None
+
+        if target_member is None:
+            await interaction.response.send_message("❌ Provide a user or a valid message link to ban the author.", ephemeral=True)
+            return
+
+        db.ban_user_for_command(interaction.guild.id, target_member.id, command.value, reason or "", interaction.user.id)
         await interaction.response.send_message(
-            f"✅ Banned {user.display_name} from using {command.value} in this server.",
+            f"✅ Banned {target_member.display_name} from using {command.value} in this server.",
             ephemeral=True
         )
 

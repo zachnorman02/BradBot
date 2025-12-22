@@ -251,7 +251,7 @@ class VoiceGroup(app_commands.Group):
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
 
-        if db.is_command_disabled(interaction.guild.id, 'tts'):
+        if db.is_command_disabled(interaction.guild.id, 'tts') and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ TTS is disabled in this server.", ephemeral=True)
             return
 
