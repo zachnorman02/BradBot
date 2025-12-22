@@ -43,6 +43,8 @@ class AdminSettingsView(ui.View):
         self.persistent = persistent
         self.custom_id_prefix = custom_id_prefix
         if self.persistent:
+            # Enforce persistence invariants before sending
+            self.timeout = None
             self._set_persistent_custom_ids()
         self.update_buttons()
 
@@ -81,8 +83,13 @@ class CommandToggleView(ui.View):
         prefix = self.custom_id_prefix or f"command_panel:{self.guild_id}"
         suffixes = ["echo", "tts"]
         buttons = [child for child in self.children if isinstance(child, discord.ui.Button)]
-        for button, suffix in zip(buttons, suffixes):
+        for idx, button in enumerate(buttons):
+            suffix = suffixes[idx] if idx < len(suffixes) else f"btn{idx}"
             button.custom_id = f"{prefix}:{suffix}"
+        # Fallback in case decorators change ordering/availability
+        for idx, child in enumerate(self.children):
+            if isinstance(child, discord.ui.Button) and not child.custom_id:
+                child.custom_id = f"{prefix}:extra{idx}"
 
     def _is_enabled(self, command_name: str) -> bool:
         return not db.is_command_disabled(self.guild_id, command_name)
@@ -2124,8 +2131,13 @@ class AdminGroup(app_commands.Group):
             db.init_persistent_panels_table()
             custom_prefix = f"command_panel:{interaction.guild.id}:{int(dt.datetime.now(dt.timezone.utc).timestamp())}"
             view = CommandToggleView(interaction.guild.id, persistent=True, custom_id_prefix=custom_prefix)
+            # Ensure persistence invariants in case decorators change children at runtime
+            view.timeout = None
+            view._set_persistent_custom_ids()
+            view.update_buttons()
 
             message = await interaction.channel.send(
+                content="Command toggles panel (echo/TTS)",
                 embed=view.get_embed(),
                 view=view
             )
