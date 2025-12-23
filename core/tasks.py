@@ -568,9 +568,10 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
     """Handle manual conditional role assignment with deferred logic.
     
     When a configured conditional role is manually assigned:
-    - Check if user has any deferral roles from config
-    - If yes: mark eligible but remove role (defer assignment)
-    - If no: mark eligible and keep role (normal assignment)
+    - Check if user has any deferral or blocking roles from config
+    - If blocking: remove role and clear eligibility
+    - If deferral: mark eligible but remove role (defer assignment)
+    - Otherwise: mark eligible and keep role (normal assignment)
     
     When roles are removed:
     - Check if user was marked eligible for any conditional roles
@@ -578,7 +579,7 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
     
     On every role change:
     - Check if user has any conditional roles they shouldn't have
-    - Remove conditional role if they now have deferral roles (catches cases where deferral role is added later)
+    - Remove conditional role if they now have deferral or blocking roles (catches cases where those are added later)
     """
     try:
         before_role_ids = {role.id for role in before.roles}
@@ -624,7 +625,31 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
                                 print(f"[CONDITIONAL ROLE] Error removing conditional role after deferral role added: {e}")
                 continue  # Not a conditional role being added, skip normal processing
             
+            blocking_role_ids = config.get('blocking_role_ids', [])
             deferral_role_ids = config.get('deferral_role_ids', [])
+            user_role_ids = {r.id for r in after.roles}
+
+            # Blocked users should not receive the conditional role
+            has_blocking_role = any(br_id in user_role_ids for br_id in blocking_role_ids)
+            if has_blocking_role:
+                blocking_names = [
+                    br.name for br in (after.guild.get_role(br_id) for br_id in blocking_role_ids)
+                    if br and br.id in user_role_ids
+                ]
+                added_role = after.guild.get_role(added_role_id)
+                if added_role:
+                    try:
+                        await after.remove_roles(
+                            added_role,
+                            reason=f"Conditional role blocked by: {', '.join(blocking_names) if blocking_names else 'blocking role'}"
+                        )
+                    except Exception as e:
+                        print(f"[CONDITIONAL ROLE] Error removing blocked role {added_role.name} from {after.display_name}: {e}")
+                # Clear any eligibility so it is not re-granted while blocking roles remain
+                db.unmark_conditional_role_eligible(after.guild.id, after.id, added_role_id)
+                print(f"[CONDITIONAL ROLE] Blocked {added_role_id} for {after.display_name} (has blocking roles: {', '.join(blocking_names) if blocking_names else blocking_role_ids})")
+                continue
+
             if not deferral_role_ids:
                 # No deferral configured, mark eligible and keep role
                 db.mark_conditional_role_eligible(
@@ -637,7 +662,6 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
                 continue
             
             # Check if user has any deferral roles
-            user_role_ids = {r.id for r in after.roles}
             has_deferral_role = any(dr_id in user_role_ids for dr_id in deferral_role_ids)
             
             if has_deferral_role:
@@ -717,22 +741,38 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
                         except Exception as e:
                             print(f"[CONDITIONAL ROLE] Error granting deferred role: {e}")
         
-        # ===== SECTION 3: Enforcement - remove conditional roles if user has deferral roles =====
-        # This catches cases where a deferral role is added after the conditional role was assigned
+        # ===== SECTION 3: Enforcement - remove conditional roles if user has deferral or blocking roles =====
+        # This catches cases where a deferral/blocking role is added after the conditional role was assigned
         for config in all_configs:
             conditional_role_id = config['role_id']
             deferral_role_ids = config.get('deferral_role_ids', [])
-            
-            if not deferral_role_ids:
-                continue  # No deferral configured, skip
+            blocking_role_ids = config.get('blocking_role_ids', [])
             
             # Check if user currently has this conditional role
             if conditional_role_id not in after_role_ids:
                 continue  # User doesn't have this conditional role, skip
             
-            # Check if user has any deferral roles
             user_role_ids = {r.id for r in after.roles}
+            has_blocking_role = any(br_id in user_role_ids for br_id in blocking_role_ids)
             has_deferral_role = any(dr_id in user_role_ids for dr_id in deferral_role_ids)
+            
+            if has_blocking_role:
+                blocking_names = [
+                    br.name for br in (after.guild.get_role(br_id) for br_id in blocking_role_ids)
+                    if br and br.id in user_role_ids
+                ]
+                conditional_role = after.guild.get_role(conditional_role_id)
+                if conditional_role:
+                    try:
+                        await after.remove_roles(
+                            conditional_role,
+                            reason=f"User has blocking roles ({', '.join(blocking_names) if blocking_names else 'blocking role'}), removing conditional role"
+                        )
+                        db.unmark_conditional_role_eligible(after.guild.id, after.id, conditional_role_id)
+                        print(f"[CONDITIONAL ROLE] Removed {conditional_role.name} from {after.display_name} (has blocking roles: {', '.join(blocking_names) if blocking_names else blocking_role_ids})")
+                    except Exception as e:
+                        print(f"[CONDITIONAL ROLE] Error removing conditional role due to blocking roles: {e}")
+                continue
             
             if has_deferral_role:
                 # User has conditional role but now has deferral role(s) - remove conditional role

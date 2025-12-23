@@ -1601,10 +1601,12 @@ class AdminToolsGroup(app_commands.Group):
                     try:
                         for config in configs:
                             conditional_role_id = config['role_id']
+                            blocking_role_ids = config.get('blocking_role_ids', [])
                             deferral_role_ids = config.get('deferral_role_ids', [])
                             
                             member_role_ids = {r.id for r in member.roles}
                             has_conditional_role = conditional_role_id in member_role_ids
+                            has_blocking_role = any(br_id in member_role_ids for br_id in blocking_role_ids)
                             has_deferral_role = any(dr_id in member_role_ids for dr_id in deferral_role_ids)
                             
                             # Check eligibility
@@ -1618,6 +1620,25 @@ class AdminToolsGroup(app_commands.Group):
                             conditional_role = interaction.guild.get_role(conditional_role_id)
                             role_name = conditional_role.name if conditional_role else f"Role {conditional_role_id}"
                             
+                            # Logic 0: User has conditional role but also has blocking roles - REMOVE IT
+                            if has_conditional_role and has_blocking_role:
+                                blocking_roles_found = [
+                                    interaction.guild.get_role(rid) 
+                                    for rid in blocking_role_ids 
+                                    if rid in member_role_ids
+                                ]
+                                blocking_mentions = [r.mention for r in blocking_roles_found if r]
+                                action_desc = f"Remove {role_name} from {member.mention} (has blocking roles: {', '.join(blocking_mentions) if blocking_mentions else 'blocking role'})"
+                                results['removed'].append(action_desc)
+                                
+                                if not dry_run and conditional_role:
+                                    try:
+                                        await member.remove_roles(conditional_role, reason="Conditional role check: user has blocking roles")
+                                        db.unmark_conditional_role_eligible(interaction.guild.id, member.id, conditional_role_id)
+                                    except Exception as e:
+                                        results['errors'].append(f"Failed to remove {role_name} from {member.mention}: {e}")
+                                continue
+
                             # Logic 1: User has conditional role but has deferral roles - REMOVE IT
                             if has_conditional_role and has_deferral_role and deferral_role_ids:
                                 action_desc = f"Remove {role_name} from {member.mention} (has deferral roles)"
@@ -1630,7 +1651,7 @@ class AdminToolsGroup(app_commands.Group):
                                         results['errors'].append(f"Failed to remove {role_name} from {member.mention}: {e}")
                             
                             # Logic 2: User is deferred, has no deferral roles, and doesn't have conditional role - GRANT IT
-                            elif is_deferred and not has_deferral_role and not has_conditional_role and deferral_role_ids:
+                            elif is_deferred and not has_deferral_role and not has_conditional_role and not has_blocking_role and deferral_role_ids:
                                 action_desc = f"Grant {role_name} to {member.mention} (eligible, deferral criteria met)"
                                 results['granted'].append(action_desc)
                                 
