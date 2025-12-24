@@ -2205,7 +2205,7 @@ class AdminGroup(app_commands.Group):
     @app_commands.describe(
         channel="Channel to use for counting",
         idiot_role="Role to give users who break the count (24h)",
-        start_number="Number to start from (next expected)",
+        start_number="Number to start from (next expected) — leave blank to keep current",
         disable="Disable counting in this server",
         clear_idiot_role="Clear any existing penalty role"
     )
@@ -2215,7 +2215,7 @@ class AdminGroup(app_commands.Group):
         interaction: discord.Interaction,
         channel: discord.TextChannel | None = None,
         idiot_role: discord.Role | None = None,
-        start_number: int = 1,
+        start_number: int | None = None,
         disable: bool = False,
         clear_idiot_role: bool = False
     ):
@@ -2241,7 +2241,13 @@ class AdminGroup(app_commands.Group):
             await interaction.followup.send("❌ Please specify a channel for counting.", ephemeral=True)
             return
 
-        start_number = max(1, start_number)
+        # Use provided start_number or preserve existing if available
+        if start_number is not None:
+            start_number = max(1, start_number)
+        elif existing and existing.get("next_number"):
+            start_number = existing["next_number"]
+        else:
+            start_number = 1
         # Role selection: allow explicit clear, override, or reuse
         idiot_role_obj = None
         idiot_role_id = None

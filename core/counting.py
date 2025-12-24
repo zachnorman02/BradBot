@@ -116,6 +116,9 @@ async def _clear_expired_penalty(message: discord.Message, config: dict):
     if not expiry:
         return
     now = dt.datetime.now(dt.timezone.utc)
+    # Normalize expiry to aware datetime if DB returned naive
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=dt.timezone.utc)
     if expiry > now:
         return
 

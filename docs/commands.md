@@ -9,7 +9,7 @@ This page summarizes BradBot’s slash commands. For full details see `docs/comm
 - **tools loadboosterroles / saveboosterrole** – manage saved booster roles.
 - **tools autorole** – configure trigger-role automations.
 - **tools channelrestriction / messagemirror / conditionalrole** – channel gates, message mirroring, conditional roles.
-- **tools counting_config / counting_set_number** – set/reset the counting channel, optional penalty role (24h), starting number, or disable counting; adjust the next expected number.
+- **tools counting_config / counting_set_number** – set/reset the counting channel, optional penalty role (24h), starting number (or keep current), or disable counting; adjust the next expected number.
 - **maintenance assignlvl0 / kickunverified** – clean up level roles and unverified members.
 - **sql / tasklogs / auditlog** – bot-owner diagnostics.
 
