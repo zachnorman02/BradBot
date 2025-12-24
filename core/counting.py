@@ -167,7 +167,12 @@ async def handle_counting_message(message: discord.Message):
     # Ignore pings/mentions or non-math chatter
     if not content:
         return
-    if message.mentions or message.raw_mentions or message.role_mentions or message.raw_role_mentions or message.mention_everyone:
+    if message.mention_everyone:
+        return
+    if message.role_mentions or message.raw_role_mentions:
+        return
+    # Block user mentions unless it's a reply
+    if message.mentions and not message.reference:
         return
     if "\n" in content:
         return
