@@ -275,7 +275,7 @@ class CommandToggleView(ui.View):
 
     def _set_persistent_custom_ids(self):
         prefix = self.custom_id_prefix or f"command_panel:{self.guild_id}"
-        suffixes = ["echo", "tts"]
+        suffixes = ["echo", "tts", "refresh"]
         buttons = [child for child in self.children if isinstance(child, discord.ui.Button)]
         for idx, button in enumerate(buttons):
             suffix = suffixes[idx] if idx < len(suffixes) else f"btn{idx}"
@@ -332,6 +332,14 @@ class CommandToggleView(ui.View):
             return
         new_enabled = not self._is_enabled('tts')
         db.set_command_enabled(self.guild_id, 'tts', new_enabled)
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @ui.button(label="🔄 Refresh", style=discord.ButtonStyle.blurple, row=1)
+    async def refresh(self, interaction: discord.Interaction, button: ui.Button):
+        if not await self._ensure_admin(interaction):
+            return
+        # Reload states from DB and update the panel
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
@@ -2192,6 +2200,94 @@ class AdminGroup(app_commands.Group):
                     )
             except Exception:
                 pass
+
+    @app_commands.command(name="counting_config", description="Configure counting channel and penalty role")
+    @app_commands.describe(
+        channel="Channel to use for counting",
+        idiot_role="Role to give users who break the count (24h)",
+        start_number="Number to start from (next expected)",
+        disable="Disable counting in this server",
+        clear_idiot_role="Clear any existing penalty role"
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def counting_config(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel | None = None,
+        idiot_role: discord.Role | None = None,
+        start_number: int = 1,
+        disable: bool = False,
+        clear_idiot_role: bool = False
+    ):
+        """Set or disable the counting channel and penalty role."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        if not db.connection_pool:
+            db.init_pool()
+        db.init_counting_tables()
+
+        existing = db.get_counting_config(interaction.guild.id)
+
+        if disable:
+            db.clear_counting_config(interaction.guild.id)
+            await interaction.followup.send("🛑 Counting disabled and configuration cleared.", ephemeral=True)
+            return
+
+        if not channel:
+            await interaction.followup.send("❌ Please specify a channel for counting.", ephemeral=True)
+            return
+
+        start_number = max(1, start_number)
+        # Role selection: allow explicit clear, override, or reuse
+        idiot_role_obj = None
+        idiot_role_id = None
+        if clear_idiot_role:
+            idiot_role_id = None
+        elif idiot_role:
+            idiot_role_obj = idiot_role
+            idiot_role_id = idiot_role.id
+        elif existing and existing.get("idiot_role_id"):
+            idiot_role_id = existing["idiot_role_id"]
+            idiot_role_obj = interaction.guild.get_role(idiot_role_id)
+
+        db.set_counting_config(interaction.guild.id, channel.id, idiot_role_id, start_number)
+
+        if idiot_role_obj:
+            role_text = idiot_role_obj.mention
+        elif clear_idiot_role:
+            role_text = "None (penalty role cleared)"
+        else:
+            role_text = "None (penalties skipped)"
+        await interaction.followup.send(
+            f"✅ Counting configured.\n• Channel: {channel.mention}\n"
+            f"• Penalty role: {role_text}\n"
+            f"• Next number: {start_number}",
+            ephemeral=True
+        )
+
+    @app_commands.command(name="counting_set_number", description="Set the next expected counting number")
+    @app_commands.describe(number="The next number users should post")
+    @app_commands.default_permissions(administrator=True)
+    async def counting_set_number(self, interaction: discord.Interaction, number: int):
+        """Allow admins to set the counter to a specific number."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        config = db.get_counting_config(interaction.guild.id)
+        if not config:
+            await interaction.followup.send("❌ Counting is not configured. Run `/admin tools counting_config` first.", ephemeral=True)
+            return
+
+        number = max(1, number)
+        db.set_counting_number(interaction.guild.id, number)
+        await interaction.followup.send(f"✅ Counting set. Next expected number is now **{number}**.", ephemeral=True)
 
     @app_commands.command(name="sync", description="Force sync slash commands (bot owner or admin)")
     @app_commands.describe(scope="Sync globally or just this server")

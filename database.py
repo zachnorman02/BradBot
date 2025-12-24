@@ -1182,6 +1182,147 @@ class Database:
             return not result[0][0]
         return False
 
+    # Counting feature
+    def init_counting_tables(self):
+        """Create tables for counting channel configuration and penalties."""
+        self.execute_query(
+            """
+            CREATE TABLE IF NOT EXISTS main.counting_configs (
+                guild_id BIGINT PRIMARY KEY,
+                channel_id BIGINT NOT NULL,
+                idiot_role_id BIGINT NULL,
+                next_number BIGINT DEFAULT 1,
+                last_user_id BIGINT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
+            fetch=False
+        )
+        self.execute_query(
+            """
+            CREATE TABLE IF NOT EXISTS main.counting_penalties (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                PRIMARY KEY (guild_id, user_id)
+            );
+            """,
+            fetch=False
+        )
+
+    def set_counting_config(self, guild_id: int, channel_id: int, idiot_role_id: int | None, next_number: int = 1):
+        """Upsert counting configuration for a guild."""
+        self.init_counting_tables()
+        self.execute_query(
+            "DELETE FROM main.counting_configs WHERE guild_id = %s",
+            (guild_id,),
+            fetch=False
+        )
+        self.execute_query(
+            """
+            INSERT INTO main.counting_configs (guild_id, channel_id, idiot_role_id, next_number)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (guild_id, channel_id, idiot_role_id, next_number),
+            fetch=False
+        )
+
+    def clear_counting_config(self, guild_id: int):
+        """Remove counting config and penalties for a guild."""
+        self.init_counting_tables()
+        self.execute_query("DELETE FROM main.counting_configs WHERE guild_id = %s", (guild_id,), fetch=False)
+        self.execute_query("DELETE FROM main.counting_penalties WHERE guild_id = %s", (guild_id,), fetch=False)
+
+    def get_counting_config(self, guild_id: int) -> dict | None:
+        """Fetch counting config for a guild."""
+        self.init_counting_tables()
+        result = self.execute_query(
+            """
+            SELECT guild_id, channel_id, idiot_role_id, next_number, last_user_id
+            FROM main.counting_configs
+            WHERE guild_id = %s
+            LIMIT 1
+            """,
+            (guild_id,)
+        )
+        if not result:
+            return None
+        guild_id, channel_id, idiot_role_id, next_number, last_user_id = result[0]
+        return {
+            "guild_id": guild_id,
+            "channel_id": channel_id,
+            "idiot_role_id": idiot_role_id,
+            "next_number": int(next_number),
+            "last_user_id": int(last_user_id) if last_user_id else None,
+        }
+
+    def update_counting_state(self, guild_id: int, next_number: int, last_user_id: int | None):
+        """Persist next expected number and last user."""
+        self.init_counting_tables()
+        self.execute_query(
+            """
+            UPDATE main.counting_configs
+            SET next_number = %s, last_user_id = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE guild_id = %s
+            """,
+            (next_number, last_user_id, guild_id),
+            fetch=False
+        )
+
+    def set_counting_number(self, guild_id: int, next_number: int):
+        """Set the next expected counting number."""
+        self.init_counting_tables()
+        self.execute_query(
+            """
+            UPDATE main.counting_configs
+            SET next_number = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE guild_id = %s
+            """,
+            (next_number, guild_id),
+            fetch=False
+        )
+
+    def record_counting_penalty(self, guild_id: int, user_id: int, expires_at):
+        """Create or update a penalty entry for a user."""
+        self.init_counting_tables()
+        self.execute_query(
+            "DELETE FROM main.counting_penalties WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+            fetch=False
+        )
+        self.execute_query(
+            """
+            INSERT INTO main.counting_penalties (guild_id, user_id, expires_at)
+            VALUES (%s, %s, %s)
+            """,
+            (guild_id, user_id, expires_at),
+            fetch=False
+        )
+
+    def get_counting_penalty(self, guild_id: int, user_id: int):
+        """Return the penalty expiry for a user if it exists."""
+        self.init_counting_tables()
+        result = self.execute_query(
+            """
+            SELECT expires_at FROM main.counting_penalties
+            WHERE guild_id = %s AND user_id = %s
+            LIMIT 1
+            """,
+            (guild_id, user_id)
+        )
+        if result:
+            return result[0][0]
+        return None
+
+    def clear_counting_penalty(self, guild_id: int, user_id: int):
+        """Remove a user's penalty record."""
+        self.init_counting_tables()
+        self.execute_query(
+            "DELETE FROM main.counting_penalties WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+            fetch=False
+        )
+
     def log_tts_message(
         self,
         guild_id: int,

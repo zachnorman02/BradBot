@@ -48,7 +48,8 @@ from core import (
     send_processed_message,
     handle_message_mirror,
     handle_message_edit,
-    handle_message_delete
+    handle_message_delete,
+    handle_counting_message
 )
 from core import starboard as starboard_core
 from utils.ffmpeg_helper import ensure_ffmpeg, which_ffmpeg
@@ -287,6 +288,9 @@ async def on_message(message):
     
     # Send processed message if content was changed
     await send_processed_message(message, processed_result, bot)
+    
+    # Counting channel logic (sequential counting with penalties)
+    await handle_counting_message(message)
     
     # Handle message mirroring to configured target channels
     await handle_message_mirror(message)
