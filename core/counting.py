@@ -172,8 +172,11 @@ async def handle_counting_message(message: discord.Message):
     if message.role_mentions or message.raw_role_mentions:
         return
     # Block user mentions unless it's a reply
-    if message.mentions and not message.reference:
-        return
+    if message.mentions:
+        if not message.reference:
+            return
+        if len(message.mentions) > 1:
+            return
     if "\n" in content:
         return
     if not _is_expression_safe(content):
