@@ -160,17 +160,25 @@ async def handle_counting_message(message: discord.Message):
 
     content = (message.content or "").strip()
     errors = []
-    if "\n" in content or not content:
-        errors.append("must be a single-line number/expression")
+
+    # Ignore pings/mentions or non-math chatter
+    if not content:
+        return
+    if message.mentions or message.raw_mentions or message.role_mentions or message.raw_role_mentions or message.mention_everyone:
+        return
+    if "\n" in content:
+        return
+    if not _is_expression_safe(content):
+        return
 
     value = _evaluate_expression(content)
     if value is None:
         errors.append("invalid or unsupported math expression (integers only)")
     else:
-        if value != expected:
-            errors.append(f"expected **{expected}**")
         if message.author.id == last_user_id and value != 1:
             errors.append("same user cannot go twice in a row")
+        if value != expected:
+            errors.append(f"expected **{expected}**")
 
     if not errors and value is not None and value == expected:
         # Advance counter

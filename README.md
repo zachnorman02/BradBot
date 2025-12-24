@@ -6,6 +6,7 @@ BradBot is a feature-rich Discord bot that powers moderation tools, boosters, po
 
 - **Admin automation**: interactive settings panels, conditional roles, booster-role management, and `/admin sync` to refresh slash commands instantly.
 - **Community engagement**: GitHub issue forms, advanced polls (stats, word clouds, persistent panels), reminder/timer utilities, and an `/echo` helper.
+- **Counting channel**: configurable counting channel with math expressions, anti-double-posting, penalty role (24h), auto-reset on mistakes, and admin controls for next number/reset/disable.
 - **Link control**: `/link edit` and `/link delete` let users fix or remove the bot’s link-replacement posts without staff intervention.
 - **Starboards**: Multi-board hall-of-fame powered by reactions (`/starboard set/list/delete/lock/block/top`) with per-emoji thresholds and NSFW filters.
 - **Voice & TTS**: Polly-backed `/voice tts` queue with default voice/language selection plus `/voice filter_voices`, `/voice join/leave`, and `/voice show_tts_options`.
