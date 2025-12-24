@@ -130,6 +130,16 @@ async def _clear_expired_penalty(message: discord.Message, config: dict):
     db.clear_counting_penalty(message.guild.id, message.author.id)
 
 
+async def _send_failure_message(message: discord.Message, reason: str):
+    """Post a persistent failure reason in the channel."""
+    try:
+        await message.channel.send(
+            f"{message.author.mention} broke the count: {reason}. Counter reset to **1**. Start over at 1!"
+        )
+    except Exception as e:
+        print(f"[COUNTING] Failed to send failure message: {e}")
+
+
 async def handle_counting_message(message: discord.Message):
     """Main entry for counting logic, called from on_message."""
     if not message.guild:
@@ -149,23 +159,20 @@ async def handle_counting_message(message: discord.Message):
     last_user_id = config.get("last_user_id")
 
     content = (message.content or "").strip()
+    errors = []
     if "\n" in content or not content:
-        # No counting if empty/contains newline
-        try:
-            await message.add_reaction("❌")
-        except Exception:
-            pass
-        await _apply_penalty(message, config)
-        return
+        errors.append("must be a single-line number/expression")
 
     value = _evaluate_expression(content)
-    correct = (
-        value is not None
-        and value == expected
-        and message.author.id != last_user_id
-    )
+    if value is None:
+        errors.append("invalid or unsupported math expression (integers only)")
+    else:
+        if value != expected:
+            errors.append(f"expected **{expected}**")
+        if message.author.id == last_user_id and value != 1:
+            errors.append("same user cannot go twice in a row")
 
-    if correct:
+    if not errors and value is not None and value == expected:
         # Advance counter
         db.update_counting_state(message.guild.id, expected + 1, message.author.id)
         try:
@@ -174,9 +181,12 @@ async def handle_counting_message(message: discord.Message):
             pass
         return
 
-    # Incorrect
+    # Incorrect: reset to 1, clear last user so anyone can restart, and explain why
     try:
         await message.add_reaction("❌")
     except Exception:
         pass
+    db.update_counting_state(message.guild.id, 1, None)
     await _apply_penalty(message, config)
+    reason = "; ".join(errors) if errors else "wrong number"
+    await _send_failure_message(message, reason)
