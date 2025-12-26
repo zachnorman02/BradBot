@@ -49,7 +49,11 @@ from core import (
     handle_message_mirror,
     handle_message_edit,
     handle_message_delete,
-    handle_counting_message
+    handle_counting_message,
+    counting_penalty_check,
+    log_message_edit_event,
+    log_message_delete_event,
+    log_raw_message_delete_event
 )
 from core import starboard as starboard_core
 from utils.ffmpeg_helper import ensure_ffmpeg, which_ffmpeg
@@ -272,6 +276,9 @@ async def on_ready():
 
     # Start birthday check task
     bot.loop.create_task(birthday_check(bot))
+
+    # Start counting penalty cleanup task
+    bot.loop.create_task(counting_penalty_check(bot))
     
 @bot.event
 async def on_message(message):
@@ -304,6 +311,7 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
         # Defensive logging - ensure we never crash event handling
         print("[DEBUG] on_message_edit event fired (could not introspect message objects)")
 
+    await log_message_edit_event(before, after)
     await handle_message_edit(before, after)
 
 
@@ -336,6 +344,7 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
             print(f"[DEBUG] Failed to fetch edited message {payload.message_id}: {e}")
             return
 
+        await log_message_edit_event(None, after)
         await handle_message_edit(None, after)
     except Exception as e:
         print(f"[DEBUG] on_raw_message_edit handler error: {e}")
@@ -343,16 +352,17 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
 @bot.event
 async def on_message_delete(message: discord.Message):
     """Handle message deletions for mirrored messages"""
+    await log_message_delete_event(message)
     await handle_message_delete(message)
 
 @bot.event
 async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
     """Clean up persistent panels when their source message is deleted."""
     try:
-        if payload.message_id not in getattr(db, 'persistent_panel_ids', set()):
-            return
-        db.delete_persistent_panel(payload.message_id)
-        print(f"🗑️ Removed persistent panel record for message {payload.message_id}")
+        await log_raw_message_delete_event(payload)
+        if payload.message_id in getattr(db, 'persistent_panel_ids', set()):
+            db.delete_persistent_panel(payload.message_id)
+            print(f"🗑️ Removed persistent panel record for message {payload.message_id}")
     except Exception as e:
         print(f"⚠️  Error cleaning up persistent panel {payload.message_id}: {e}")
 

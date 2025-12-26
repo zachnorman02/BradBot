@@ -1323,6 +1323,19 @@ class Database:
             fetch=False
         )
 
+    def get_expired_counting_penalties(self, now):
+        """Return list of expired penalties."""
+        self.init_counting_tables()
+        results = self.execute_query(
+            """
+            SELECT guild_id, user_id, expires_at
+            FROM main.counting_penalties
+            WHERE expires_at <= %s
+            """,
+            (now,)
+        )
+        return [{"guild_id": r[0], "user_id": r[1], "expires_at": r[2]} for r in results]
+
     def log_tts_message(
         self,
         guild_id: int,
@@ -1687,6 +1700,56 @@ class Database:
                 for row in results
             ]
         return []
+
+    # Message audit logs (edits/deletions)
+    def init_message_audit_logs_table(self):
+        """Create message audit log table for edits/deletions."""
+        self.execute_query(
+            """
+            CREATE TABLE IF NOT EXISTS main.message_audit_logs (
+                id BIGINT PRIMARY KEY,
+                guild_id BIGINT,
+                channel_id BIGINT,
+                message_id BIGINT,
+                user_id BIGINT,
+                event_type VARCHAR(16) NOT NULL,
+                old_content TEXT,
+                new_content TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
+            fetch=False
+        )
+
+    def _next_message_audit_id(self):
+        self.init_message_audit_logs_table()
+        return self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.message_audit_logs")[0][0]
+
+    def log_message_edit(self, guild_id: int | None, channel_id: int | None, message_id: int | None, user_id: int | None, old_content: str | None, new_content: str | None):
+        """Log a message edit event."""
+        next_id = self._next_message_audit_id()
+        self.execute_query(
+            """
+            INSERT INTO main.message_audit_logs
+            (id, guild_id, channel_id, message_id, user_id, event_type, old_content, new_content)
+            VALUES (%s, %s, %s, %s, %s, 'edit', %s, %s)
+            """,
+            (next_id, guild_id, channel_id, message_id, user_id, old_content, new_content),
+            fetch=False
+        )
+
+    def log_message_delete(self, guild_id: int | None, channel_id: int | None, message_id: int | None, user_id: int | None, old_content: str | None):
+        """Log a message deletion event."""
+        next_id = self._next_message_audit_id()
+        self.execute_query(
+            """
+            INSERT INTO main.message_audit_logs
+            (id, guild_id, channel_id, message_id, user_id, event_type, old_content, new_content)
+            VALUES (%s, %s, %s, %s, %s, 'delete', %s, NULL)
+            """,
+            (next_id, guild_id, channel_id, message_id, user_id, old_content),
+            fetch=False
+        )
     
     # Saved emoji/sticker methods
     def save_emoji(self, name: str, image_data: bytes, animated: bool, saved_by_user_id: int, 

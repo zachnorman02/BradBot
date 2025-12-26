@@ -1158,6 +1158,65 @@ async def birthday_check(bot):
 
 
 # ============================================================================
+# COUNTING PENALTY CLEANUP
+# ============================================================================
+
+async def counting_penalty_check(bot):
+    """Background task to auto-remove expired counting penalties."""
+    await bot.wait_until_ready()
+
+    while not bot.is_closed():
+        try:
+            await asyncio.sleep(60)
+
+            if not db.connection_pool:
+                db.init_pool()
+
+            now = dt.datetime.now(dt.timezone.utc)
+            expired = db.get_expired_counting_penalties(now)
+            if not expired:
+                continue
+
+            for entry in expired:
+                guild_id = entry["guild_id"]
+                user_id = entry["user_id"]
+                config = db.get_counting_config(guild_id)
+
+                # Always clear the penalty row
+                db.clear_counting_penalty(guild_id, user_id)
+
+                if not config or not config.get("idiot_role_id"):
+                    continue
+
+                guild = bot.get_guild(guild_id)
+                if not guild:
+                    continue
+
+                role = guild.get_role(config["idiot_role_id"])
+                if not role:
+                    continue
+
+                member = guild.get_member(user_id)
+                if not member:
+                    try:
+                        member = await guild.fetch_member(user_id)
+                    except Exception:
+                        member = None
+                if not member:
+                    continue
+
+                if role in member.roles:
+                    try:
+                        await member.remove_roles(role, reason="Counting penalty expired (auto-cleanup)")
+                        print(f"[COUNTING] Auto-removed penalty role from {member.display_name} in {guild.name}")
+                    except Exception as e:
+                        print(f"[COUNTING] Failed to auto-remove penalty role in {guild.name}: {e}")
+
+        except Exception as e:
+            print(f"Error in counting penalty check: {e}")
+
+
+# ============================================================================
 # LEGACY ALIAS (for backwards compatibility)
 # ============================================================================
 

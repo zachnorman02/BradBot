@@ -152,11 +152,11 @@ async def handle_counting_message(message: discord.Message):
     if not config:
         return
 
+    # Enforce penalty expiry cleanup for the author (regardless of channel)
+    await _clear_expired_penalty(message, config)
+
     if message.channel.id != config["channel_id"]:
         return
-
-    # Enforce penalty expiry cleanup for the author
-    await _clear_expired_penalty(message, config)
 
     expected = config.get("next_number", 1)
     last_user_id = config.get("last_user_id")
