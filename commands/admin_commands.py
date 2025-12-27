@@ -826,6 +826,7 @@ class AdminToolsGroup(app_commands.Group):
         action="What action to perform",
         channel="The channel to restrict access to",
         blocking_role="Role that blocks access to the channel",
+        mode="How to apply the role: block users with it, or require it"
     )
     @app_commands.choices(action=[
         app_commands.Choice(name="add - Block role from viewing channel", value="add"),
@@ -833,12 +834,17 @@ class AdminToolsGroup(app_commands.Group):
         app_commands.Choice(name="list - Show all channel restrictions", value="list"),
         app_commands.Choice(name="apply-all - Apply restrictions to all current members", value="apply-all")
     ])
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="Block (users WITH the role are blocked)", value="block"),
+        app_commands.Choice(name="Require (users WITHOUT the role are blocked)", value="require"),
+    ])
     async def channel_restriction(
         self,
         interaction: discord.Interaction,
         action: app_commands.Choice[str],
         channel: discord.TextChannel = None,
-        blocking_role: discord.Role = None
+        blocking_role: discord.Role = None,
+        mode: app_commands.Choice[str] = None
     ):
         """Configure automatic channel permission overwrites when members have specific roles"""
         if not interaction.guild:
@@ -853,6 +859,8 @@ class AdminToolsGroup(app_commands.Group):
             
             # Ensure table exists
             db.init_channel_restrictions_table()
+
+            mode_value = mode.value if mode else None
             
             if action.value == "list":
                 restrictions = db.get_channel_restrictions(interaction.guild.id)
@@ -880,11 +888,12 @@ class AdminToolsGroup(app_commands.Group):
                     role_mentions = []
                     for r in channel_restrictions:
                         role = interaction.guild.get_role(r['blocking_role_id'])
-                        role_mentions.append(role.mention if role else f"Unknown ({r['blocking_role_id']})")
+                        label = "Require" if r.get('mode') == 'require' else "Block"
+                        role_mentions.append(f"{label}: {role.mention if role else f'Unknown ({r['blocking_role_id']})'}")
                     
                     embed.add_field(
                         name=f"🔒 {channel_obj.name if channel_obj else 'Unknown'}",
-                        value=f"**Channel:** {channel_name}\n**Blocked Roles:** {', '.join(role_mentions)}",
+                        value=f"**Channel:** {channel_name}\n**Rules:** {', '.join(role_mentions)}",
                         inline=False
                     )
                 
@@ -895,12 +904,21 @@ class AdminToolsGroup(app_commands.Group):
                 if not channel or not blocking_role:
                     await interaction.followup.send("❌ Please specify both channel and blocking_role for remove action.", ephemeral=True)
                     return
-                
-                db.remove_channel_restriction(interaction.guild.id, channel.id, blocking_role.id)
+
+                if mode_value:
+                    db.remove_channel_restriction(interaction.guild.id, channel.id, blocking_role.id, mode_value)
+                    mode_text = mode_value
+                else:
+                    # Remove both modes if unspecified
+                    db.remove_channel_restriction(interaction.guild.id, channel.id, blocking_role.id, "block")
+                    db.remove_channel_restriction(interaction.guild.id, channel.id, blocking_role.id, "require")
+                    mode_text = "block & require"
+
                 await interaction.followup.send(
                     f"✅ Removed channel restriction\n"
                     f"• Channel: {channel.mention}\n"
-                    f"• Blocking Role: {blocking_role.mention}",
+                    f"• Role: {blocking_role.mention}\n"
+                    f"• Mode: {mode_text}",
                     ephemeral=True
                 )
                 return
@@ -910,15 +928,18 @@ class AdminToolsGroup(app_commands.Group):
                     await interaction.followup.send("❌ Please specify both channel and blocking_role for add action.", ephemeral=True)
                     return
                 
+                mode_to_save = mode_value or "block"
+
                 # Save to database
-                db.add_channel_restriction(interaction.guild.id, channel.id, blocking_role.id)
+                db.add_channel_restriction(interaction.guild.id, channel.id, blocking_role.id, mode_to_save)
                 
                 await interaction.followup.send(
                     f"✅ Added channel restriction\n"
                     f"• Channel: {channel.mention}\n"
-                    f"• Blocking Role: {blocking_role.mention}\n\n"
-                    f"Members with {blocking_role.mention} will be blocked from viewing {channel.mention}.\n"
-                    f"Use `apply-all` action to apply this to existing members.",
+                    f"• Role: {blocking_role.mention}\n"
+                    f"• Mode: {mode_to_save}\n\n"
+                    f"{'Members with' if mode_to_save == 'block' else 'Members without'} {blocking_role.mention} will be blocked from viewing {channel.mention}.\n"
+                    f"Use `apply-all` to apply this to existing members.",
                     ephemeral=True
                 )
                 return
@@ -938,10 +959,10 @@ class AdminToolsGroup(app_commands.Group):
                 from collections import defaultdict
                 by_channel = defaultdict(list)
                 for r in restrictions:
-                    by_channel[r['channel_id']].append(r['blocking_role_id'])
+                    by_channel[r['channel_id']].append({'role_id': r['blocking_role_id'], 'mode': r.get('mode', 'block')})
                 
                 # Process each channel
-                for channel_id, blocking_role_ids in by_channel.items():
+                for channel_id, channel_restrictions in by_channel.items():
                     channel_obj = interaction.guild.get_channel(channel_id)
                     if not channel_obj:
                         results['errors'].append(f"Channel {channel_id} not found")
@@ -953,10 +974,20 @@ class AdminToolsGroup(app_commands.Group):
                             continue
                         
                         member_role_ids = {r.id for r in member.roles}
-                        has_blocking_role = any(rid in member_role_ids for rid in blocking_role_ids)
+                        should_block = False
+                        for entry in channel_restrictions:
+                            role_id = entry['role_id']
+                            mode_entry = entry.get('mode', 'block')
+                            has_role = role_id in member_role_ids
+                            if mode_entry == 'block' and has_role:
+                                should_block = True
+                                break
+                            if mode_entry == 'require' and not has_role:
+                                should_block = True
+                                break
                         
                         try:
-                            if has_blocking_role:
+                            if should_block:
                                 # Block access
                                 await channel_obj.set_permissions(
                                     member,
@@ -1000,6 +1031,81 @@ class AdminToolsGroup(app_commands.Group):
         
         except Exception as e:
             print(f"Error in channelrestriction command: {e}")
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="globalmute_role", description="Create or configure a role that mutes users in all channels")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        role="Existing role to use as the global mute role (optional)",
+        name="Name for a new mute role (if role not provided)",
+        apply_to_all_channels="Apply deny send/add_react/speak overwrites to all channels now"
+    )
+    async def global_mute_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role | None = None,
+        name: str = "Muted",
+        apply_to_all_channels: bool = True,
+        disable: bool = False
+    ):
+        """Create or reuse a mute role and apply deny overwrites to all channels."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            guild = interaction.guild
+
+            if disable:
+                db.set_guild_setting(guild.id, "global_mute_role_id", "")
+                await interaction.followup.send("🛑 Global mute role disabled; config cleared.", ephemeral=True)
+                return
+
+            mute_role = role
+            if not mute_role:
+                # Create role with no permissions; we rely on overwrites per-channel
+                mute_role = await guild.create_role(name=name, reason="Create global mute role")
+
+            # Persist the role for member-update automation
+            db.set_guild_setting(guild.id, "global_mute_role_id", str(mute_role.id))
+
+            updated_channels = 0
+            errors = []
+
+            if apply_to_all_channels:
+                for channel in guild.channels:
+                    try:
+                        # Text/voice/threads all share send messages/add reactions/speak
+                        await channel.set_permissions(
+                            mute_role,
+                            send_messages=False,
+                            add_reactions=False,
+                            speak=False,
+                            send_messages_in_threads=False,
+                            create_public_threads=False,
+                            create_private_threads=False,
+                            send_tts_messages=False,
+                            use_application_commands=False,
+                            stream=False,
+                            embed_links=False,
+                            attach_files=False,
+                            reason="Apply global mute role permissions"
+                        )
+                        updated_channels += 1
+                    except Exception as e:
+                        errors.append(f"{getattr(channel, 'name', str(channel.id))}: {str(e)[:80]}")
+
+            summary = [
+                f"✅ Global mute role ready: {mute_role.mention}",
+                f"Applied overwrites to {updated_channels} channel(s)." if apply_to_all_channels else "Skipped channel overwrites."
+            ]
+            if errors:
+                summary.append(f"⚠️ Errors on {len(errors)} channel(s): " + "; ".join(errors[:3]))
+            await interaction.followup.send("\n".join(summary), ephemeral=True)
+        except Exception as e:
+            print(f"Error creating/applying mute role: {e}")
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @app_commands.command(name="messagemirror", description="Configure message mirroring between channels")

@@ -206,6 +206,67 @@ async def handle_channel_restrictions(before: discord.Member, after: discord.Mem
 # BOOSTER ROLE AUTOMATION
 # ============================================================================
 
+def _find_personal_roles(member: discord.Member):
+    """Return one-member roles for this member (excluding @everyone)."""
+    return [role for role in member.roles if not role.is_default() and len(role.members) == 1]
+
+
+def _is_counting_penalty_role(guild_id: int, role_id: int) -> bool:
+    """Check if a role_id matches the configured counting penalty role for the guild."""
+    try:
+        config = db.get_counting_config(guild_id)
+        return bool(config and config.get("idiot_role_id") == role_id)
+    except Exception:
+        return False
+
+
+async def _apply_global_mute_overwrites(member: discord.Member, deny: bool, reason: str):
+    """Apply or clear per-channel overwrites for a muted member."""
+    perms_kwargs = {
+        "send_messages": False,
+        "add_reactions": False,
+        "speak": False,
+        "send_messages_in_threads": False,
+        "create_public_threads": False,
+        "create_private_threads": False,
+        "send_tts_messages": False,
+        "use_application_commands": False,
+        "stream": False,
+        "embed_links": False,
+        "attach_files": False,
+    }
+    for channel in member.guild.channels:
+        try:
+            if deny:
+                await channel.set_permissions(member, **perms_kwargs, reason=reason)
+            else:
+                # Clear overwrite for this member
+                await channel.set_permissions(member, overwrite=None, reason=reason)
+        except Exception as e:
+            print(f"[GLOBAL MUTE] Failed to update {channel} for {member.display_name}: {e}")
+
+
+async def handle_global_mute_role(before: discord.Member, after: discord.Member):
+    """When a configured global mute role is added/removed, toggle member overwrites."""
+    try:
+        setting = db.get_guild_setting(after.guild.id, "global_mute_role_id", "")
+        if not setting or not setting.isdigit():
+            return
+        mute_role_id = int(setting)
+        before_roles = {r.id for r in before.roles}
+        after_roles = {r.id for r in after.roles}
+
+        added = mute_role_id in after_roles and mute_role_id not in before_roles
+        removed = mute_role_id in before_roles and mute_role_id not in after_roles
+
+        if added:
+            await _apply_global_mute_overwrites(after, True, "Global mute role applied")
+        if removed:
+            await _apply_global_mute_overwrites(after, False, "Global mute role removed")
+    except Exception as e:
+        print(f"[GLOBAL MUTE] Error handling global mute role change: {e}")
+
+
 async def _save_booster_role(member: discord.Member, role: discord.Role):
     """Save a booster role configuration to the database"""
     try:
@@ -349,7 +410,8 @@ async def handle_booster_stopped(member: discord.Member):
     """Handle when a member stops boosting - save and delete their role"""
     try:
         # Find custom roles (only one member, not @everyone)
-        personal_roles = [role for role in member.roles if not role.is_default() and len(role.members) == 1]
+        personal_roles = _find_personal_roles(member)
+        personal_roles = [r for r in personal_roles if not _is_counting_penalty_role(member.guild.id, r.id)]
         
         if personal_roles:
             for role in personal_roles:
@@ -384,7 +446,8 @@ async def _check_booster_roles_for_guild(guild: discord.Guild):
             continue
         
         # Find custom roles (only one member, not @everyone)
-        personal_roles = [role for role in member.roles if not role.is_default() and len(role.members) == 1]
+        personal_roles = _find_personal_roles(member)
+        personal_roles = [r for r in personal_roles if not _is_counting_penalty_role(guild.id, r.id)]
         
         # Check if user has custom roles but is NOT a booster (lost booster status)
         if personal_roles and not member.premium_since:
@@ -804,11 +867,15 @@ async def on_member_update_handler(before: discord.Member, after: discord.Member
     Handle member updates:
     - Verified role assignment and level 0 logic
     - Conditional role manual assignment logic (with deferral)
+    - Global mute role handling (per-member overwrites)
     - Channel restriction enforcement
     - Booster role creation/restoration/deletion
     """
     # Always handle verified role logic
     await handle_verified_role_logic(before, after)
+    
+    # Handle global mute role application/removal
+    await handle_global_mute_role(before, after)
     
     # Handle conditional role manual assignments
     await handle_conditional_role_assignment(before, after)

@@ -1801,43 +1801,57 @@ class Database:
             guild_id BIGINT NOT NULL,
             channel_id BIGINT NOT NULL,
             blocking_role_id BIGINT NOT NULL,
+            mode VARCHAR(16) DEFAULT 'block',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (guild_id, channel_id, blocking_role_id)
+            PRIMARY KEY (guild_id, channel_id, blocking_role_id, mode)
         )
         """
         self.execute_query(query, fetch=False)
+        # Backfill mode column if table existed previously without it
+        try:
+            self.execute_query(
+                "ALTER TABLE main.channel_restrictions ADD COLUMN IF NOT EXISTS mode VARCHAR(16) DEFAULT 'block'",
+                fetch=False
+            )
+        except Exception:
+            pass
         print("✅ Channel restrictions table initialized")
     
-    def add_channel_restriction(self, guild_id: int, channel_id: int, blocking_role_id: int):
-        """Add a channel restriction: members with blocking_role_id cannot view channel_id."""
+    def add_channel_restriction(self, guild_id: int, channel_id: int, blocking_role_id: int, mode: str = "block"):
+        """Add a channel restriction.
+        
+        mode:
+            - 'block': members WITH the role are blocked
+            - 'require': members WITHOUT the role are blocked
+        """
         # Aurora DSQL doesn't support ON CONFLICT, so delete old entry first
         delete_query = """
         DELETE FROM main.channel_restrictions
-        WHERE guild_id = %s AND channel_id = %s AND blocking_role_id = %s
+        WHERE guild_id = %s AND channel_id = %s AND blocking_role_id = %s AND mode = %s
         """
-        self.execute_query(delete_query, (guild_id, channel_id, blocking_role_id), fetch=False)
+        self.execute_query(delete_query, (guild_id, channel_id, blocking_role_id, mode), fetch=False)
         
         # Insert new restriction
         insert_query = """
-        INSERT INTO main.channel_restrictions (guild_id, channel_id, blocking_role_id, created_at)
-        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        INSERT INTO main.channel_restrictions (guild_id, channel_id, blocking_role_id, mode, created_at)
+        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
         """
-        self.execute_query(insert_query, (guild_id, channel_id, blocking_role_id), fetch=False)
-        print(f"✅ Added channel restriction: guild={guild_id}, channel={channel_id}, blocking_role={blocking_role_id}")
+        self.execute_query(insert_query, (guild_id, channel_id, blocking_role_id, mode), fetch=False)
+        print(f"✅ Added channel restriction: guild={guild_id}, channel={channel_id}, blocking_role={blocking_role_id}, mode={mode}")
     
-    def remove_channel_restriction(self, guild_id: int, channel_id: int, blocking_role_id: int):
+    def remove_channel_restriction(self, guild_id: int, channel_id: int, blocking_role_id: int, mode: str = "block"):
         """Remove a channel restriction."""
         query = """
         DELETE FROM main.channel_restrictions
-        WHERE guild_id = %s AND channel_id = %s AND blocking_role_id = %s
+        WHERE guild_id = %s AND channel_id = %s AND blocking_role_id = %s AND mode = %s
         """
-        self.execute_query(query, (guild_id, channel_id, blocking_role_id), fetch=False)
-        print(f"✅ Removed channel restriction: guild={guild_id}, channel={channel_id}, blocking_role={blocking_role_id}")
+        self.execute_query(query, (guild_id, channel_id, blocking_role_id, mode), fetch=False)
+        print(f"✅ Removed channel restriction: guild={guild_id}, channel={channel_id}, blocking_role={blocking_role_id}, mode={mode}")
     
     def get_channel_restrictions(self, guild_id: int):
         """Get all channel restrictions for a guild."""
         query = """
-        SELECT channel_id, blocking_role_id, created_at
+        SELECT channel_id, blocking_role_id, mode, created_at
         FROM main.channel_restrictions
         WHERE guild_id = %s
         ORDER BY created_at DESC
@@ -1849,7 +1863,8 @@ class Database:
                 {
                     'channel_id': row[0],
                     'blocking_role_id': row[1],
-                    'created_at': row[2]
+                    'mode': row[2] or 'block',
+                    'created_at': row[3]
                 }
                 for row in result
             ]
