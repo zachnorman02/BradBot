@@ -870,6 +870,7 @@ async def on_member_update_handler(before: discord.Member, after: discord.Member
     - Global mute role handling (per-member overwrites)
     - Channel restriction enforcement
     - Booster role creation/restoration/deletion
+    - Scheduled role changes
     """
     # Always handle verified role logic
     await handle_verified_role_logic(before, after)
@@ -882,7 +883,9 @@ async def on_member_update_handler(before: discord.Member, after: discord.Member
     
     # Handle channel restrictions
     await handle_channel_restrictions(before, after)
-    
+
+    # Scheduled roles handled by background task; nothing to do here
+
     # Check if booster role automation is enabled
     booster_roles_enabled = db.get_guild_setting(after.guild.id, 'booster_roles_enabled', 'true').lower() == 'true'
     if not booster_roles_enabled:
@@ -1245,42 +1248,83 @@ async def counting_penalty_check(bot):
                 continue
 
             for entry in expired:
-                guild_id = entry["guild_id"]
-                user_id = entry["user_id"]
-                config = db.get_counting_config(guild_id)
-
-                # Always clear the penalty row
-                db.clear_counting_penalty(guild_id, user_id)
-
-                if not config or not config.get("idiot_role_id"):
-                    continue
-
-                guild = bot.get_guild(guild_id)
+                guild = bot.get_guild(entry["guild_id"])
                 if not guild:
+                    db.clear_counting_penalty(entry["guild_id"], entry["user_id"])
                     continue
 
-                role = guild.get_role(config["idiot_role_id"])
-                if not role:
-                    continue
-
-                member = guild.get_member(user_id)
+                member = guild.get_member(entry["user_id"])
                 if not member:
                     try:
-                        member = await guild.fetch_member(user_id)
+                        member = await guild.fetch_member(entry["user_id"])
                     except Exception:
                         member = None
                 if not member:
+                    db.clear_counting_penalty(entry["guild_id"], entry["user_id"])
                     continue
 
-                if role in member.roles:
-                    try:
-                        await member.remove_roles(role, reason="Counting penalty expired (auto-cleanup)")
-                        print(f"[COUNTING] Auto-removed penalty role from {member.display_name} in {guild.name}")
-                    except Exception as e:
-                        print(f"[COUNTING] Failed to auto-remove penalty role in {guild.name}: {e}")
+                await clear_counting_penalty_if_expired(guild, member, expiry=entry.get("expires_at"))
 
         except Exception as e:
             print(f"Error in counting penalty check: {e}")
+
+
+async def scheduled_role_check(bot):
+    """Background task to execute scheduled role changes."""
+    await bot.wait_until_ready()
+
+    while not bot.is_closed():
+        try:
+            await asyncio.sleep(30)
+
+            if not db.connection_pool:
+                db.init_pool()
+            db.init_scheduled_roles_table()
+
+            now = dt.datetime.now(dt.timezone.utc)
+            due = db.get_due_scheduled_role_changes(now)
+            if not due:
+                continue
+
+            for job in due:
+                try:
+                    guild = bot.get_guild(job["guild_id"])
+                    if not guild:
+                        db.mark_scheduled_role_status(job["id"], "failed", "Guild not found")
+                        continue
+                    member = guild.get_member(job["user_id"])
+                    if not member:
+                        try:
+                            member = await guild.fetch_member(job["user_id"])
+                        except Exception:
+                            member = None
+                    if not member:
+                        db.mark_scheduled_role_status(job["id"], "failed", "User not found")
+                        continue
+
+                    add_roles = [guild.get_role(rid) for rid in job["add_ids"]]
+                    rem_roles = [guild.get_role(rid) for rid in job["remove_ids"]]
+                    add_roles = [r for r in add_roles if r]
+                    rem_roles = [r for r in rem_roles if r]
+
+                    if add_roles:
+                        try:
+                            await member.add_roles(*add_roles, reason="Scheduled role add")
+                        except Exception as e:
+                            db.mark_scheduled_role_status(job["id"], "failed", f"Add failed: {e}")
+                            continue
+                    if rem_roles:
+                        try:
+                            await member.remove_roles(*rem_roles, reason="Scheduled role remove")
+                        except Exception as e:
+                            db.mark_scheduled_role_status(job["id"], "failed", f"Remove failed: {e}")
+                            continue
+
+                    db.mark_scheduled_role_status(job["id"], "completed", None)
+                except Exception as e:
+                    db.mark_scheduled_role_status(job["id"], "failed", str(e))
+        except Exception as e:
+            print(f"Error in scheduled role check: {e}")
 
 
 # ============================================================================

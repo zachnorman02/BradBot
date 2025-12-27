@@ -110,27 +110,32 @@ async def _apply_penalty(message: discord.Message, config: dict):
             print(f"[COUNTING] Failed to add penalty role: {e}")
 
 
-async def _clear_expired_penalty(message: discord.Message, config: dict):
-    """Remove penalty role if expired."""
-    expiry = db.get_counting_penalty(message.guild.id, message.author.id)
+async def clear_counting_penalty_if_expired(guild: discord.Guild, member: discord.Member, expiry=None) -> bool:
+    """Remove penalty role if expired. Returns True if cleared."""
+    expiry = expiry or db.get_counting_penalty(guild.id, member.id)
     if not expiry:
-        return
+        return False
+
     now = dt.datetime.now(dt.timezone.utc)
-    # Normalize expiry to aware datetime if DB returned naive
     if expiry.tzinfo is None:
         expiry = expiry.replace(tzinfo=dt.timezone.utc)
     if expiry > now:
-        return
+        return False
+
+    config = db.get_counting_config(guild.id)
+    if not config:
+        return False
 
     role_id = config.get("idiot_role_id")
     if role_id:
-        role = message.guild.get_role(role_id)
-        if role and role in message.author.roles:
+        role = guild.get_role(role_id)
+        if role and role in member.roles:
             try:
-                await message.author.remove_roles(role, reason="Counting penalty expired")
+                await member.remove_roles(role, reason="Counting penalty expired")
             except Exception as e:
                 print(f"[COUNTING] Failed to remove expired penalty role: {e}")
-    db.clear_counting_penalty(message.guild.id, message.author.id)
+    db.clear_counting_penalty(guild.id, member.id)
+    return True
 
 
 async def _send_failure_message(message: discord.Message, reason: str):
@@ -153,7 +158,7 @@ async def handle_counting_message(message: discord.Message):
         return
 
     # Enforce penalty expiry cleanup for the author (regardless of channel)
-    await _clear_expired_penalty(message, config)
+    await clear_counting_penalty_if_expired(message.guild, message.author)
 
     if message.channel.id != config["channel_id"]:
         return

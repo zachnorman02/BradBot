@@ -1108,6 +1108,113 @@ class AdminToolsGroup(app_commands.Group):
             print(f"Error creating/applying mute role: {e}")
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="schedule_role", description="Schedule role add/remove for a member at a specific time")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        user="User to modify",
+        add_roles="Roles to add at the scheduled time (mentions, names, or IDs, comma-separated)",
+        remove_roles="Roles to remove at the scheduled time (mentions, names, or IDs, comma-separated)",
+        run_at="When to apply (ISO timestamp, e.g., 2024-12-31T23:59:00Z)",
+        delete_id="ID of a scheduled change to delete",
+        list_only="If true, just list scheduled changes"
+    )
+    async def schedule_role(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member = None,
+        add_roles: str = "",
+        remove_roles: str = "",
+        run_at: str = "",
+        delete_id: str = "",
+        list_only: bool = False
+    ):
+        """Create/list/delete scheduled role changes."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        if not db.connection_pool:
+            db.init_pool()
+        db.init_scheduled_roles_table()
+
+        # List
+        if list_only:
+            entries = db.list_scheduled_role_changes(interaction.guild.id)
+            if not entries:
+                await interaction.followup.send("📋 No scheduled role changes.", ephemeral=True)
+                return
+            lines = []
+            for e in entries[:20]:
+                add_mentions = [interaction.guild.get_role(rid).mention for rid in e["add_ids"] if interaction.guild.get_role(rid)]
+                rem_mentions = [interaction.guild.get_role(rid).mention for rid in e["remove_ids"] if interaction.guild.get_role(rid)]
+                user_obj = interaction.guild.get_member(e["user_id"])
+                creator = interaction.guild.get_member(e["created_by"]) if e.get("created_by") else None
+                lines.append(
+                    f"ID `{e['id']}` • User: {user_obj.mention if user_obj else e['user_id']} • "
+                    f"Adds: {', '.join(add_mentions) if add_mentions else 'None'} • "
+                    f"Removes: {', '.join(rem_mentions) if rem_mentions else 'None'} • "
+                    f"Run at: <t:{int(e['run_at'].timestamp())}:F> • Status: {e['status']}"
+                    + (f" • Error: {e['last_error']}" if e.get("last_error") else "")
+                )
+            await interaction.followup.send("\n".join(lines), ephemeral=True)
+            return
+
+        # Delete
+        if delete_id:
+            try:
+                delete_int = int(delete_id)
+            except ValueError:
+                await interaction.followup.send("❌ delete_id must be an integer ID from the list.", ephemeral=True)
+                return
+            db.delete_scheduled_role_change(delete_int, interaction.guild.id)
+            await interaction.followup.send(f"🗑️ Deleted scheduled role change `{delete_int}`.", ephemeral=True)
+            return
+
+        # Create
+        if not user:
+            await interaction.followup.send("❌ Please specify a user.", ephemeral=True)
+            return
+        if not run_at:
+            await interaction.followup.send("❌ Please provide run_at (ISO time, e.g., 2024-12-31T23:59:00Z).", ephemeral=True)
+            return
+
+        # Parse roles
+        def parse_roles(raw: str) -> list[int]:
+            ids = []
+            for part in [p.strip() for p in raw.split(",") if p.strip()]:
+                if part.startswith("<@&") and part.endswith(">"):
+                    part = part[3:-1]
+                if part.isdigit():
+                    ids.append(int(part))
+                else:
+                    found = discord.utils.get(interaction.guild.roles, name=part)
+                    if found:
+                        ids.append(found.id)
+            return ids
+
+        add_ids = parse_roles(add_roles)
+        rem_ids = parse_roles(remove_roles)
+
+        try:
+            run_dt = dt.datetime.fromisoformat(run_at.replace("Z", "+00:00"))
+        except Exception:
+            await interaction.followup.send("❌ Invalid run_at format. Use ISO like 2024-12-31T23:59:00Z.", ephemeral=True)
+            return
+
+        sched_id = db.create_scheduled_role_change(interaction.guild.id, user.id, add_ids, rem_ids, run_dt, interaction.user.id)
+        add_text = ", ".join(f"<@&{rid}>" for rid in add_ids) if add_ids else "None"
+        rem_text = ", ".join(f"<@&{rid}>" for rid in rem_ids) if rem_ids else "None"
+
+        await interaction.followup.send(
+            f"✅ Scheduled role change `{sched_id}` for {user.mention}\n"
+            f"• Add: {add_text}\n"
+            f"• Remove: {rem_text}\n"
+            f"• At: <t:{int(run_dt.timestamp())}:F>",
+            ephemeral=True
+        )
+
     @app_commands.command(name="messagemirror", description="Configure message mirroring between channels")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(

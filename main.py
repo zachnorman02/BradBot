@@ -51,6 +51,7 @@ from core import (
     handle_message_delete,
     handle_counting_message,
     counting_penalty_check,
+    scheduled_role_check,
     log_message_edit_event,
     log_message_delete_event,
     log_raw_message_delete_event
@@ -279,6 +280,9 @@ async def on_ready():
 
     # Start counting penalty cleanup task
     bot.loop.create_task(counting_penalty_check(bot))
+
+    # Start scheduled role change task
+    bot.loop.create_task(scheduled_role_check(bot))
     
 @bot.event
 async def on_message(message):

@@ -2093,6 +2093,106 @@ class Database:
                 for row in result
             ]
         return []
+
+    # ============================================================================
+    # Scheduled Role Changes
+    # ============================================================================
+
+    def init_scheduled_roles_table(self):
+        """Initialize scheduled role change table."""
+        query = """
+        CREATE TABLE IF NOT EXISTS main.scheduled_roles (
+            id BIGINT PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            role_ids_to_add TEXT,
+            role_ids_to_remove TEXT,
+            run_at TIMESTAMP NOT NULL,
+            created_by BIGINT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status VARCHAR(16) DEFAULT 'pending',
+            last_error TEXT
+        );
+        """
+        self.execute_query(query, fetch=False)
+
+    def create_scheduled_role_change(self, guild_id: int, user_id: int, role_ids_to_add: list[int], role_ids_to_remove: list[int], run_at, created_by: int):
+        """Create a scheduled role change entry."""
+        self.init_scheduled_roles_table()
+        sched_id = int(time.time() * 1_000_000)
+        add_str = ",".join(str(rid) for rid in role_ids_to_add) if role_ids_to_add else ""
+        remove_str = ",".join(str(rid) for rid in role_ids_to_remove) if role_ids_to_remove else ""
+        query = """
+        INSERT INTO main.scheduled_roles (id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
+        """
+        self.execute_query(query, (sched_id, guild_id, user_id, add_str, remove_str, run_at, created_by), fetch=False)
+        return sched_id
+
+    def list_scheduled_role_changes(self, guild_id: int):
+        """List scheduled role changes for a guild."""
+        self.init_scheduled_roles_table()
+        query = """
+        SELECT id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, status, last_error
+        FROM main.scheduled_roles
+        WHERE guild_id = %s
+        ORDER BY run_at ASC
+        """
+        rows = self.execute_query(query, (guild_id,))
+        results = []
+        for row in rows or []:
+            add_ids = [int(x) for x in row[2].split(",") if x] if row[2] else []
+            remove_ids = [int(x) for x in row[3].split(",") if x] if row[3] else []
+            results.append({
+                "id": row[0],
+                "user_id": row[1],
+                "add_ids": add_ids,
+                "remove_ids": remove_ids,
+                "run_at": row[4],
+                "created_by": row[5],
+                "status": row[6],
+                "last_error": row[7]
+            })
+        return results
+
+    def delete_scheduled_role_change(self, sched_id: int, guild_id: int):
+        """Delete a scheduled role change."""
+        self.init_scheduled_roles_table()
+        self.execute_query("DELETE FROM main.scheduled_roles WHERE id = %s AND guild_id = %s", (sched_id, guild_id), fetch=False)
+
+    def get_due_scheduled_role_changes(self, now):
+        """Get scheduled role changes that are due to run."""
+        self.init_scheduled_roles_table()
+        query = """
+        SELECT id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at
+        FROM main.scheduled_roles
+        WHERE status = 'pending' AND run_at <= %s
+        ORDER BY run_at ASC
+        LIMIT 50
+        """
+        rows = self.execute_query(query, (now,))
+        results = []
+        for row in rows or []:
+            add_ids = [int(x) for x in row[3].split(",") if x] if row[3] else []
+            remove_ids = [int(x) for x in row[4].split(",") if x] if row[4] else []
+            results.append({
+                "id": row[0],
+                "guild_id": row[1],
+                "user_id": row[2],
+                "add_ids": add_ids,
+                "remove_ids": remove_ids,
+                "run_at": row[5],
+            })
+        return results
+
+    def mark_scheduled_role_status(self, sched_id: int, status: str, error: str | None = None):
+        """Update scheduled role status and optional error."""
+        self.init_scheduled_roles_table()
+        self.execute_query(
+            "UPDATE main.scheduled_roles SET status = %s, last_error = %s WHERE id = %s",
+            (status, error, sched_id),
+            fetch=False
+        )
     
     def track_mirrored_message(self, original_message_id: int, original_channel_id: int, 
                                mirror_message_id: int, mirror_channel_id: int, guild_id: int):
