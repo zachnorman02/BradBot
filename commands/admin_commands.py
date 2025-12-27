@@ -2905,15 +2905,31 @@ class AdminGroup(app_commands.Group):
                     )
                     return
             
+            user_obj = None
             if parsed.get('user_id'):
-                user = interaction.guild.get_member(parsed['user_id'])
-                if user:
-                    audit_params['user'] = user
+                user_obj = interaction.guild.get_member(parsed['user_id'])
+            elif parsed.get('user_raw'):
+                # Try name-based resolution
+                user_obj = discord.utils.get(interaction.guild.members, name=parsed['user_raw'])
+                if not user_obj:
+                    user_obj = discord.utils.find(
+                        lambda m: m.display_name.lower() == parsed['user_raw'].lower(),
+                        interaction.guild.members
+                    )
+                if user_obj:
+                    parsed['user_id'] = user_obj.id
+
+            if user_obj:
+                audit_params['user'] = user_obj
             
             # Fetch audit log entries
             entries = []
             async for entry in interaction.guild.audit_logs(**audit_params):
                 # Apply filters
+                if parsed.get('user_id'):
+                    if not entry.user or entry.user.id != parsed['user_id']:
+                        continue
+
                 if parsed.get('target_id'):
                     if not hasattr(entry.target, 'id') or entry.target.id != parsed['target_id']:
                         continue
@@ -3016,13 +3032,15 @@ class AdminGroup(app_commands.Group):
         conditions = re.split(r'\s+AND\s+', where_clause, flags=re.IGNORECASE)
         
         for condition in conditions:
-            # Parse key='value' or key="value"
-            match = re.match(r"(\w+)\s*=\s*['\"]([^'\"]+)['\"]", condition.strip())
-            if not match:
+            cond = condition.strip()
+            if "=" not in cond:
                 continue
-            
-            key = match.group(1).lower()
-            value = match.group(2)
+            key, value = cond.split("=", 1)
+            key = key.strip().lower()
+            value = value.strip()
+            # Strip surrounding quotes if present
+            if (value.startswith("'") and value.endswith("'")) or (value.startswith('"') and value.endswith('"')):
+                value = value[1:-1]
             
             if key == 'action':
                 result['action'] = value
@@ -3032,6 +3050,9 @@ class AdminGroup(app_commands.Group):
                 user_id_match = re.search(r'<@!?(\d+)>|^(\d+)$', value)
                 if user_id_match:
                     result['user_id'] = int(user_id_match.group(1) or user_id_match.group(2))
+                else:
+                    # Keep raw for name-based resolution later
+                    result['user_raw'] = value
             
             elif key == 'target':
                 # Extract target ID from mention or direct ID
