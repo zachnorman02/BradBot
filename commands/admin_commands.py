@@ -1072,11 +1072,15 @@ class AdminToolsGroup(app_commands.Group):
             db.set_guild_setting(guild.id, "global_mute_role_id", str(mute_role.id))
 
             updated_channels = 0
+            skipped_tickets = 0
             errors = []
 
             if apply_to_all_channels:
                 for channel in guild.channels:
                     try:
+                        if isinstance(channel, discord.TextChannel) and channel.name.startswith("ticket-"):
+                            skipped_tickets += 1
+                            continue
                         # Text/voice/threads all share send messages/add reactions/speak
                         await channel.set_permissions(
                             mute_role,
@@ -1101,6 +1105,8 @@ class AdminToolsGroup(app_commands.Group):
                 f"✅ Global mute role ready: {mute_role.mention}",
                 f"Applied overwrites to {updated_channels} channel(s)." if apply_to_all_channels else "Skipped channel overwrites."
             ]
+            if skipped_tickets:
+                summary.append(f"Skipped {skipped_tickets} ticket channel(s).")
             if errors:
                 summary.append(f"⚠️ Errors on {len(errors)} channel(s): " + "; ".join(errors[:3]))
             await interaction.followup.send("\n".join(summary), ephemeral=True)

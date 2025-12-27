@@ -237,6 +237,11 @@ async def _apply_global_mute_overwrites(member: discord.Member, deny: bool, reas
     }
     for channel in member.guild.channels:
         try:
+            is_ticket = isinstance(channel, discord.TextChannel) and channel.name.startswith("ticket-")
+            if is_ticket:
+                # Allow tickets: clear any existing member overwrite when muting
+                await channel.set_permissions(member, overwrite=None, reason=reason)
+                continue
             if deny:
                 await channel.set_permissions(member, **perms_kwargs, reason=reason)
             else:
