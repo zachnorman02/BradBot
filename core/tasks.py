@@ -136,67 +136,55 @@ async def handle_channel_restrictions(before: discord.Member, after: discord.Mem
         # Skip bots
         if after.bot:
             return
-        
-        # Get role changes
-        before_role_ids = {role.id for role in before.roles}
-        after_role_ids = {role.id for role in after.roles}
-        added_roles = after_role_ids - before_role_ids
-        removed_roles = before_role_ids - after_role_ids
-        
-        if not added_roles and not removed_roles:
-            return  # No role changes
+
+        # Ensure DB is ready
+        if not db.connection_pool:
+            db.init_pool()
+        db.init_channel_restrictions_table()
         
         # Get all channel restrictions for this guild
         restrictions = db.get_channel_restrictions(after.guild.id)
         
         if not restrictions:
             return  # No restrictions configured
-        
-        # Group restrictions by blocking role for efficiency
-        channels_by_role = defaultdict(list)
+
+        # Reconcile all configured restrictions against current roles
+        role_ids = {r.id for r in after.roles}
+
+        # Group by channel
+        by_channel = defaultdict(list)
         for r in restrictions:
-            channels_by_role[r['blocking_role_id']].append(r['channel_id'])
-        
-        # Handle added roles - block access to restricted channels
-        for added_role_id in added_roles:
-            if added_role_id in channels_by_role:
-                for channel_id in channels_by_role[added_role_id]:
-                    channel = after.guild.get_channel(channel_id)
-                    if channel:
-                        try:
-                            await channel.set_permissions(
-                                after,
-                                view_channel=False,
-                                reason=f"Channel restriction: {after.guild.get_role(added_role_id).name} role added"
-                            )
-                            print(f"[CHANNEL RESTRICTION] Blocked {after.display_name} from {channel.name}")
-                        except Exception as e:
-                            print(f"[CHANNEL RESTRICTION] Error blocking {after.display_name} from {channel.name}: {e}")
-        
-        # Handle removed roles - remove access blocks from restricted channels
-        for removed_role_id in removed_roles:
-            if removed_role_id in channels_by_role:
-                for channel_id in channels_by_role[removed_role_id]:
-                    channel = after.guild.get_channel(channel_id)
-                    if channel:
-                        # Check if they still have any other blocking roles for this channel
-                        other_blocking_roles = [
-                            r['blocking_role_id'] 
-                            for r in restrictions 
-                            if r['channel_id'] == channel_id and r['blocking_role_id'] in after_role_ids
-                        ]
-                        
-                        if not other_blocking_roles:
-                            # No other blocking roles, safe to remove overwrite
-                            try:
-                                await channel.set_permissions(
-                                    after,
-                                    overwrite=None,
-                                    reason=f"Channel restriction removed: {after.guild.get_role(removed_role_id).name} role removed"
-                                )
-                                print(f"[CHANNEL RESTRICTION] Unblocked {after.display_name} from {channel.name}")
-                            except Exception as e:
-                                print(f"[CHANNEL RESTRICTION] Error unblocking {after.display_name} from {channel.name}: {e}")
+            by_channel[r['channel_id']].append(r)
+
+        for channel_id, rules in by_channel.items():
+            channel = after.guild.get_channel(channel_id)
+            if not channel:
+                continue
+            should_block = False
+            for r in rules:
+                mode = r.get('mode', 'block')
+                rid = r['blocking_role_id']
+                has_role = rid in role_ids
+                if mode == 'block' and has_role:
+                    should_block = True
+                    break
+                if mode == 'require' and not has_role:
+                    should_block = True
+                    break
+
+            try:
+                if should_block:
+                    await channel.set_permissions(
+                        after,
+                        view_channel=False,
+                        reason="Channel restriction enforcement"
+                    )
+                else:
+                    ow = channel.overwrites_for(after)
+                    if ow.view_channel is False:
+                        await channel.set_permissions(after, overwrite=None, reason="Channel restriction cleared")
+            except Exception as e:
+                print(f"[CHANNEL RESTRICTION] Error updating {channel} for {after.display_name}: {e}")
     
     except Exception as e:
         print(f"[CHANNEL RESTRICTION] Error in handle_channel_restrictions: {e}")
