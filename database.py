@@ -2193,6 +2193,44 @@ class Database:
             (status, error, sched_id),
             fetch=False
         )
+
+    # ============================================================================
+    # Member Activity Tracking
+    # ============================================================================
+
+    def init_member_activity_table(self):
+        """Create table for tracking last message activity per guild/user."""
+        query = """
+        CREATE TABLE IF NOT EXISTS main.member_activity (
+            guild_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            last_message_at TIMESTAMP NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
+        );
+        """
+        self.execute_query(query, fetch=False)
+
+    def log_member_activity(self, guild_id: int, user_id: int, timestamp):
+        """Upsert member's last message timestamp."""
+        self.init_member_activity_table()
+        delete_query = "DELETE FROM main.member_activity WHERE guild_id = %s AND user_id = %s"
+        self.execute_query(delete_query, (guild_id, user_id), fetch=False)
+        insert_query = """
+        INSERT INTO main.member_activity (guild_id, user_id, last_message_at)
+        VALUES (%s, %s, %s)
+        """
+        self.execute_query(insert_query, (guild_id, user_id, timestamp), fetch=False)
+
+    def get_member_last_activity(self, guild_id: int, user_id: int):
+        """Get a member's last message timestamp, or None."""
+        self.init_member_activity_table()
+        res = self.execute_query(
+            "SELECT last_message_at FROM main.member_activity WHERE guild_id = %s AND user_id = %s LIMIT 1",
+            (guild_id, user_id)
+        )
+        if res:
+            return res[0][0]
+        return None
     
     def track_mirrored_message(self, original_message_id: int, original_channel_id: int, 
                                mirror_message_id: int, mirror_channel_id: int, guild_id: int):

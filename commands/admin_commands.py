@@ -1221,6 +1221,66 @@ class AdminToolsGroup(app_commands.Group):
             ephemeral=True
         )
 
+    @app_commands.command(name="kick_inactive_level", description="Kick members with a level role who haven't chatted in N days")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        role="Level role to check (e.g., @lvl 5)",
+        days="Kick if last message older than this many days (or never)",
+        dry_run="If true, report only without kicking"
+    )
+    async def kick_inactive_level(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        days: int,
+        dry_run: bool = True
+    ):
+        """Kick members with the specified level role and no recent messages."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        if days < 1:
+            await interaction.response.send_message("❌ Days must be at least 1.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        if not db.connection_pool:
+            db.init_pool()
+        db.init_member_activity_table()
+
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+        candidates = []
+        errors = []
+
+        for member in interaction.guild.members:
+            if member.bot:
+                continue
+            if role not in member.roles:
+                continue
+            last_seen = db.get_member_last_activity(interaction.guild.id, member.id)
+            if not last_seen or last_seen < cutoff:
+                candidates.append((member, last_seen))
+
+        kicked = 0
+        if not dry_run:
+            for member, _ in candidates:
+                try:
+                    await member.kick(reason=f"Inactive {days}d with role {role.name}")
+                    kicked += 1
+                except Exception as e:
+                    errors.append(f"{member.display_name}: {str(e)[:80]}")
+
+        lines = [
+            f"🔍 Found {len(candidates)} member(s) with {role.mention} inactive ≥ {days}d.",
+            "Dry run; no kicks performed." if dry_run else f"Kicked {kicked} member(s)."
+        ]
+        if errors:
+            lines.append(f"⚠️ Errors on {len(errors)} member(s): " + "; ".join(errors[:3]))
+
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
     @app_commands.command(name="messagemirror", description="Configure message mirroring between channels")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(

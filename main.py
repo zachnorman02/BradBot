@@ -290,6 +290,15 @@ async def on_message(message):
     if message.author.bot:
         return
     await bot.process_commands(message)
+
+    # Track last activity
+    try:
+        if message.guild:
+            if not db.connection_pool:
+                db.init_pool()
+            db.log_member_activity(message.guild.id, message.author.id, message.created_at)
+    except Exception as e:
+        print(f"[ACTIVITY] Failed to log activity: {e}")
     
     # Handle replies to bot's messages - ping the original poster if they have notifications enabled
     await handle_reply_notification(message, bot)
