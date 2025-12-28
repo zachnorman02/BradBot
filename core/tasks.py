@@ -191,6 +191,39 @@ async def handle_channel_restrictions(before: discord.Member, after: discord.Mem
 
 
 # ============================================================================
+# LEVEL ROLE ENFORCEMENT
+# ============================================================================
+
+async def ensure_base_level_role(member: discord.Member):
+    """Ensure a verified member has at least one level role; if none, assign lvl 0-style role."""
+    if member.bot:
+        return
+
+    # Only apply to verified members (configurable name)
+    verified_role_name = db.get_guild_setting(member.guild.id, "verified_role_name", "verified")
+    verified_role = discord.utils.get(member.guild.roles, name=verified_role_name)
+    if verified_role and verified_role not in member.roles:
+        return
+
+    # Detect level roles by prefix (configurable, default "lvl ")
+    prefix = db.get_guild_setting(member.guild.id, "level_role_prefix", "lvl ")
+    has_level_role = any(r.name.lower().startswith(prefix.lower()) for r in member.roles)
+    if has_level_role:
+        return
+
+    lvl0_name = f"{prefix}0"
+    lvl0 = discord.utils.get(member.guild.roles, name=lvl0_name)
+    if not lvl0:
+        return
+
+    try:
+        await member.add_roles(lvl0, reason="Auto-assign base level role")
+        print(f"[LEVEL] Assigned {lvl0.name} to {member.display_name} (no level role)")
+    except Exception as e:
+        print(f"[LEVEL] Failed to assign {lvl0_name} to {member.display_name}: {e}")
+
+
+# ============================================================================
 # BOOSTER ROLE AUTOMATION
 # ============================================================================
 
@@ -454,7 +487,8 @@ async def _check_booster_roles_for_guild(guild: discord.Guild):
 
 
 async def _check_verified_roles_for_guild(guild: discord.Guild, verified_role, lvl0_role):
-    """Assign lvl 0 to verified members who don't have a level role"""
+    """Assign lvl 0 to verified members who don't have a level role (configurable prefix)."""
+    level_prefix = db.get_guild_setting(guild.id, "level_role_prefix", "lvl ")
     for member in guild.members:
         # Skip bots
         if member.bot:
@@ -462,7 +496,7 @@ async def _check_verified_roles_for_guild(guild: discord.Guild, verified_role, l
         
         # Check if they have verified role but no lvl role
         if verified_role and verified_role in member.roles and lvl0_role:
-            has_lvl_role = any(role.name.startswith("lvl ") for role in member.roles)
+            has_lvl_role = any(role.name.lower().startswith(level_prefix.lower()) for role in member.roles)
             
             if not has_lvl_role:
                 try:
@@ -540,9 +574,13 @@ async def daily_maintenance_check(bot):
                 
                 try:
                     # Get role objects for this guild
-                    verified_role = discord.utils.get(guild.roles, name="verified")
-                    lvl0_role = discord.utils.get(guild.roles, name="lvl 0")
-                    unverified_role = discord.utils.get(guild.roles, name="unverified")
+                    verified_name = db.get_guild_setting(guild.id, "verified_role_name", "verified")
+                    unverified_name = db.get_guild_setting(guild.id, "unverified_role_name", "unverified")
+                    level_prefix = db.get_guild_setting(guild.id, "level_role_prefix", "lvl ")
+
+                    verified_role = discord.utils.get(guild.roles, name=verified_name)
+                    lvl0_role = discord.utils.get(guild.roles, name=f"{level_prefix}0")
+                    unverified_role = discord.utils.get(guild.roles, name=unverified_name)
                     verification_category = discord.utils.get(guild.categories, name="verification")
                     
                     # Check guild automation settings
@@ -876,6 +914,9 @@ async def on_member_update_handler(before: discord.Member, after: discord.Member
     
     # Handle channel restrictions
     await handle_channel_restrictions(before, after)
+
+    # Ensure base level role if none present (verified members)
+    await ensure_base_level_role(after)
 
     # Scheduled roles handled by background task; nothing to do here
 

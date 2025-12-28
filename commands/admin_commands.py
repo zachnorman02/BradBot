@@ -2156,16 +2156,23 @@ class AdminMaintenanceGroup(app_commands.Group):
         await interaction.response.defer(ephemeral=True)
         
         try:
+            if not db.connection_pool:
+                db.init_pool()
+            # Load configurable names/prefix
+            verified_name = db.get_guild_setting(interaction.guild.id, "verified_role_name", "verified")
+            prefix = db.get_guild_setting(interaction.guild.id, "level_role_prefix", "lvl ")
+            lvl0_name = f"{prefix}0"
+
             # Get role objects
-            verified_role = discord.utils.get(interaction.guild.roles, name="verified")
-            lvl0_role = discord.utils.get(interaction.guild.roles, name="lvl 0")
+            verified_role = discord.utils.get(interaction.guild.roles, name=verified_name)
+            lvl0_role = discord.utils.get(interaction.guild.roles, name=lvl0_name)
             
             if not verified_role:
-                await interaction.followup.send("❌ No 'verified' role found in this server.", ephemeral=True)
+                await interaction.followup.send(f"❌ No '{verified_name}' role found in this server.", ephemeral=True)
                 return
             
             if not lvl0_role:
-                await interaction.followup.send("❌ No 'lvl 0' role found in this server.", ephemeral=True)
+                await interaction.followup.send(f"❌ No '{lvl0_name}' role found in this server.", ephemeral=True)
                 return
             
             # Find members who need lvl 0
@@ -2180,7 +2187,7 @@ class AdminMaintenanceGroup(app_commands.Group):
                 # Check if they have verified role
                 if verified_role in member.roles:
                     # Check if they have any lvl role
-                    has_lvl_role = any(role.name.startswith("lvl ") for role in member.roles)
+                    has_lvl_role = any(role.name.lower().startswith(prefix.lower()) for role in member.roles)
                     
                     if not has_lvl_role:
                         # They need lvl 0
@@ -2224,11 +2231,15 @@ class AdminMaintenanceGroup(app_commands.Group):
         await interaction.response.defer(ephemeral=True)
         
         try:
+            if not db.connection_pool:
+                db.init_pool()
+            unverified_name = db.get_guild_setting(interaction.guild.id, "unverified_role_name", "unverified")
+
             # Get role objects
-            unverified_role = discord.utils.get(interaction.guild.roles, name="unverified")
+            unverified_role = discord.utils.get(interaction.guild.roles, name=unverified_name)
             
             if not unverified_role:
-                await interaction.followup.send("❌ No 'unverified' role found in this server.", ephemeral=True)
+                await interaction.followup.send(f"❌ No '{unverified_name}' role found in this server.", ephemeral=True)
                 return
             
             # Find the verification category
@@ -2573,6 +2584,64 @@ class AdminGroup(app_commands.Group):
         number = max(1, number)
         db.set_counting_number(interaction.guild.id, number)
         await interaction.followup.send(f"✅ Counting set. Next expected number is now **{number}**.", ephemeral=True)
+
+    @app_commands.command(name="level_settings", description="Configure level role naming and verified/unverified roles")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        level_prefix="Prefix for level roles (default: 'lvl ')",
+        verified_role="Role considered verified (default: 'Verified')",
+        unverified_role="Role considered unverified (default: 'Unverified')",
+        show="If true, only show current settings"
+    )
+    async def level_settings(
+        self,
+        interaction: discord.Interaction,
+        level_prefix: str | None = None,
+        verified_role: discord.Role | None = None,
+        unverified_role: discord.Role | None = None,
+        show: bool = False
+    ):
+        """Configure how level/verified roles are detected (per guild)."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        if not db.connection_pool:
+            db.init_pool()
+
+        current_prefix = db.get_guild_setting(interaction.guild.id, "level_role_prefix", "lvl ")
+        current_verified = db.get_guild_setting(interaction.guild.id, "verified_role_name", "verified")
+        current_unverified = db.get_guild_setting(interaction.guild.id, "unverified_role_name", "unverified")
+
+        if show or (level_prefix is None and verified_role is None and unverified_role is None):
+            await interaction.followup.send(
+                "📋 Level settings:\n"
+                f"• level_role_prefix: `{current_prefix}`\n"
+                f"• verified_role_name: `{current_verified}`\n"
+                f"• unverified_role_name: `{current_unverified}`",
+                ephemeral=True
+            )
+            return
+
+        if level_prefix is not None:
+            db.set_guild_setting(interaction.guild.id, "level_role_prefix", level_prefix)
+            current_prefix = level_prefix
+        if verified_role is not None:
+            db.set_guild_setting(interaction.guild.id, "verified_role_name", verified_role.name)
+            current_verified = verified_role.name
+        if unverified_role is not None:
+            db.set_guild_setting(interaction.guild.id, "unverified_role_name", unverified_role.name)
+            current_unverified = unverified_role.name
+
+        await interaction.followup.send(
+            "✅ Updated level settings:\n"
+            f"• level_role_prefix: `{current_prefix}`\n"
+            f"• verified_role_name: `{current_verified}`\n"
+            f"• unverified_role_name: `{current_unverified}`",
+            ephemeral=True
+        )
 
     @app_commands.command(name="sync", description="Force sync slash commands (bot owner or admin)")
     @app_commands.describe(scope="Sync globally or just this server")
