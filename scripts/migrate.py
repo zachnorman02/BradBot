@@ -826,9 +826,10 @@ class Migration026(Migration):
 
     def up(self):
         print("   📋 Adding mode column to channel_restrictions...")
+        # Some Aurora DSQL configs reject defaults in ALTER ADD; add without default, then normalize.
         db.execute_query("""
             ALTER TABLE main.channel_restrictions
-            ADD COLUMN IF NOT EXISTS mode VARCHAR(16) DEFAULT 'block'
+            ADD COLUMN IF NOT EXISTS mode VARCHAR(16)
         """, fetch=False)
         db.execute_query("""
             UPDATE main.channel_restrictions
