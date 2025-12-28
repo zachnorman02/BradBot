@@ -816,6 +816,26 @@ class Migration025(Migration):
             print(f"   ✅ Created indexes on message_mirrors")
         except Exception as e:
             print(f"   ⚠️  Index creation queued: {e}")
+
+
+class Migration026(Migration):
+    """Add mode column to channel_restrictions and backfill as 'block'."""
+
+    def __init__(self):
+        super().__init__("026", "Add mode column to channel_restrictions with default 'block'")
+
+    def up(self):
+        print("   📋 Adding mode column to channel_restrictions...")
+        db.execute_query("""
+            ALTER TABLE main.channel_restrictions
+            ADD COLUMN IF NOT EXISTS mode VARCHAR(16) DEFAULT 'block'
+        """, fetch=False)
+        db.execute_query("""
+            UPDATE main.channel_restrictions
+            SET mode = 'block'
+            WHERE mode IS NULL OR mode = ''
+        """, fetch=False)
+        print("   ✅ Added/normalized mode column on channel_restrictions")
         
         print(f"   📋 Creating mirrored_messages table...")
         
@@ -873,6 +893,7 @@ MIGRATIONS = [
     Migration023(),  # Create role_rules table
     Migration024(),  # Create channel_restrictions table
     Migration025(),  # Create message_mirrors and mirrored_messages tables
+    Migration026(),  # Add mode column to channel_restrictions
 ]
 
 def get_applied_migrations():
