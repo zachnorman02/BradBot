@@ -824,7 +824,7 @@ class AdminToolsGroup(app_commands.Group):
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         action="What action to perform",
-        channel="The channel to restrict access to",
+        channel="The channel to restrict access to (text/voice/forum/stage/category)",
         blocking_role="Role that blocks access to the channel",
         mode="How to apply the role: block users with it, or require it"
     )
@@ -842,7 +842,7 @@ class AdminToolsGroup(app_commands.Group):
         self,
         interaction: discord.Interaction,
         action: app_commands.Choice[str],
-        channel: discord.TextChannel = None,
+        channel: discord.abc.GuildChannel = None,
         blocking_role: discord.Role = None,
         mode: app_commands.Choice[str] = None
     ):
