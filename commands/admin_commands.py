@@ -252,6 +252,50 @@ class AdminSettingsView(ui.View):
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
+
+class ChannelRestrictionListView(ui.View):
+    """Refreshable list view for channel restrictions."""
+
+    def __init__(self, guild: discord.Guild, tools_group: "AdminToolsGroup"):
+        super().__init__(timeout=300)
+        self.guild = guild
+        self.tools_group = tools_group
+
+    async def _ensure_admin(self, interaction: discord.Interaction) -> bool:
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Admins only.", ephemeral=True)
+            return False
+        return True
+
+    @ui.button(label="🔄 Refresh", style=discord.ButtonStyle.blurple)
+    async def refresh(self, interaction: discord.Interaction, button: ui.Button):
+        if not await self._ensure_admin(interaction):
+            return
+        embed = self.tools_group._build_channel_restrictions_embed(self.guild)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
+class ConditionalRoleListView(ui.View):
+    """Refreshable list view for conditional role configs."""
+
+    def __init__(self, guild: discord.Guild, tools_group: "AdminToolsGroup"):
+        super().__init__(timeout=300)
+        self.guild = guild
+        self.tools_group = tools_group
+
+    async def _ensure_admin(self, interaction: discord.Interaction) -> bool:
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Admins only.", ephemeral=True)
+            return False
+        return True
+
+    @ui.button(label="🔄 Refresh", style=discord.ButtonStyle.blurple)
+    async def refresh(self, interaction: discord.Interaction, button: ui.Button):
+        if not await self._ensure_admin(interaction):
+            return
+        embed = self.tools_group._build_conditional_role_configs_embed(self.guild)
+        await interaction.response.edit_message(embed=embed, view=self)
+
     @ui.button(label="🔄 Refresh Panel", style=discord.ButtonStyle.blurple, row=2)
     async def refresh_panel(self, interaction: discord.Interaction, button: ui.Button):
         if not interaction.user.guild_permissions.administrator:
@@ -349,6 +393,81 @@ class AdminToolsGroup(app_commands.Group):
     
     def __init__(self):
         super().__init__(name="tools", description="Database and role management tools")
+
+    # Helpers for listing panels
+    def _build_channel_restrictions_embed(self, guild: discord.Guild) -> discord.Embed:
+        restrictions = db.get_channel_restrictions(guild.id)
+        embed = discord.Embed(
+            title="🔒 Channel Restrictions",
+            description=f"Found {len(restrictions)} restriction(s)" if restrictions else "No restrictions configured",
+            color=discord.Color.blue()
+        )
+        if not restrictions:
+            return embed
+
+        from collections import defaultdict
+        by_channel = defaultdict(list)
+        for r in restrictions:
+            by_channel[r['channel_id']].append(r)
+
+        for channel_id, channel_restrictions in by_channel.items():
+            channel_obj = guild.get_channel(channel_id)
+            channel_name = channel_obj.mention if channel_obj else f"Unknown Channel ({channel_id})"
+
+            require_mentions = []
+            block_mentions = []
+            for r in channel_restrictions:
+                role = guild.get_role(r['blocking_role_id'])
+                label = "Require" if r.get('mode') == 'require' else "Block"
+                mention = role.mention if role else f"Unknown ({r['blocking_role_id']})"
+                if label == "Require":
+                    require_mentions.append(mention)
+                else:
+                    block_mentions.append(mention)
+
+            rules_lines = []
+            rules_lines.append(f"**Channel:** {channel_name}")
+            rules_lines.append(f"**Require:** {', '.join(require_mentions) if require_mentions else 'None'}")
+            rules_lines.append(f"**Block:** {', '.join(block_mentions) if block_mentions else 'None'}")
+
+            embed.add_field(
+                name=f"🔒 {channel_obj.name if channel_obj else 'Unknown'}",
+                value="\n".join(rules_lines),
+                inline=False
+            )
+        return embed
+
+    def _build_conditional_role_configs_embed(self, guild: discord.Guild) -> discord.Embed:
+        configs = db.get_all_conditional_role_configs(guild.id)
+        embed = discord.Embed(
+            title="⚙️ Conditional Role Configurations",
+            description=f"Found {len(configs)} configured role(s)" if configs else "No conditional roles configured",
+            color=discord.Color.blue()
+        )
+        for config in configs:
+            role_obj = guild.get_role(config['role_id'])
+            role_mention = role_obj.mention if role_obj else f"<@&{config['role_id']}> (deleted)"
+
+            blocking_mentions = []
+            for blocking_id in config['blocking_role_ids']:
+                blocking_role = guild.get_role(blocking_id)
+                blocking_mentions.append(blocking_role.mention if blocking_role else f"<@&{blocking_id}> (deleted)")
+
+            blocking_text = ", ".join(blocking_mentions) if blocking_mentions else "None"
+
+            deferral_mentions = []
+            for deferral_id in config.get('deferral_role_ids', []):
+                deferral_role = guild.get_role(deferral_id)
+                deferral_mentions.append(deferral_role.mention if deferral_role else f"<@&{deferral_id}> (deleted)")
+
+            deferral_text = ", ".join(deferral_mentions) if deferral_mentions else "None"
+
+            embed.add_field(
+                name=f"🔒 {config.get('role_name', 'Unknown')}",
+                value=f"**Role:** {role_mention}\n**Blocking Roles:** {blocking_text}\n**Deferral Roles:** {deferral_text}",
+                inline=False
+            )
+        return embed
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return await _enforce_default_permissions(interaction)
@@ -863,41 +982,9 @@ class AdminToolsGroup(app_commands.Group):
             mode_value = mode.value if mode else None
             
             if action.value == "list":
-                restrictions = db.get_channel_restrictions(interaction.guild.id)
-                
-                if not restrictions:
-                    await interaction.followup.send("📋 No channel restrictions configured for this server.", ephemeral=True)
-                    return
-                
-                embed = discord.Embed(
-                    title="🔒 Channel Restrictions",
-                    description=f"Found {len(restrictions)} restriction(s)",
-                    color=discord.Color.blue()
-                )
-                
-                # Group by channel
-                from collections import defaultdict
-                by_channel = defaultdict(list)
-                for r in restrictions:
-                    by_channel[r['channel_id']].append(r)
-                
-                for channel_id, channel_restrictions in by_channel.items():
-                    channel_obj = interaction.guild.get_channel(channel_id)
-                    channel_name = channel_obj.mention if channel_obj else f"Unknown Channel ({channel_id})"
-                    
-                    role_mentions = []
-                    for r in channel_restrictions:
-                        role = interaction.guild.get_role(r['blocking_role_id'])
-                        label = "Require" if r.get('mode') == 'require' else "Block"
-                        role_mentions.append(f"{label}: {role.mention if role else f'Unknown ({r['blocking_role_id']})'}")
-                    
-                    embed.add_field(
-                        name=f"🔒 {channel_obj.name if channel_obj else 'Unknown'}",
-                        value=f"**Channel:** {channel_name}\n**Rules:** {', '.join(role_mentions)}",
-                        inline=False
-                    )
-                
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                embed = self._build_channel_restrictions_embed(interaction.guild)
+                view = ChannelRestrictionListView(interaction.guild, self)
+                await interaction.followup.send(embed=embed, view=view)
                 return
             
             elif action.value == "remove":
@@ -1026,7 +1113,7 @@ class AdminToolsGroup(app_commands.Group):
                         error_text += f"\n... and {len(results['errors']) - 5} more"
                     embed.add_field(name="⚠️ Errors", value=error_text, inline=False)
                 
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                await interaction.followup.send(embed=embed, view=ChannelRestrictionListView(interaction.guild, self))
                 return
         
         except Exception as e:
@@ -1696,43 +1783,9 @@ class AdminToolsGroup(app_commands.Group):
             # ================================================================
             
             if action_value == "list_configs":
-                configs = db.get_all_conditional_role_configs(interaction.guild.id)
-                
-                if not configs:
-                    await interaction.followup.send("📋 No conditional roles configured for this server.", ephemeral=True)
-                    return
-                
-                embed = discord.Embed(
-                    title="⚙️ Conditional Role Configurations",
-                    description=f"Found {len(configs)} configured role(s)",
-                    color=discord.Color.blue()
-                )
-                
-                for config in configs:
-                    role_obj = interaction.guild.get_role(config['role_id'])
-                    role_mention = role_obj.mention if role_obj else f"<@&{config['role_id']}> (deleted)"
-                    
-                    blocking_mentions = []
-                    for blocking_id in config['blocking_role_ids']:
-                        blocking_role = interaction.guild.get_role(blocking_id)
-                        blocking_mentions.append(blocking_role.mention if blocking_role else f"<@&{blocking_id}> (deleted)")
-                    
-                    blocking_text = ", ".join(blocking_mentions) if blocking_mentions else "None"
-                    
-                    deferral_mentions = []
-                    for deferral_id in config.get('deferral_role_ids', []):
-                        deferral_role = interaction.guild.get_role(deferral_id)
-                        deferral_mentions.append(deferral_role.mention if deferral_role else f"<@&{deferral_id}> (deleted)")
-                    
-                    deferral_text = ", ".join(deferral_mentions) if deferral_mentions else "None"
-                    
-                    embed.add_field(
-                        name=f"🔒 {config.get('role_name', 'Unknown')}",
-                        value=f"**Role:** {role_mention}\n**Blocking Roles:** {blocking_text}\n**Deferral Roles:** {deferral_text}",
-                        inline=False
-                    )
-                
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                embed = self._build_conditional_role_configs_embed(interaction.guild)
+                view = ConditionalRoleListView(interaction.guild, self)
+                await interaction.followup.send(embed=embed, view=view)
                 return
             
             elif action_value == "configure":
@@ -3023,7 +3076,7 @@ class AdminGroup(app_commands.Group):
             }
             
             if parsed.get('action'):
-                action_key = parsed['action'].lower()
+                action_key = parsed['action'].strip("'\"").lower()
                 if action_key in action_map:
                     audit_params['action'] = action_map[action_key]
                 else:
@@ -3050,6 +3103,24 @@ class AdminGroup(app_commands.Group):
 
             if user_obj:
                 audit_params['user'] = user_obj
+
+            # Resolve target by raw name if needed
+            if parsed.get('target_raw') and not parsed.get('target_id'):
+                raw = parsed['target_raw'].lower()
+                # Try member
+                member = discord.utils.find(lambda m: m.name.lower() == raw or m.display_name.lower() == raw, interaction.guild.members)
+                if member:
+                    parsed['target_id'] = member.id
+                else:
+                    # Try channel by name (text/voice/stage/forum/categories)
+                    channel = discord.utils.find(lambda c: getattr(c, "name", "").lower() == raw, interaction.guild.channels)
+                    if channel:
+                        parsed['target_id'] = channel.id
+                    else:
+                        # Try role by name
+                        role = discord.utils.find(lambda r: r.name.lower() == raw, interaction.guild.roles)
+                        if role:
+                            parsed['target_id'] = role.id
             
             # Fetch audit log entries
             entries = []
@@ -3188,6 +3259,8 @@ class AdminGroup(app_commands.Group):
                 target_id_match = re.search(r'<@!?(\d+)>|<#(\d+)>|<@&(\d+)>|^(\d+)$', value)
                 if target_id_match:
                     result['target_id'] = int(target_id_match.group(1) or target_id_match.group(2) or target_id_match.group(3) or target_id_match.group(4))
+                else:
+                    result['target_raw'] = value
             
             elif key == 'after':
                 # Parse date/time
