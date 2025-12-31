@@ -44,7 +44,7 @@ Discussion category IDs are auto-resolved (override via `GITHUB_DISCUSSION_CATEG
 
 ## Conversion (`/convert …`)
 
-- **testosterone, temperature, length, weight, timezone, shoe** – utility conversions; shoe conversion handles men/women and multiple regions.
+- **testosterone, temperature, length, weight, liquid, timezone, shoe** – utility conversions; shoe conversion handles men/women and multiple regions.
 
 ## Utility (`/utility …`)
 

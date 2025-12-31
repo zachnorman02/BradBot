@@ -75,6 +75,28 @@ def _convert_weight(value: float, from_unit: str, to_unit: str) -> float:
     return kilograms / WEIGHT_TO_KG[to_unit]
 
 
+VOLUME_TO_ML = {
+    "ml": 1.0,
+    "l": 1000.0,
+    "tsp": 4.92892,
+    "tbsp": 14.7868,
+    "floz": 29.5735,  # US fluid ounce
+    "cup": 236.588,
+    "pint": 473.176,
+    "quart": 946.353,
+    "gallon": 3785.41,
+}
+
+
+def _convert_volume(value: float, from_unit: str, to_unit: str) -> float:
+    from_unit = from_unit.lower()
+    to_unit = to_unit.lower()
+    if from_unit not in VOLUME_TO_ML or to_unit not in VOLUME_TO_ML:
+        raise ValueError("Unsupported volume unit")
+    ml = value * VOLUME_TO_ML[from_unit]
+    return ml / VOLUME_TO_ML[to_unit]
+
+
 SHOE_LINEAR_COEFFS = {
     "men": {
         "us": {"slope": 0.64, "intercept": 20.56, "range": (3.5, 13.5)},
@@ -274,6 +296,40 @@ class ConversionGroup(app_commands.Group):
             await interaction.response.send_message(f"⚖️ {value} {from_unit} = {result:.4f} {to_unit}")
         except Exception as e:
             await interaction.response.send_message(f"❌ Weight conversion failed: {e}", ephemeral=True)
+
+    @app_commands.command(name="liquid", description="Convert between common liquid/volume units")
+    @app_commands.describe(
+        value="Volume to convert",
+        from_unit="Unit of the input value",
+        to_unit="Unit to convert to"
+    )
+    @app_commands.choices(from_unit=[
+        app_commands.Choice(name="Milliliters (ml)", value="ml"),
+        app_commands.Choice(name="Liters (l)", value="l"),
+        app_commands.Choice(name="Teaspoons (tsp)", value="tsp"),
+        app_commands.Choice(name="Tablespoons (tbsp)", value="tbsp"),
+        app_commands.Choice(name="Fluid Ounces (fl oz)", value="floz"),
+        app_commands.Choice(name="Cups", value="cup"),
+        app_commands.Choice(name="Pints", value="pint"),
+        app_commands.Choice(name="Quarts", value="quart"),
+        app_commands.Choice(name="Gallons", value="gallon"),
+    ], to_unit=[
+        app_commands.Choice(name="Milliliters (ml)", value="ml"),
+        app_commands.Choice(name="Liters (l)", value="l"),
+        app_commands.Choice(name="Teaspoons (tsp)", value="tsp"),
+        app_commands.Choice(name="Tablespoons (tbsp)", value="tbsp"),
+        app_commands.Choice(name="Fluid Ounces (fl oz)", value="floz"),
+        app_commands.Choice(name="Cups", value="cup"),
+        app_commands.Choice(name="Pints", value="pint"),
+        app_commands.Choice(name="Quarts", value="quart"),
+        app_commands.Choice(name="Gallons", value="gallon"),
+    ])
+    async def liquid(self, interaction: discord.Interaction, value: float, from_unit: str, to_unit: str):
+        try:
+            result = _convert_volume(value, from_unit, to_unit)
+            await interaction.response.send_message(f"🥤 {value} {from_unit} = {result:.4f} {to_unit}")
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Liquid conversion failed: {e}", ephemeral=True)
 
     @app_commands.command(name="timezone", description="Convert a date/time between timezones")
     @app_commands.describe(

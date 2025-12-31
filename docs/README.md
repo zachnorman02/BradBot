@@ -14,7 +14,7 @@ Welcome! This wiki mirrors the most important information about running and exte
 - **Community engagement:** `/issues panel` (issues or discussions), feature-rich `/poll` suite, reminders/timers, `/echo`, `/link edit|delete`.
 - **Counting channel:** `/admin tools counting_config` + `/counting_set_number` to run a counting game with math expressions, anti-double-posting, penalty role (24h), and reset/disable controls.
 - **Voice & TTS:** `/voice tts` with queues, default voices, `/voice filter_voices`, `/voice join/leave`, `/voice show_tts_options`.
-- **Conversion tools:** `/convert testosterone/temperature/length/weight/timezone/shoe`.
+- **Conversion tools:** `/convert testosterone/temperature/length/weight/liquid/timezone/shoe`.
 - **Secrets-aware deployment:** loads `.env` then automatically hydrates secrets from AWS Secrets Manager (`BradBot/creds` by default).
 
 ## 🚀 Quick Start
