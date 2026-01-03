@@ -9,6 +9,7 @@ from utils.tts_helper import synthesize_tts_to_file
 import utils.tts_helper as tts_helper
 from database import db
 import boto3
+import traceback
 
 
 # Simple per-guild audio player
@@ -288,16 +289,20 @@ class VoiceGroup(app_commands.Group):
             if announce_author:
                 spoken_text = f"{interaction.user.display_name} says: {text}"
 
-            provider = (os.getenv('BRADBOT_TTS_PROVIDER') or 'gtts').strip().lower() or 'gtts'
+            provider = (os.getenv('BRADBOT_TTS_PROVIDER') or 'polly').strip().lower() or 'polly'
             engine_to_use_raw = engine or os.getenv('BRADBOT_TTS_ENGINE') or 'standard'
             engine_to_use = engine_to_use_raw.strip().lower() or 'standard'
             if provider == 'polly':
-                voice_to_use = voice or os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
+                # If no explicit voice, let Polly auto-select from language
+                voice_to_use = voice or os.getenv('BRADBOT_TTS_VOICE')
                 language_to_use = language or os.getenv('BRADBOT_TTS_LANGUAGE', 'en-US')
                 engine_for_log = engine_to_use
             else:
                 voice_to_use = voice  # gTTS does not use a named voice
                 language_to_use = language or 'en'
+                # gTTS expects language without region; normalize fr-FR -> fr
+                if language_to_use and '-' in language_to_use:
+                    language_to_use = language_to_use.split('-')[0]
                 engine_for_log = None
 
             try:
@@ -308,11 +313,13 @@ class VoiceGroup(app_commands.Group):
                     engine=engine_to_use,
                     language=language_to_use
                 )
-            except Exception:
+            except Exception as synth_err:
                 try:
                     os.remove(temp_audio_path)
                 except FileNotFoundError:
                     pass
+                print(f"[TTS] Synthesis failed: {synth_err}")
+                traceback.print_exc()
                 raise
 
             try:

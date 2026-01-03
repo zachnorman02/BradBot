@@ -34,7 +34,7 @@ def synthesize_tts_to_file(text: str, out_path: str, voice: str = None, engine: 
     if not out_path:
         raise ValueError("The 'out_path' parameter cannot be None or empty.")
 
-    provider = os.getenv('BRADBOT_TTS_PROVIDER', 'gtts').strip().lower()
+    provider = os.getenv('BRADBOT_TTS_PROVIDER', 'polly').strip().lower()
     engine_to_use = engine or os.getenv('BRADBOT_TTS_ENGINE', 'standard').strip().lower()
     text_to_use = text or 'Alarm'
 
@@ -51,7 +51,8 @@ def synthesize_tts_to_file(text: str, out_path: str, voice: str = None, engine: 
         if not _boto3:
             raise RuntimeError('boto3 is required for Polly provider; install boto3')
 
-        voice_to_use = voice or os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
+        env_voice = os.getenv('BRADBOT_TTS_VOICE')
+        voice_to_use = voice or env_voice  # allow None to trigger auto-select
         language_to_use = language or os.getenv('BRADBOT_TTS_LANGUAGE', 'en-US')
         region = os.getenv('AWS_REGION') or os.getenv('AWS_DEFAULT_REGION')
         if not region:
@@ -61,7 +62,7 @@ def synthesize_tts_to_file(text: str, out_path: str, voice: str = None, engine: 
 
         client = _boto3.client('polly', region_name=region)
         # If the caller didn't specify a voice but did provide a language, try to pick a matching voice automatically.
-        if not voice and language_to_use:
+        if not voice_to_use and language_to_use:
             try:
                 voice_params = {'LanguageCode': language_to_use}
                 # Engine filtering is only supported for neural/standard in describe_voices
