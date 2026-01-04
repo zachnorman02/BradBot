@@ -16,6 +16,8 @@ from core.counting import _normalize_digits, _evaluate_expression, _is_expressio
         ("१२", 12),  # Devanagari digits
         ("१२^२", 144),
         ("೨೩", 23),  # Kannada digits
+        ("九", 9),  # CJK numeral
+        ("七+三", 10),
     ],
 )
 def test_unicode_digits_normalize_and_eval(expr, expected):

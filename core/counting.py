@@ -95,6 +95,13 @@ def _evaluate_expression(expr: str) -> Optional[int]:
 
 def _normalize_digits(expr: str) -> str:
     """Convert any Unicode digit to its ASCII equivalent; leave other chars untouched."""
+    # Add explicit mappings for numeral scripts that unicodedata.digit may not cover
+    extra_map = {
+        # Chinese/Japanese numerals
+        "零": "0", "〇": "0",
+        "一": "1", "二": "2", "三": "3", "四": "4", "五": "5",
+        "六": "6", "七": "7", "八": "8", "九": "9", "十": "10",
+    }
     normalized = []
     for ch in expr:
         if ch.isdigit():
@@ -102,6 +109,8 @@ def _normalize_digits(expr: str) -> str:
                 normalized.append(str(unicodedata.digit(ch)))
             except Exception:
                 normalized.append(ch)
+        elif ch in extra_map:
+            normalized.append(extra_map[ch])
         else:
             normalized.append(ch)
     return "".join(normalized)
