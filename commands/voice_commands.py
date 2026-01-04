@@ -290,20 +290,15 @@ class VoiceGroup(app_commands.Group):
                 spoken_text = f"{interaction.user.display_name} says: {text}"
 
             provider = (os.getenv('BRADBOT_TTS_PROVIDER') or 'polly').strip().lower() or 'polly'
+            if provider != 'polly':
+                provider = 'polly'
+
             engine_to_use_raw = engine or os.getenv('BRADBOT_TTS_ENGINE') or 'standard'
             engine_to_use = engine_to_use_raw.strip().lower() or 'standard'
-            if provider == 'polly':
-                # If no explicit voice, let Polly auto-select from language
-                voice_to_use = voice or os.getenv('BRADBOT_TTS_VOICE')
-                language_to_use = language or os.getenv('BRADBOT_TTS_LANGUAGE', 'en-US')
-                engine_for_log = engine_to_use
-            else:
-                voice_to_use = voice  # gTTS does not use a named voice
-                language_to_use = language or 'en'
-                # gTTS expects language without region; normalize fr-FR -> fr
-                if language_to_use and '-' in language_to_use:
-                    language_to_use = language_to_use.split('-')[0]
-                engine_for_log = None
+            # If no explicit voice, let Polly auto-select from language
+            voice_to_use = voice or os.getenv('BRADBOT_TTS_VOICE')
+            language_to_use = language or os.getenv('BRADBOT_TTS_LANGUAGE', 'en-US')
+            engine_for_log = engine_to_use
 
             try:
                 synthesize_tts_to_file(
@@ -352,7 +347,7 @@ class VoiceGroup(app_commands.Group):
                 'title': f"TTS from {interaction.user.display_name}",
                 'cleanup': _cleanup
             })
-            provider_for_log = provider or 'gtts'
+            provider_for_log = provider or 'polly'
 
             sent_message_id = None
             if post_text:
@@ -414,18 +409,16 @@ class VoiceGroup(app_commands.Group):
                 raise
 
             # Build info about provider and module
-            provider = os.getenv('BRADBOT_TTS_PROVIDER', 'gtts')
-            voice = os.getenv('BRADBOT_TTS_VOICE', 'Matthew')
+            provider = os.getenv('BRADBOT_TTS_PROVIDER', 'polly')
+            voice = os.getenv('BRADBOT_TTS_VOICE')
             module_file = getattr(tts_helper, '__file__', 'unknown')
             boto3_avail = getattr(tts_helper, '_boto3', None) is not None
-            gtts_avail = getattr(tts_helper, '_gTTS', None) is not None
 
             info_lines = [
                 f"Provider: {provider}",
                 f"Voice: {voice}",
                 f"Helper module: {module_file}",
                 f"boto3 available: {boto3_avail}",
-                f"gTTS available: {gtts_avail}",
             ]
 
             # Send file back to the channel (not ephemeral) so admins can listen

@@ -3,6 +3,7 @@ Counting channel handler: sequential counting with math expressions and penaltie
 """
 import ast
 import datetime as dt
+import unicodedata
 from typing import Optional
 
 import discord
@@ -90,6 +91,20 @@ def _evaluate_expression(expr: str) -> Optional[int]:
         return None
 
     return _eval(tree)
+
+
+def _normalize_digits(expr: str) -> str:
+    """Convert any Unicode digit to its ASCII equivalent; leave other chars untouched."""
+    normalized = []
+    for ch in expr:
+        if ch.isdigit():
+            try:
+                normalized.append(str(unicodedata.digit(ch)))
+            except Exception:
+                normalized.append(ch)
+        else:
+            normalized.append(ch)
+    return "".join(normalized)
 
 
 async def _apply_penalty(message: discord.Message, config: dict):
@@ -184,10 +199,11 @@ async def handle_counting_message(message: discord.Message):
             return
     if "\n" in content:
         return
-    if not _is_expression_safe(content):
+    normalized_content = _normalize_digits(content)
+    if not _is_expression_safe(normalized_content):
         return
 
-    value = _evaluate_expression(content)
+    value = _evaluate_expression(normalized_content)
     if value is None:
         errors.append("invalid or unsupported math expression (integers only)")
     else:
