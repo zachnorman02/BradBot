@@ -197,6 +197,19 @@ async def handle_counting_message(message: discord.Message):
 
     # Enforce penalty expiry cleanup for the author (regardless of channel)
     await clear_counting_penalty_if_expired(message.guild, message.author)
+    # If author still has penalty role but no DB record, remove it as stale
+    try:
+        role_id = config.get("idiot_role_id")
+        if role_id:
+            role = message.guild.get_role(role_id)
+            if role and role in message.author.roles:
+                if not db.get_counting_penalty(message.guild.id, message.author.id):
+                    try:
+                        await message.author.remove_roles(role, reason="Counting penalty stale (no DB record)")
+                    except Exception as e:
+                        print(f"[COUNTING] Failed to remove stale penalty role in on_message: {e}")
+    except Exception:
+        pass
 
     if message.channel.id != config["channel_id"]:
         return

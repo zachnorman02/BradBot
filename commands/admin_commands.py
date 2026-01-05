@@ -2377,6 +2377,59 @@ class AdminMaintenanceGroup(app_commands.Group):
                 ephemeral=True
             )
 
+    @app_commands.command(name="setrole", description="Add or remove a role from a specific member")
+    @app_commands.describe(
+        user="The member to modify",
+        role="The role to add or remove",
+        action="Choose whether to add or remove the role"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Add", value="add"),
+        app_commands.Choice(name="Remove", value="remove"),
+    ])
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def set_role(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        role: discord.Role,
+        action: app_commands.Choice[str]
+    ):
+        """Allow admins to add or remove a role from a member."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Bot permission/position checks
+            bot_member = interaction.guild.me
+            if not bot_member.guild_permissions.manage_roles:
+                await interaction.followup.send("❌ I need the Manage Roles permission to do that.", ephemeral=True)
+                return
+            if bot_member.top_role <= role:
+                await interaction.followup.send("❌ I can't manage that role because it is above my highest role.", ephemeral=True)
+                return
+            if interaction.user.top_role <= role and not interaction.user.guild_permissions.administrator:
+                await interaction.followup.send("❌ You can't manage a role higher than or equal to your top role.", ephemeral=True)
+                return
+
+            if action.value == "add":
+                if role in user.roles:
+                    await interaction.followup.send(f"ℹ️ {user.mention} already has {role.mention}.", ephemeral=True)
+                    return
+                await user.add_roles(role, reason=f"Set by {interaction.user}")
+                await interaction.followup.send(f"✅ Added {role.mention} to {user.mention}.", ephemeral=True)
+            else:
+                if role not in user.roles:
+                    await interaction.followup.send(f"ℹ️ {user.mention} does not have {role.mention}.", ephemeral=True)
+                    return
+                await user.remove_roles(role, reason=f"Removed by {interaction.user}")
+                await interaction.followup.send(f"✅ Removed {role.mention} from {user.mention}.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to update role: {e}", ephemeral=True)
+
 
 
 class AdminGroup(app_commands.Group):
