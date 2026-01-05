@@ -1336,6 +1336,17 @@ class Database:
         )
         return [{"guild_id": r[0], "user_id": r[1], "expires_at": r[2]} for r in results]
 
+    def get_all_counting_penalties(self):
+        """Return all counting penalties (for robust expiry checks)."""
+        self.init_counting_tables()
+        results = self.execute_query(
+            """
+            SELECT guild_id, user_id, expires_at
+            FROM main.counting_penalties
+            """
+        )
+        return [{"guild_id": r[0], "user_id": r[1], "expires_at": r[2]} for r in results]
+
     def log_tts_message(
         self,
         guild_id: int,

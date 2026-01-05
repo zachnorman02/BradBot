@@ -1277,9 +1277,29 @@ async def counting_penalty_check(bot):
                 db.init_pool()
 
             now = dt.datetime.now(dt.timezone.utc)
-            expired = db.get_expired_counting_penalties(now)
+            # Use DB-side filter first, then fall back to in-Python check to catch any tz/format edge cases.
+            expired = db.get_expired_counting_penalties(now) or []
             if not expired:
-                continue
+                # Fallback: check all penalties in Python for robustness
+                all_penalties = db.get_all_counting_penalties()
+                for entry in all_penalties:
+                    expiry_val = entry.get("expires_at")
+                    if not expiry_val:
+                        continue
+                    # Normalize expiry to aware UTC
+                    if isinstance(expiry_val, str):
+                        try:
+                            expiry_val_dt = dt.datetime.fromisoformat(expiry_val)
+                        except Exception:
+                            continue
+                    else:
+                        expiry_val_dt = expiry_val
+                    if expiry_val_dt.tzinfo is None:
+                        expiry_val_dt = expiry_val_dt.replace(tzinfo=dt.timezone.utc)
+                    if expiry_val_dt <= now:
+                        expired.append(entry)
+                if not expired:
+                    continue
 
             for entry in expired:
                 guild = bot.get_guild(entry["guild_id"])

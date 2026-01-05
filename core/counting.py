@@ -116,6 +116,14 @@ def _normalize_digits(expr: str) -> str:
     return "".join(normalized)
 
 
+def _contains_non_ascii_digits(expr: str) -> bool:
+    """Return True if the expression has any non-ASCII digit characters."""
+    for ch in expr:
+        if ch.isdigit() and ord(ch) > 127:
+            return True
+    return False
+
+
 async def _apply_penalty(message: discord.Message, config: dict):
     """Assign the 'counting idiot' role and store expiry."""
     if not config.get("idiot_role_id"):
@@ -140,6 +148,12 @@ async def clear_counting_penalty_if_expired(guild: discord.Guild, member: discor
     if not expiry:
         return False
 
+    # Normalize expiry to aware datetime
+    if isinstance(expiry, str):
+        try:
+            expiry = dt.datetime.fromisoformat(expiry)
+        except Exception:
+            return False
     now = dt.datetime.now(dt.timezone.utc)
     if expiry.tzinfo is None:
         expiry = expiry.replace(tzinfo=dt.timezone.utc)
@@ -228,6 +242,14 @@ async def handle_counting_message(message: discord.Message):
             await message.add_reaction("✅")
         except Exception:
             pass
+        # If user used non-ASCII digits, echo the interpreted number for clarity
+        if _contains_non_ascii_digits(content):
+            try:
+                await message.channel.send(
+                    f"Number just sent: **{value}**."
+                )
+            except Exception as e:
+                print(f"[COUNTING] Failed to send normalization info: {e}")
         return
 
     # Incorrect: reset to 1, clear last user so anyone can restart, and explain why
