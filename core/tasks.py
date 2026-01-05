@@ -6,6 +6,7 @@ import datetime as dt
 import asyncio
 from database import db
 from collections import defaultdict
+from .counting import clear_counting_penalty_if_expired
 
 
 # ============================================================================
