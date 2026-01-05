@@ -1352,6 +1352,16 @@ async def counting_penalty_check(bot):
                         except Exception as e:
                             print(f"[COUNTING] Failed to remove expired penalty role during reconcile: {e}")
                         db.clear_counting_penalty(guild.id, member.id)
+                # Full guild sweep: if any member has the penalty role but no DB record (missed cache), remove it.
+                for member in guild.members:
+                    if role not in member.roles:
+                        continue
+                    if not db.get_counting_penalty(guild.id, member.id):
+                        try:
+                            await member.remove_roles(role, reason="Counting penalty stale; no DB record (full sweep)")
+                            print(f"[COUNTING] Removed stale penalty role from {member} via full sweep")
+                        except Exception as e:
+                            print(f"[COUNTING] Failed to remove stale penalty role during full sweep: {e}")
 
         except Exception as e:
             print(f"Error in counting penalty check: {e}")
