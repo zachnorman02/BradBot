@@ -1319,6 +1319,39 @@ async def counting_penalty_check(bot):
 
                 await clear_counting_penalty_if_expired(guild, member, expiry=entry.get("expires_at"))
 
+            # Extra reconciliation: ensure anyone still holding the penalty role is removed if their record is missing/expired.
+            for guild in bot.guilds:
+                config = db.get_counting_config(guild.id)
+                if not config or not config.get("idiot_role_id"):
+                    continue
+                role = guild.get_role(config["idiot_role_id"])
+                if not role:
+                    continue
+                for member in list(role.members):
+                    expiry = db.get_counting_penalty(guild.id, member.id)
+                    if not expiry:
+                        # No DB record; remove role to avoid stale assignment
+                        try:
+                            await member.remove_roles(role, reason="Counting penalty stale; no DB record")
+                        except Exception as e:
+                            print(f"[COUNTING] Failed to remove stale penalty role from {member}: {e}")
+                        continue
+                    if isinstance(expiry, str):
+                        try:
+                            expiry_dt = dt.datetime.fromisoformat(expiry)
+                        except Exception:
+                            continue
+                    else:
+                        expiry_dt = expiry
+                    if expiry_dt.tzinfo is None:
+                        expiry_dt = expiry_dt.replace(tzinfo=dt.timezone.utc)
+                    if expiry_dt <= now:
+                        try:
+                            await member.remove_roles(role, reason="Counting penalty expired (reconcile)")
+                        except Exception as e:
+                            print(f"[COUNTING] Failed to remove expired penalty role during reconcile: {e}")
+                        db.clear_counting_penalty(guild.id, member.id)
+
         except Exception as e:
             print(f"Error in counting penalty check: {e}")
 
