@@ -340,6 +340,7 @@ async def handle_counting_message(message: discord.Message):
     if "\n" in content:
         return
     normalized_content = _normalize_digits(content)
+    normalized_differs = normalized_content != content
     if not _is_expression_safe(normalized_content):
         return
 
@@ -359,8 +360,8 @@ async def handle_counting_message(message: discord.Message):
             await message.add_reaction("✅")
         except Exception:
             pass
-        # If user used non-ASCII digits, echo the interpreted number for clarity
-        if _contains_non_ascii_digits(content):
+        # If user used non-ASCII digits or normalized content (e.g., Roman/CJK), echo the interpreted number
+        if _contains_non_ascii_digits(content) or normalized_differs:
             try:
                 await message.channel.send(
                     f"Number just sent: **{value}**."
