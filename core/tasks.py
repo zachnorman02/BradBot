@@ -434,7 +434,7 @@ async def _restore_or_create_booster_role(member: discord.Member) -> bool:
 
 
 async def handle_booster_stopped(member: discord.Member):
-    """Handle when a member stops boosting - save and delete their role"""
+    """Handle when a member stops boosting - save their role without deleting it."""
     try:
         # Find custom roles (only one member, not @everyone)
         personal_roles = _find_personal_roles(member)
@@ -444,14 +444,7 @@ async def handle_booster_stopped(member: discord.Member):
             for role in personal_roles:
                 # Save role configuration
                 if await _save_booster_role(member, role):
-                    print(f"💾 Saved booster role configuration for {member.display_name}")
-                    
-                    # Delete the role
-                    try:
-                        await role.delete(reason=f"{member.display_name} stopped boosting - role saved to database")
-                        print(f"🗑️ Deleted booster role '{role.name}' from {member.display_name}")
-                    except Exception as e:
-                        print(f"Error deleting role for {member.display_name}: {e}")
+                    print(f"💾 Saved booster role configuration for {member.display_name} (role retained)")
     except Exception as e:
         print(f"Error processing booster status loss for {member.display_name}: {e}")
 
@@ -1280,18 +1273,22 @@ async def counting_penalty_check(bot):
             now = dt.datetime.now(dt.timezone.utc)
             # Use DB-side filter first, then fall back to in-Python check to catch any tz/format edge cases.
             expired = db.get_expired_counting_penalties(now) or []
+            if expired:
+                print(f"[COUNTING] Found {len(expired)} expired penalties via DB filter at {now.isoformat()}")
             if not expired:
                 # Fallback: check all penalties in Python for robustness
                 all_penalties = db.get_all_counting_penalties()
                 for entry in all_penalties:
                     expiry_val = entry.get("expires_at")
                     if not expiry_val:
+                        print(f"[COUNTING] Skipping entry with no expiry: {entry}")
                         continue
                     # Normalize expiry to aware UTC
                     if isinstance(expiry_val, str):
                         try:
                             expiry_val_dt = dt.datetime.fromisoformat(expiry_val)
-                        except Exception:
+                        except Exception as parse_err:
+                            print(f"[COUNTING] Failed to parse expiry '{expiry_val}' for {entry}: {parse_err}")
                             continue
                     else:
                         expiry_val_dt = expiry_val
@@ -1305,6 +1302,7 @@ async def counting_penalty_check(bot):
             for entry in expired:
                 guild = bot.get_guild(entry["guild_id"])
                 if not guild:
+                    print(f"[COUNTING] Guild {entry['guild_id']} not found; clearing penalty for user {entry['user_id']}")
                     db.clear_counting_penalty(entry["guild_id"], entry["user_id"])
                     continue
 
@@ -1312,9 +1310,11 @@ async def counting_penalty_check(bot):
                 if not member:
                     try:
                         member = await guild.fetch_member(entry["user_id"])
-                    except Exception:
+                    except Exception as fetch_err:
+                        print(f"[COUNTING] Failed to fetch member {entry['user_id']} in guild {guild.id}: {fetch_err}")
                         member = None
                 if not member:
+                    print(f"[COUNTING] Member {entry['user_id']} not found in guild {guild.id}; clearing penalty")
                     db.clear_counting_penalty(entry["guild_id"], entry["user_id"])
                     continue
 
@@ -1334,13 +1334,15 @@ async def counting_penalty_check(bot):
                         # No DB record; remove role to avoid stale assignment
                         try:
                             await member.remove_roles(role, reason="Counting penalty stale; no DB record")
+                            print(f"[COUNTING] Removed stale penalty role from {member} in guild {guild.id} (no DB record)")
                         except Exception as e:
                             print(f"[COUNTING] Failed to remove stale penalty role from {member}: {e}")
                         continue
                     if isinstance(expiry, str):
                         try:
                             expiry_dt = dt.datetime.fromisoformat(expiry)
-                        except Exception:
+                        except Exception as parse_err:
+                            print(f"[COUNTING] Could not parse expiry '{expiry}' for {member}: {parse_err}")
                             continue
                     else:
                         expiry_dt = expiry
@@ -1349,6 +1351,7 @@ async def counting_penalty_check(bot):
                     if expiry_dt <= now:
                         try:
                             await member.remove_roles(role, reason="Counting penalty expired (reconcile)")
+                            print(f"[COUNTING] Removed expired penalty role from {member} in guild {guild.id}")
                         except Exception as e:
                             print(f"[COUNTING] Failed to remove expired penalty role during reconcile: {e}")
                         db.clear_counting_penalty(guild.id, member.id)
@@ -1359,7 +1362,7 @@ async def counting_penalty_check(bot):
                     if not db.get_counting_penalty(guild.id, member.id):
                         try:
                             await member.remove_roles(role, reason="Counting penalty stale; no DB record (full sweep)")
-                            print(f"[COUNTING] Removed stale penalty role from {member} via full sweep")
+                            print(f"[COUNTING] Removed stale penalty role from {member} in guild {guild.id} via full sweep")
                         except Exception as e:
                             print(f"[COUNTING] Failed to remove stale penalty role during full sweep: {e}")
 

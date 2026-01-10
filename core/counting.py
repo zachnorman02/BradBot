@@ -97,22 +97,126 @@ def _normalize_digits(expr: str) -> str:
     """Convert any Unicode digit to its ASCII equivalent; leave other chars untouched."""
     # Add explicit mappings for numeral scripts that unicodedata.digit may not cover
     extra_map = {
-        # Chinese/Japanese numerals
+        # Chinese/Japanese numerals (single digits)
         "零": "0", "〇": "0",
         "一": "1", "二": "2", "三": "3", "四": "4", "五": "5",
         "六": "6", "七": "7", "八": "8", "九": "9", "十": "10",
+        "两": "2",
     }
+    chinese_digits = set(extra_map.keys()) | {"百", "千"}
+    roman_chars = set("IVXLCDMivxlcdm")
+
+    def _roman_to_int(seq: str) -> str:
+        """Convert a Roman numeral string to int; return original string on failure."""
+        values = {
+            'I': 1, 'V': 5, 'X': 10, 'L': 50,
+            'C': 100, 'D': 500, 'M': 1000,
+        }
+        seq_up = seq.upper()
+        total = 0
+        prev = 0
+        repeat = 0
+        last_char = ''
+        for ch in seq_up:
+            if ch not in values:
+                return seq
+            val = values[ch]
+            if val == prev:
+                repeat += 1
+                if repeat > 3:
+                    return seq
+            else:
+                repeat = 1
+            if val > prev and prev != 0:
+                if prev not in (1, 10, 100) or val > prev * 10:
+                    return seq
+                total += val - 2 * prev
+            else:
+                total += val
+            prev = val
+            last_char = ch
+        if total <= 0:
+            return seq
+        return str(total)
+
+    def _convert_cjk_number(seq: str) -> str:
+        """Convert a simple CJK numeral sequence (supports up to thousands)."""
+        digit_map = {
+            "零": 0, "〇": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+            "六": 6, "七": 7, "八": 8, "九": 9, "两": 2,
+        }
+        unit_map = {"十": 10, "百": 100, "千": 1000}
+        total = 0
+        current = 0
+        for ch in seq:
+            if ch in unit_map:
+                unit = unit_map[ch]
+                if current == 0:
+                    current = 1
+                total += current * unit
+                current = 0
+            elif ch in digit_map:
+                current = digit_map[ch]
+            else:
+                # Unknown char; return original seq
+                return seq
+        total += current
+        return str(total)
+
+    def _is_non_roman_alpha(ch: str) -> bool:
+        return ch.isalpha() and ch.upper() not in {'I', 'V', 'X', 'L', 'C', 'D', 'M'}
+
     normalized = []
-    for ch in expr:
+    buffer = ""
+    roman_buffer = ""
+    for idx, ch in enumerate(expr):
+        prev_ch = expr[idx - 1] if idx > 0 else ''
+        next_ch = expr[idx + 1] if idx + 1 < len(expr) else ''
         if ch.isdigit():
+            if buffer:
+                normalized.append(_convert_cjk_number(buffer))
+                buffer = ""
+            if roman_buffer:
+                normalized.append(_roman_to_int(roman_buffer))
+                roman_buffer = ""
+            if buffer:
+                normalized.append(_convert_cjk_number(buffer))
+                buffer = ""
             try:
                 normalized.append(str(unicodedata.digit(ch)))
             except Exception:
                 normalized.append(ch)
-        elif ch in extra_map:
-            normalized.append(extra_map[ch])
+        elif ch in chinese_digits:
+            buffer += ch
+        elif ch in roman_chars:
+            if _is_non_roman_alpha(prev_ch) or _is_non_roman_alpha(next_ch):
+                if buffer:
+                    normalized.append(_convert_cjk_number(buffer))
+                    buffer = ""
+                if roman_buffer:
+                    normalized.append(_roman_to_int(roman_buffer))
+                    roman_buffer = ""
+                normalized.append(ch)
+                continue
+            if buffer:
+                normalized.append(_convert_cjk_number(buffer))
+                buffer = ""
+            roman_buffer += ch
         else:
-            normalized.append(ch)
+            if buffer:
+                normalized.append(_convert_cjk_number(buffer))
+                buffer = ""
+            if roman_buffer:
+                normalized.append(_roman_to_int(roman_buffer))
+                roman_buffer = ""
+            if ch in extra_map:
+                normalized.append(extra_map[ch])
+            else:
+                normalized.append(ch)
+    if buffer:
+        normalized.append(_convert_cjk_number(buffer))
+    if roman_buffer:
+        normalized.append(_roman_to_int(roman_buffer))
     return "".join(normalized)
 
 

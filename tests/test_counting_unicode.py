@@ -18,6 +18,11 @@ from core.counting import _normalize_digits, _evaluate_expression, _is_expressio
         ("೨೩", 23),  # Kannada digits
         ("九", 9),  # CJK numeral
         ("七+三", 10),
+        ("二十五", 25),
+        ("十七", 17),
+        ("IV", 4),  # Roman numerals
+        ("X+V", 15),
+        ("xii", 12),
     ],
 )
 def test_unicode_digits_normalize_and_eval(expr, expected):
