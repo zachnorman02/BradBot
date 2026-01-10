@@ -23,6 +23,8 @@ from core.counting import _normalize_digits, _evaluate_expression, _is_expressio
         ("IV", 4),  # Roman numerals
         ("X+V", 15),
         ("xii", 12),
+        ("一万", 10000),
+        ("一万三千二百", 13200),
     ],
 )
 def test_unicode_digits_normalize_and_eval(expr, expected):

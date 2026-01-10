@@ -103,7 +103,7 @@ def _normalize_digits(expr: str) -> str:
         "六": "6", "七": "7", "八": "8", "九": "9", "十": "10",
         "两": "2",
     }
-    chinese_digits = set(extra_map.keys()) | {"百", "千"}
+    chinese_digits = set(extra_map.keys()) | {"百", "千", "万"}
     roman_chars = set("IVXLCDMivxlcdm")
 
     def _roman_to_int(seq: str) -> str:
@@ -140,27 +140,37 @@ def _normalize_digits(expr: str) -> str:
         return str(total)
 
     def _convert_cjk_number(seq: str) -> str:
-        """Convert a simple CJK numeral sequence (supports up to thousands)."""
+        """Convert a simple CJK numeral sequence (supports up to ten-thousands)."""
         digit_map = {
             "零": 0, "〇": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
             "六": 6, "七": 7, "八": 8, "九": 9, "两": 2,
         }
-        unit_map = {"十": 10, "百": 100, "千": 1000}
-        total = 0
-        current = 0
+        unit_small = {"十": 10, "百": 100, "千": 1000}
+        total = 0  # Accumulates values beyond ten-thousands
+        section = 0  # Accumulates values below the current large unit
+        number = 0  # Current digit value
+
         for ch in seq:
-            if ch in unit_map:
-                unit = unit_map[ch]
-                if current == 0:
-                    current = 1
-                total += current * unit
-                current = 0
-            elif ch in digit_map:
-                current = digit_map[ch]
+            if ch in digit_map:
+                number = digit_map[ch]
+            elif ch in unit_small:
+                unit = unit_small[ch]
+                if number == 0:
+                    number = 1
+                section += number * unit
+                number = 0
+            elif ch == "万":
+                multiplier = 10_000
+                if number == 0 and section == 0:
+                    total += multiplier
+                else:
+                    total += (section + number) * multiplier
+                section = 0
+                number = 0
             else:
                 # Unknown char; return original seq
                 return seq
-        total += current
+        total += section + number
         return str(total)
 
     def _is_non_roman_alpha(ch: str) -> bool:
@@ -280,11 +290,12 @@ async def clear_counting_penalty_if_expired(guild: discord.Guild, member: discor
     return True
 
 
-async def _send_failure_message(message: discord.Message, reason: str):
+async def _send_failure_message(message: discord.Message, reason: str, arabic_value: Optional[int] = None):
     """Post a persistent failure reason in the channel."""
+    details = reason if arabic_value is None else f"{reason} (interpreted as **{arabic_value}**)"
     try:
         await message.channel.send(
-            f"{message.author.mention} broke the count: {reason}. Counter reset to **1**. Start over at 1!"
+            f"{message.author.mention} broke the count: {details}. Counter reset to **1**. Start over at 1!"
         )
     except Exception as e:
         print(f"[COUNTING] Failed to send failure message: {e}")
@@ -377,5 +388,8 @@ async def handle_counting_message(message: discord.Message):
         pass
     db.update_counting_state(message.guild.id, 1, None)
     await _apply_penalty(message, config)
+    arabic_value = None
+    if value is not None and (_contains_non_ascii_digits(content) or normalized_differs):
+        arabic_value = value
     reason = "; ".join(errors) if errors else "wrong number"
-    await _send_failure_message(message, reason)
+    await _send_failure_message(message, reason, arabic_value)
