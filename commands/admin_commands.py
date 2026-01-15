@@ -118,9 +118,21 @@ class AdminToolsGroup(app_commands.Group):
 
             deferral_text = ", ".join(deferral_mentions) if deferral_mentions else "None"
 
+            # How many users are currently marked eligible/deferred for this role
+            eligible_count = 0
+            try:
+                eligible_count = len(db.get_conditional_role_eligible_users(guild.id, config['role_id']))
+            except Exception:
+                eligible_count = 0
+
             embed.add_field(
                 name=f"🔒 {config.get('role_name', 'Unknown')}",
-                value=f"**Role:** {role_mention}\n**Blocking Roles:** {blocking_text}\n**Deferral Roles:** {deferral_text}",
+                value=(
+                    f"**Role:** {role_mention}\n"
+                    f"**Blocking Roles:** {blocking_text}\n"
+                    f"**Deferral Roles:** {deferral_text}\n"
+                    f"**Queued/Eligible:** {eligible_count}"
+                ),
                 inline=False
             )
         return embed
