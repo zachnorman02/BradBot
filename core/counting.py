@@ -176,6 +176,16 @@ def _normalize_digits(expr: str) -> str:
     def _is_non_roman_alpha(ch: str) -> bool:
         return ch.isalpha() and ch.upper() not in {'I', 'V', 'X', 'L', 'C', 'D', 'M'}
 
+    def _flush_buffers():
+        """Helper to flush both buffers to normalized list."""
+        nonlocal buffer, roman_buffer
+        if buffer:
+            normalized.append(_convert_cjk_number(buffer))
+            buffer = ""
+        if roman_buffer:
+            normalized.append(_roman_to_int(roman_buffer))
+            roman_buffer = ""
+
     normalized = []
     buffer = ""
     roman_buffer = ""
@@ -183,15 +193,7 @@ def _normalize_digits(expr: str) -> str:
         prev_ch = expr[idx - 1] if idx > 0 else ''
         next_ch = expr[idx + 1] if idx + 1 < len(expr) else ''
         if ch.isdigit():
-            if buffer:
-                normalized.append(_convert_cjk_number(buffer))
-                buffer = ""
-            if roman_buffer:
-                normalized.append(_roman_to_int(roman_buffer))
-                roman_buffer = ""
-            if buffer:
-                normalized.append(_convert_cjk_number(buffer))
-                buffer = ""
+            _flush_buffers()
             try:
                 normalized.append(str(unicodedata.digit(ch)))
             except Exception:
@@ -200,12 +202,7 @@ def _normalize_digits(expr: str) -> str:
             buffer += ch
         elif ch in roman_chars:
             if _is_non_roman_alpha(prev_ch) or _is_non_roman_alpha(next_ch):
-                if buffer:
-                    normalized.append(_convert_cjk_number(buffer))
-                    buffer = ""
-                if roman_buffer:
-                    normalized.append(_roman_to_int(roman_buffer))
-                    roman_buffer = ""
+                _flush_buffers()
                 normalized.append(ch)
                 continue
             if buffer:
@@ -213,20 +210,12 @@ def _normalize_digits(expr: str) -> str:
                 buffer = ""
             roman_buffer += ch
         else:
-            if buffer:
-                normalized.append(_convert_cjk_number(buffer))
-                buffer = ""
-            if roman_buffer:
-                normalized.append(_roman_to_int(roman_buffer))
-                roman_buffer = ""
+            _flush_buffers()
             if ch in extra_map:
                 normalized.append(extra_map[ch])
             else:
                 normalized.append(ch)
-    if buffer:
-        normalized.append(_convert_cjk_number(buffer))
-    if roman_buffer:
-        normalized.append(_roman_to_int(roman_buffer))
+    _flush_buffers()
     return "".join(normalized)
 
 
@@ -252,7 +241,7 @@ async def _apply_penalty(message: discord.Message, config: dict):
     if role not in message.author.roles:
         try:
             await message.author.add_roles(role, reason="Counting bot penalty (incorrect count)")
-        except Exception as e:
+        except (discord.Forbidden, discord.HTTPException) as e:
             print(f"[COUNTING] Failed to add penalty role: {e}")
 
 
@@ -284,7 +273,7 @@ async def clear_counting_penalty_if_expired(guild: discord.Guild, member: discor
         if role and role in member.roles:
             try:
                 await member.remove_roles(role, reason="Counting penalty expired")
-            except Exception as e:
+            except (discord.Forbidden, discord.HTTPException) as e:
                 print(f"[COUNTING] Failed to remove expired penalty role: {e}")
     db.clear_counting_penalty(guild.id, member.id)
     return True
@@ -297,7 +286,7 @@ async def _send_failure_message(message: discord.Message, reason: str, arabic_va
         await message.channel.send(
             f"{message.author.mention} broke the count: {details}. Counter reset to **1**. Start over at 1!"
         )
-    except Exception as e:
+    except (discord.Forbidden, discord.HTTPException) as e:
         print(f"[COUNTING] Failed to send failure message: {e}")
 
 
@@ -321,9 +310,9 @@ async def handle_counting_message(message: discord.Message):
                 if not db.get_counting_penalty(message.guild.id, message.author.id):
                     try:
                         await message.author.remove_roles(role, reason="Counting penalty stale (no DB record)")
-                    except Exception as e:
+                    except (discord.Forbidden, discord.HTTPException) as e:
                         print(f"[COUNTING] Failed to remove stale penalty role in on_message: {e}")
-    except Exception:
+    except (discord.Forbidden, discord.HTTPException):
         pass
 
     if message.channel.id != config["channel_id"]:
@@ -369,7 +358,7 @@ async def handle_counting_message(message: discord.Message):
         db.update_counting_state(message.guild.id, expected + 1, message.author.id)
         try:
             await message.add_reaction("✅")
-        except Exception:
+        except (discord.Forbidden, discord.HTTPException, discord.NotFound):
             pass
         # If user used non-ASCII digits or normalized content (e.g., Roman/CJK), echo the interpreted number
         if _contains_non_ascii_digits(content) or normalized_differs:
@@ -377,14 +366,14 @@ async def handle_counting_message(message: discord.Message):
                 await message.channel.send(
                     f"Number just sent: **{value}**."
                 )
-            except Exception as e:
+            except (discord.Forbidden, discord.HTTPException) as e:
                 print(f"[COUNTING] Failed to send normalization info: {e}")
         return
 
     # Incorrect: reset to 1, clear last user so anyone can restart, and explain why
     try:
         await message.add_reaction("❌")
-    except Exception:
+    except (discord.Forbidden, discord.HTTPException, discord.NotFound):
         pass
     db.update_counting_state(message.guild.id, 1, None)
     await _apply_penalty(message, config)

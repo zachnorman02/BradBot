@@ -29,10 +29,8 @@ from commands import (
     echo_command
 )
 
-# Import poll views
-from commands.poll_commands import PollView
-from commands.admin_commands import AdminSettingsView, CommandToggleView
-from commands.issues_commands import IssuePanelView
+# Import views
+from commands.views import PollView, AdminSettingsView, CommandToggleView, IssuePanelView
 
 # Import core functionality
 from core import (
@@ -126,7 +124,7 @@ async def on_member_join(member: discord.Member):
                 print(f"Auto-kicked {member} ({member.id}) from {guild.name} - single server member")
         except discord.Forbidden:
             print(f"Failed to kick/ban {member} - insufficient permissions")
-        except Exception as e:
+        except (discord.HTTPException, discord.NotFound) as e:
             print(f"Error auto-kicking/banning {member}: {e}")
 
 @bot.event
@@ -137,7 +135,7 @@ async def on_ready():
     try:
         db.init_pool()
         # Test the connection with a simple query
-        result = db.execute_query("SELECT 1")
+        db.execute_query("SELECT 1")
         print(f"✅ Database connected successfully")
         
         # Initialize all database tables
@@ -217,7 +215,7 @@ async def on_ready():
             except discord.NotFound:
                 db.delete_persistent_panel(panel['message_id'])
                 continue
-            except Exception as fetch_error:
+            except (discord.Forbidden, discord.HTTPException) as fetch_error:
                 print(f"⚠️  Could not verify panel message {panel['message_id']}: {fetch_error}")
                 continue
 
@@ -319,8 +317,8 @@ async def on_message(message):
 async def on_message_edit(before: discord.Message, after: discord.Message):
     """Handle message edits for mirrored messages"""
     try:
-        print(f"[DEBUG] on_message_edit event: before_id={getattr(before, 'id', None)} after_id={getattr(after, 'id', None)} author_id={getattr(after.author, 'id', None)} guild_id={getattr(after.guild, 'id', None)} channel_id={getattr(after.channel, 'id', None)}")
-    except Exception:
+        print(f"[DEBUG] on_message_edit event: before_id={before.id} after_id={after.id} author_id={after.author.id} guild_id={getattr(after.guild, 'id', None)} channel_id={after.channel.id}")
+    except AttributeError:
         # Defensive logging - ensure we never crash event handling
         print("[DEBUG] on_message_edit event fired (could not introspect message objects)")
 
@@ -353,7 +351,7 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
 
         try:
             after = await channel.fetch_message(payload.message_id)
-        except Exception as e:
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
             print(f"[DEBUG] Failed to fetch edited message {payload.message_id}: {e}")
             return
 

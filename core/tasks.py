@@ -791,6 +791,12 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
                 
                 if not deferral_role_ids:
                     continue  # No deferral configured, skip
+
+                # If the conditional role itself was removed manually, treat it as intentional and
+                # clear eligibility so it doesn't pop back on immediately.
+                if conditional_role_id in removed_role_ids:
+                    db.unmark_conditional_role_eligible(after.guild.id, after.id, conditional_role_id)
+                    continue
                 
                 # Check if user is marked as eligible for this conditional role
                 eligibility = db.get_conditional_role_eligibility(
