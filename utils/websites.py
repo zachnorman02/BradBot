@@ -186,6 +186,26 @@ class RedditLink(SimpleWebsiteLink):
         r"https?://(?:www\.)?(reddit\.com|redditmedia\.com)/([\w-]+)"
     ]
     replacement = "vxreddit.com"
+    
+    async def render(self) -> Optional[str]:
+        """Process Reddit URL - only replace domain for post links, not subreddit links."""
+        if not self.is_valid():
+            return None
+        
+        # Check if this is a subreddit link (reddit.com/r/subreddit_name)
+        # We want to keep reddit.com for these, just remove tracking params
+        subreddit_match = re.match(
+            r'https?://(?:www\.)?(reddit\.com)/r/([\w-]+)/?(?:\?.*)?$',
+            self.url,
+            re.IGNORECASE
+        )
+        
+        if subreddit_match:
+            # It's a subreddit link - keep reddit.com domain, just clean params
+            return self._clean_tracking_params(self.url)
+        
+        # For post links, use the parent class behavior (replace with vxreddit.com)
+        return await super().render()
 
 
 class YouTubeLink(SimpleWebsiteLink):
@@ -394,6 +414,61 @@ class Rule34Link(SimpleWebsiteLink):
     def _clean_tracking_params(self, url: str) -> str:
         return url
 
+
+class AmazonLink(SimpleWebsiteLink):
+    """Amazon link handler - removes tracking parameters."""
+    name = "Amazon"
+    routes = [
+        r'https?://(?:www\.)?(amazon\.com|amazon\.ca|amazon\.co\.uk|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.co\.jp|amazon\.in|amazon\.com\.br|amazon\.com\.mx|amazon\.com\.au)/.*'
+    ]
+    replacement = "amazon.com"  # Keep original domain
+    
+    async def render(self) -> Optional[str]:
+        """Remove tracking parameters from Amazon URLs, keeping only essential ones."""
+        if not self.is_valid():
+            return None
+        
+        # Keep the original domain (don't replace it)
+        url = self.url
+        
+        # Clean tracking parameters
+        return self._clean_tracking_params(url)
+    
+    def _clean_tracking_params(self, url: str) -> str:
+        """
+        Remove tracking parameters from Amazon URLs.
+        Keeps only essential parameters like ASIN/dp (product ID).
+        """
+        # Match Amazon product URL patterns
+        # Pattern 1: /dp/ASIN or /gp/product/ASIN
+        product_match = re.match(
+            r'(https?://(?:www\.)?amazon\.[a-z.]+)/(?:dp|gp/product)/([A-Z0-9]{10})',
+            url,
+            re.IGNORECASE
+        )
+        if product_match:
+            domain = product_match.group(1)
+            asin = product_match.group(2)
+            return f"{domain}/dp/{asin}"
+        
+        # Pattern 2: /exec/obidos/ASIN/ASIN
+        obidos_match = re.match(
+            r'(https?://(?:www\.)?amazon\.[a-z.]+)/exec/obidos/ASIN/([A-Z0-9]{10})',
+            url,
+            re.IGNORECASE
+        )
+        if obidos_match:
+            domain = obidos_match.group(1)
+            asin = obidos_match.group(2)
+            return f"{domain}/dp/{asin}"
+        
+        # For other Amazon URLs (search results, categories, etc.), 
+        # remove all query parameters as they're typically tracking
+        if '?' in url:
+            return url.split('?', 1)[0]
+        
+        return url
+
 websites = [
     TwitterLink,
     InstagramLink,
@@ -417,7 +492,8 @@ websites = [
     FurAffinityLink,
     ImgurLink,
     WeiboLink,
-    Rule34Link
+    Rule34Link,
+    AmazonLink
 ]
 
 
