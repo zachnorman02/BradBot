@@ -8,6 +8,7 @@ from discord import ui
 import datetime as dt
 import re
 from typing import Optional
+from commands.booster_commands import restore_member_booster_role
 from database import db
 from commands.views import (
     AdminSettingsView,
@@ -2187,6 +2188,72 @@ class AdminMaintenanceGroup(app_commands.Group):
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to set temporary role: {e}", ephemeral=True)
 
+    @app_commands.command(name="restore_booster_roles", description="Restore all saved booster roles (icons/colors) for boosters in this server")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        role="Optional: apply saved data onto this role instead of creating/reusing personal roles"
+    )
+    async def restore_booster_roles(self, interaction: discord.Interaction, role: discord.Role = None):
+        """Admin tool: restore booster roles for all boosters with saved data."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            if role:
+                bot_member = interaction.guild.me
+                if bot_member.top_role <= role:
+                    await interaction.followup.send("❌ I can't manage the provided role; it's above my highest role.", ephemeral=True)
+                    return
+            if not db.connection_pool:
+                db.init_pool()
+            saved = db.get_all_booster_roles(interaction.guild.id)
+            if not saved:
+                await interaction.followup.send("ℹ️ No saved booster roles found for this server.", ephemeral=True)
+                return
+
+            restored = 0
+            skipped = 0
+            missing = 0
+            errors = []
+
+            for entry in saved:
+                member = interaction.guild.get_member(entry["user_id"])
+                if not member:
+                    try:
+                        member = await interaction.guild.fetch_member(entry["user_id"])
+                    except Exception:
+                        member = None
+                if not member:
+                    missing += 1
+                    continue
+                if not any(r.is_premium_subscriber() for r in member.roles):
+                    skipped += 1
+                    continue
+
+                role = await restore_member_booster_role(
+                    interaction.guild,
+                    member,
+                    entry,
+                    reason="Admin restore booster roles",
+                    target_role=role
+                )
+                if role:
+                    restored += 1
+                else:
+                    errors.append(f"{member.display_name}")
+
+            summary = [
+                f"✅ Restored {restored} booster role(s).",
+                f"⏭️ Skipped {skipped} (not currently boosters)." if skipped else "",
+                f"❔ Missing {missing} user(s)." if missing else "",
+                f"⚠️ Errors on: {', '.join(errors[:5])}" if errors else ""
+            ]
+            await interaction.followup.send("\n".join([s for s in summary if s]), ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error restoring booster roles: {e}", ephemeral=True)
 
 
 class AdminGroup(app_commands.Group):

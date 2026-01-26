@@ -14,14 +14,24 @@ from typing import Optional
 
 
 async def _ensure_role_position(role: discord.Role, bot_member: discord.Member) -> None:
-    """Place personal booster roles just above the server booster role (or under bot if needed)."""
+    """Place personal booster roles just under the counting penalty role if present, else above booster role, while staying under the bot."""
     guild = role.guild
-    booster_role = guild.premium_subscriber_role
-
-    # Target: one slot above the server booster role when possible.
     target = None
-    if booster_role and booster_role.position is not None:
-        target = booster_role.position + 1
+
+    try:
+        # Prefer just below the counting penalty role if configured
+        config = db.get_counting_config(guild.id)
+        if config and config.get("idiot_role_id"):
+            idiot_role = guild.get_role(config["idiot_role_id"])
+            if idiot_role and idiot_role.position is not None:
+                target = max(1, idiot_role.position - 1)
+    except Exception as e:
+        print(f"[BOOSTER ROLE] Could not read counting config: {e}")
+
+    if target is None:
+        booster_role = guild.premium_subscriber_role
+        if booster_role and booster_role.position is not None:
+            target = booster_role.position + 1
 
     # Never place above the bot's highest role (or equal), or Discord will reject edits.
     bot_top = bot_member.top_role.position if bot_member and bot_member.top_role else None
@@ -116,6 +126,81 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
             except Exception as e:
                 print(f"[BOOSTER ROLE] Could not restore icon onto existing role: {e}")
     
+    return personal_role
+
+
+async def restore_member_booster_role(
+    guild: discord.Guild,
+    member: discord.Member,
+    db_role_data: dict,
+    reason: str = "Restore booster role",
+    target_role: Optional[discord.Role] = None,
+):
+    """Restore or recreate a member's booster role using saved DB data. If target_role is provided, apply to that role."""
+    bot_member = guild.me
+
+    if target_role:
+        personal_role = target_role
+    else:
+        personal_roles = [
+            role for role in member.roles
+            if not role.is_default()
+            and len(role.members) == 1
+        ]
+        personal_role = max(personal_roles, key=lambda r: r.position) if personal_roles else None
+
+    try:
+        primary_color = discord.Color(int(db_role_data['color_hex'].replace('#', ''), 16))
+        secondary_color = discord.Color(int(db_role_data['secondary_color_hex'].replace('#', ''), 16)) if db_role_data.get('secondary_color_hex') else None
+        tertiary_color = discord.Color(int(db_role_data['tertiary_color_hex'].replace('#', ''), 16)) if db_role_data.get('tertiary_color_hex') else None
+    except Exception as e:
+        print(f"[BOOSTER ROLE] Invalid color data in DB for user {member.id}: {e}")
+        primary_color = discord.Color.default()
+        secondary_color = None
+        tertiary_color = None
+
+    if not personal_role:
+        try:
+            personal_role = await guild.create_role(
+                name=db_role_data.get('role_name') or f"{member.display_name}'s Role",
+                color=primary_color,
+                secondary_color=secondary_color,
+                tertiary_color=tertiary_color,
+                reason=reason
+            )
+            await _ensure_role_position(personal_role, bot_member)
+            await member.add_roles(personal_role, reason=reason)
+            db.update_booster_role_id(member.id, guild.id, personal_role.id)
+        except Exception as e:
+            print(f"[BOOSTER ROLE] Failed to create role for {member}: {e}")
+            return None
+    else:
+        # Ensure role has correct colors and position
+        try:
+            await personal_role.edit(
+                color=primary_color,
+                secondary_color=secondary_color,
+                tertiary_color=tertiary_color,
+                reason=reason
+            )
+        except Exception as e:
+            print(f"[BOOSTER ROLE] Could not edit colors for {personal_role}: {e}")
+
+        await _ensure_role_position(personal_role, bot_member)
+        # Make sure the member has this role
+        if personal_role not in member.roles:
+            try:
+                await member.add_roles(personal_role, reason=reason)
+            except Exception as e:
+                print(f"[BOOSTER ROLE] Could not assign provided role to {member}: {e}")
+
+    # Restore icon if saved and supported
+    if db_role_data.get("icon_data") and "ROLE_ICONS" in guild.features:
+        try:
+            await personal_role.edit(display_icon=db_role_data["icon_data"])
+        except Exception as e:
+            print(f"[BOOSTER ROLE] Could not restore icon for {personal_role}: {e}")
+
     return personal_role
 
 
