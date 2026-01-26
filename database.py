@@ -2180,7 +2180,7 @@ class Database:
         """
         
         import json
-        self.execute_update(query, (guild_id, json.dumps(message_data)))
+        self.execute_query(query, (guild_id, json.dumps(message_data)), fetch=False)
     
     def get_rules_agreement_messages(self, guild_id: int) -> list:
         """Get the rules agreement messages for a guild"""
@@ -2205,7 +2205,7 @@ class Database:
         WHERE guild_id = %s
         """
         
-        self.execute_update(query, (guild_id,))
+        self.execute_query(query, (guild_id,), fetch=False)
 
 # Global database instance
 db = Database()
