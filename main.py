@@ -41,6 +41,7 @@ from commands import (
     echo_command,
     timestamp_command
 )
+from commands.reaction_commands import setup_reaction_commands
 from commands.views import AdminSettingsView, CommandToggleView, IssuePanelView, PollView
 
 # Local imports - Core functionality
@@ -99,6 +100,9 @@ bot.tree.add_command(SettingsGroup())
 bot.tree.add_command(StarboardGroup())
 bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
 bot.tree.add_command(VoiceGroup())
+
+# Setup reaction and rules agreement commands
+setup_reaction_commands(bot.tree)
 
 
 # ============================================================================

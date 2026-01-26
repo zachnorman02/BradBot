@@ -2696,6 +2696,70 @@ class Database:
                 for row in results
             ]
         return []
+    
+    def _ensure_rules_agreement_table(self):
+        """Ensure the rules_agreement table exists"""
+        if hasattr(self, '_rules_agreement_table_initialized') and self._rules_agreement_table_initialized:
+            return
+        
+        query = """
+        CREATE TABLE IF NOT EXISTS main.rules_agreement (
+            guild_id BIGINT PRIMARY KEY,
+            message_data JSONB NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        self.execute_update(query)
+        self._rules_agreement_table_initialized = True
+    
+    def set_rules_agreement_messages(self, guild_id: int, message_data: list):
+        """
+        Store rules agreement message tracking for a guild
+        message_data should be a list of dicts with channel_id, message_id, jump_url
+        """
+        self._ensure_rules_agreement_table()
+        
+        query = """
+        INSERT INTO main.rules_agreement (guild_id, message_data, updated_at)
+        VALUES (%s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET
+            message_data = EXCLUDED.message_data,
+            updated_at = CURRENT_TIMESTAMP
+        """
+        
+        import json
+        self.execute_update(query, (guild_id, json.dumps(message_data)))
+    
+    def get_rules_agreement_messages(self, guild_id: int) -> list:
+        """Get the rules agreement messages for a guild"""
+        self._ensure_rules_agreement_table()
+        
+        query = """
+        SELECT message_data
+        FROM main.rules_agreement
+        WHERE guild_id = %s
+        """
+        
+        results = self.execute_query(query, (guild_id,))
+        
+        if results and results[0][0]:
+            import json
+            return json.loads(results[0][0]) if isinstance(results[0][0], str) else results[0][0]
+        
+        return []
+    
+    def clear_rules_agreement_messages(self, guild_id: int):
+        """Clear rules agreement tracking for a guild"""
+        self._ensure_rules_agreement_table()
+        
+        query = """
+        DELETE FROM main.rules_agreement
+        WHERE guild_id = %s
+        """
+        
+        self.execute_update(query, (guild_id,))
 
 # Global database instance
 db = Database()
