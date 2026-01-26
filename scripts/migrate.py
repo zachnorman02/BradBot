@@ -880,7 +880,7 @@ class Migration027(Migration):
         db.execute_query("""
             CREATE TABLE IF NOT EXISTS main.rules_agreement (
                 guild_id BIGINT PRIMARY KEY,
-                message_data JSONB NOT NULL,
+                message_data TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
