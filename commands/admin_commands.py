@@ -2191,9 +2191,10 @@ class AdminMaintenanceGroup(app_commands.Group):
     @app_commands.command(name="restore_booster_roles", description="Restore all saved booster roles (icons/colors) for boosters in this server")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
-        role="Optional: apply saved data onto this role instead of creating/reusing personal roles"
+        role="Optional: filter to saved entries for this role",
+        user="Optional: restore only this user"
     )
-    async def restore_booster_roles(self, interaction: discord.Interaction, role: discord.Role = None):
+    async def restore_booster_roles(self, interaction: discord.Interaction, role: discord.Role = None, user: discord.Member = None):
         """Admin tool: restore booster roles for all boosters with saved data."""
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
@@ -2212,6 +2213,16 @@ class AdminMaintenanceGroup(app_commands.Group):
             saved = db.get_all_booster_roles(interaction.guild.id)
             if not saved:
                 await interaction.followup.send("ℹ️ No saved booster roles found for this server.", ephemeral=True)
+                return
+
+            # Apply filters if provided
+            if user:
+                saved = [s for s in saved if s["user_id"] == user.id]
+            elif role:
+                saved = [s for s in saved if s["role_id"] == role.id]
+
+            if not saved:
+                await interaction.followup.send("ℹ️ No matching saved booster entries for the given filters.", ephemeral=True)
                 return
 
             restored = 0
@@ -2233,14 +2244,14 @@ class AdminMaintenanceGroup(app_commands.Group):
                     skipped += 1
                     continue
 
-                role = await restore_member_booster_role(
+                role_obj = await restore_member_booster_role(
                     interaction.guild,
                     member,
                     entry,
                     reason="Admin restore booster roles",
-                    target_role=role
+                    target_role=None  # apply to their personal role; role arg is only used as a filter
                 )
-                if role:
+                if role_obj:
                     restored += 1
                 else:
                     errors.append(f"{member.display_name}")
@@ -2254,6 +2265,53 @@ class AdminMaintenanceGroup(app_commands.Group):
             await interaction.followup.send("\n".join([s for s in summary if s]), ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ Error restoring booster roles: {e}", ephemeral=True)
+
+    @app_commands.command(name="delete_role", description="Delete a single role (admin only)")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        role="Role mention/ID/name to delete",
+        confirm="Type YES to confirm deletion"
+    )
+    async def delete_role(self, interaction: discord.Interaction, role: str, confirm: str):
+        """Delete exactly one role. Requires explicit YES confirmation."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        if confirm.strip().upper() != "YES":
+            await interaction.response.send_message("❌ You must confirm deletion by typing YES.", ephemeral=True)
+            return
+
+        # Resolve the role
+        role_obj = None
+        part = role.strip()
+        if part.startswith("<@&") and part.endswith(">"):
+            try:
+                role_id = int(part[3:-1])
+                role_obj = interaction.guild.get_role(role_id)
+            except Exception:
+                pass
+        elif part.isdigit():
+            role_obj = interaction.guild.get_role(int(part))
+        else:
+            role_obj = discord.utils.get(interaction.guild.roles, name=part)
+
+        if not role_obj:
+            await interaction.response.send_message("❌ No valid role found to delete.", ephemeral=True)
+            return
+
+        bot_member = interaction.guild.me
+        bot_top_pos = bot_member.top_role.position if bot_member and bot_member.top_role else -1
+        if bot_top_pos <= role_obj.position:
+            await interaction.response.send_message("❌ I can't delete that role; it's above my highest role.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            await role_obj.delete(reason=f"Deleted by {interaction.user}")
+            await interaction.followup.send(f"✅ Deleted role: {role_obj.name}", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"⚠️ Failed to delete role: {e}", ephemeral=True)
 
 
 class AdminGroup(app_commands.Group):
