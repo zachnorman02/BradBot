@@ -2498,7 +2498,6 @@ class AdminGroup(app_commands.Group):
 
         if not db.connection_pool:
             db.init_pool()
-        db.init_counting_tables()
 
         existing = db.get_counting_config(interaction.guild.id)
 

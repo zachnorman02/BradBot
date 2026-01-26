@@ -16,17 +16,9 @@ def _normalize_emoji(value) -> str:
     return str(value)
 
 
-async def ensure_tables():
-    if not getattr(db, "_starboard_tables_initialized", False):
-        if not db.connection_pool:
-            db.init_pool()
-        db.init_starboard_tables()
-
-
 async def handle_raw_reaction(bot: discord.Client, payload: discord.RawReactionActionEvent):
     if payload.guild_id is None or payload.user_id == bot.user.id:
         return
-    await ensure_tables()
     emoji_str = _normalize_emoji(payload.emoji)
     boards = db.get_starboard_boards_by_emoji(payload.guild_id, emoji_str)
     if not boards:

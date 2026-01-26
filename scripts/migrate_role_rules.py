@@ -43,7 +43,6 @@ def main():
         print(f"Found {len(bot.guilds)} guilds\n")
         
         # Initialize tables
-        db.init_conditional_roles_tables()
         
         created_count = 0
         skipped_count = 0
