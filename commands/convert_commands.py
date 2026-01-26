@@ -6,6 +6,8 @@ from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
+import aiohttp
+from typing import Optional
 from dateutil import parser
 
 from utils.conversion_helpers import ConversionType, convert_testosterone
@@ -330,6 +332,69 @@ class ConversionGroup(app_commands.Group):
             await interaction.response.send_message(f"🥤 {value} {from_unit} = {result:.4f} {to_unit}")
         except Exception as e:
             await interaction.response.send_message(f"❌ Liquid conversion failed: {e}", ephemeral=True)
+
+    @app_commands.command(name="currency", description="Convert currencies with live or historical rates")
+    @app_commands.describe(
+        amount="Amount to convert",
+        from_currency="Three-letter code to convert from (e.g., USD)",
+        to_currency="Three-letter code to convert to (e.g., EUR)",
+        date="Optional historical date (YYYY-MM-DD). Default: latest rate"
+    )
+    async def currency(
+        self,
+        interaction: discord.Interaction,
+        amount: float,
+        from_currency: str,
+        to_currency: str,
+        date: Optional[str] = None
+    ):
+        """Fetch rate from exchangerate.host and convert the amount."""
+        from_code = from_currency.upper()
+        to_code = to_currency.upper()
+
+        # Basic validation
+        if len(from_code) != 3 or len(to_code) != 3:
+            await interaction.response.send_message("❌ Currency codes must be 3 letters (e.g., USD, EUR).", ephemeral=True)
+            return
+
+        query_date = "latest"
+        if date:
+            try:
+                parsed_date = dt.datetime.fromisoformat(date).date()
+                query_date = parsed_date.isoformat()
+            except Exception:
+                await interaction.response.send_message("❌ Invalid date format. Use YYYY-MM-DD.", ephemeral=True)
+                return
+
+        await interaction.response.defer(ephemeral=True)
+
+        url = f"https://api.exchangerate.host/{query_date}"
+        params = {"base": from_code, "symbols": to_code}
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params=params) as resp:
+                    if resp.status != 200:
+                        await interaction.followup.send(f"❌ Rate lookup failed (HTTP {resp.status}).", ephemeral=True)
+                        return
+                    data = await resp.json()
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error calling rate API: {e}", ephemeral=True)
+            return
+
+        rate = (data or {}).get("rates", {}).get(to_code)
+        effective_date = (data or {}).get("date") or query_date
+        if rate is None:
+            await interaction.followup.send("❌ Could not find that currency pair.", ephemeral=True)
+            return
+
+        converted = amount * rate
+        await interaction.followup.send(
+            f"💱 {amount:.2f} {from_code} = {converted:.2f} {to_code}\n"
+            f"Rate: {rate:.6f} ({effective_date})",
+            ephemeral=False
+        )
 
     @app_commands.command(name="timezone", description="Convert a date/time between timezones")
     @app_commands.describe(

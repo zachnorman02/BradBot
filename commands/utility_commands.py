@@ -15,6 +15,17 @@ from utils.cookie_helper import fetch_youtube_cookies
 class UtilityGroup(app_commands.Group):
     """Utility commands for reminders and timers"""
     
+    def _parse_message_link(self, link: str) -> tuple[int | None, int | None, int | None]:
+        """Return (guild_id, channel_id, message_id) from a Discord message link."""
+        try:
+            parts = link.strip().split("/")
+            guild_id = int(parts[-3])
+            channel_id = int(parts[-2])
+            message_id = int(parts[-1])
+            return guild_id, channel_id, message_id
+        except Exception:
+            return None, None, None
+    
     @app_commands.command(name="remind", description="Set a reminder for yourself")
     @app_commands.describe(
         time="Duration (5m, 2h, 1d) OR date/time (2025-12-25, Dec 25 3pm, tomorrow 2pm)",
@@ -259,3 +270,81 @@ class UtilityGroup(app_commands.Group):
             return utc_time
         except:
             return None
+
+    @app_commands.command(name="check_reaction", description="Check if a user reacted to a specific message")
+    @app_commands.describe(
+        message_link="Link to the message",
+        user="User to check (default: you)",
+        emoji_filter="Optional: only consider this emoji (e.g., ✅ or :custom:)"
+    )
+    async def check_reaction(
+        self,
+        interaction: discord.Interaction,
+        message_link: str,
+        user: Optional[discord.User] = None,
+        emoji_filter: Optional[str] = None
+    ):
+        """Quickly verify whether a user reacted to a message (optionally with a specific emoji)."""
+        target_user = user or interaction.user
+
+        guild_id, channel_id, message_id = self._parse_message_link(message_link)
+        if not guild_id or guild_id != interaction.guild.id:
+            await interaction.response.send_message("❌ Invalid or out-of-guild message link.", ephemeral=True)
+            return
+
+        channel = interaction.guild.get_channel(channel_id)
+        if not channel or not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            await interaction.response.send_message("❌ Could not find that channel or message.", ephemeral=True)
+            return
+
+        try:
+            message = await channel.fetch_message(message_id)
+        except Exception:
+            await interaction.response.send_message("❌ Could not fetch that message.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        def _normalize_emoji(e):
+            if e is None:
+                return None
+            if isinstance(e, str):
+                return e
+            if hasattr(e, "id") and e.id:
+                prefix = "<a" if getattr(e, "animated", False) else "<"
+                return f"{prefix}:{e.name}:{e.id}>"
+            return str(e)
+
+        normalized_filter = _normalize_emoji(emoji_filter) if emoji_filter else None
+        found = False
+        matched_emoji = None
+
+        try:
+            for reaction in message.reactions:
+                if normalized_filter and _normalize_emoji(reaction.emoji) != normalized_filter:
+                    continue
+                async for reactor in reaction.users(limit=None):
+                    if reactor.id == target_user.id:
+                        found = True
+                        matched_emoji = _normalize_emoji(reaction.emoji)
+                        break
+                if found:
+                    break
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error scanning reactions: {e}", ephemeral=True)
+            return
+
+        if found:
+            await interaction.followup.send(
+                f"✅ {target_user.mention} reacted on that message"
+                + (f" with {matched_emoji}" if matched_emoji else "")
+                + ".",
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                f"❌ No reaction from {target_user.mention} found on that message"
+                + (f" for emoji {normalized_filter}" if normalized_filter else "")
+                + ".",
+                ephemeral=True
+            )

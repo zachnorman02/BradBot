@@ -5,11 +5,42 @@ import discord
 from discord import app_commands
 import aiohttp
 from database import db
+from typing import Optional
 
 
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+
+async def _ensure_role_position(role: discord.Role, bot_member: discord.Member) -> None:
+    """Place personal booster roles just above the server booster role (or under bot if needed)."""
+    guild = role.guild
+    booster_role = guild.premium_subscriber_role
+
+    # Target: one slot above the server booster role when possible.
+    target = None
+    if booster_role and booster_role.position is not None:
+        target = booster_role.position + 1
+
+    # Never place above the bot's highest role (or equal), or Discord will reject edits.
+    bot_top = bot_member.top_role.position if bot_member and bot_member.top_role else None
+    if bot_top is not None:
+        if target is None:
+            target = max(1, bot_top - 1)
+        else:
+            target = min(target, max(1, bot_top - 1))
+
+    # If we couldn't compute a target, bail quietly.
+    if target is None:
+        return
+
+    try:
+        if role.position != target:
+            await role.edit(position=target, reason="Place booster role under bot for management")
+    except Exception as e:
+        print(f"[BOOSTER ROLE] Could not adjust position for {role.name}: {e}")
+
 
 async def get_or_create_booster_role(interaction: discord.Interaction, db_role_data: dict = None):
     """Get existing booster role or create/restore from database"""
@@ -44,6 +75,7 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
                 tertiary_color=tertiary_color,
                 reason="Restoring saved booster role"
             )
+            await _ensure_role_position(personal_role, interaction.guild.me)
             
             # Set icon if it exists
             if db_role_data['icon_data'] and "ROLE_ICONS" in interaction.guild.features:
@@ -69,10 +101,20 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
                 name=f"{interaction.user.display_name}'s Role",
                 reason="Booster role customization"
             )
+            await _ensure_role_position(personal_role, interaction.guild.me)
             await interaction.user.add_roles(personal_role, reason="Booster role customization")
         except Exception as e:
             print(f"Error creating new role: {e}")
             return None
+    else:
+        # Ensure position is still under the bot in case server roles moved
+        await _ensure_role_position(personal_role, interaction.guild.me)
+        # Restore saved icon if the role is missing one but DB has data and guild supports role icons
+        if db_role_data and not personal_role.icon and db_role_data.get("icon_data") and "ROLE_ICONS" in interaction.guild.features:
+            try:
+                await personal_role.edit(display_icon=db_role_data["icon_data"])
+            except Exception as e:
+                print(f"[BOOSTER ROLE] Could not restore icon onto existing role: {e}")
     
     return personal_role
 
@@ -123,6 +165,38 @@ async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role):
 class BoosterRoleGroup(app_commands.Group):
     """Booster role customization commands"""
     
+    @app_commands.command(name="restore", description="Restore your booster role (recreate if missing and reapply saved icon/colors)")
+    async def restore(self, interaction: discord.Interaction):
+        """Force re-fetch/create the personal booster role and reapply saved data (icon/colors)."""
+        if not any(role.is_premium_subscriber() for role in interaction.user.roles):
+            await interaction.response.send_message("❌ This command is only available to server boosters!", ephemeral=True)
+            return
+
+        db_role_data = db.get_booster_role(interaction.user.id, interaction.guild.id)
+        if not db_role_data:
+            await interaction.response.send_message("❌ No saved booster role data found.", ephemeral=True)
+            return
+
+        role = await get_or_create_booster_role(interaction, db_role_data)
+        if not role:
+            await interaction.response.send_message("❌ Could not restore your booster role.", ephemeral=True)
+            return
+
+        # If the role exists but still missing icon, try again explicitly
+        if db_role_data.get("icon_data") and "ROLE_ICONS" in interaction.guild.features:
+            try:
+                await role.edit(display_icon=db_role_data["icon_data"])
+            except Exception as e:
+                print(f"[BOOSTER ROLE] Restore icon failed: {e}")
+
+        await interaction.response.send_message(
+            f"✅ Booster role restored: {role.mention}\n"
+            f"• Name: {role.name}\n"
+            f"• Color type: {db_role_data.get('color_type', 'solid')}\n"
+            f"• Icon: {'set' if db_role_data.get('icon_data') else 'none saved'}",
+            ephemeral=True
+        )
+
     @app_commands.command(name="color", description="Set your booster role color: solid, gradient, or holographic")
     @app_commands.describe(
         style="Color style type",
