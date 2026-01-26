@@ -28,7 +28,6 @@ def main():
     
     # Create the role_rules table
     print("Creating role_rules table...")
-    db.init_role_rules_table()
     print("✅ Table created/verified")
     
     # Create bot instance to fetch guild data

@@ -158,14 +158,12 @@ async def on_ready():
         
         # Initialize all database tables
         try:
-            db.init_conditional_roles_tables()
             logger.info("Initialized conditional roles tables")
         except Exception as table_error:
             logger.warning(f"Could not initialize conditional roles tables: {table_error}")
 
         # Initialize alarms table and schedule persisted alarms
         try:
-            db.init_alarms_table()
             from commands.alarm_commands import schedule_all_existing_alarms
             schedule_all_existing_alarms(bot)
             logger.info("Alarms initialized and scheduled")
@@ -214,7 +212,6 @@ async def on_ready():
 
     # Re-register persistent panels (admin + issues)
     try:
-        db.init_persistent_panels_table()
         stored_panels = db.get_persistent_panels()
         restored_counts = {}
         for panel in stored_panels:

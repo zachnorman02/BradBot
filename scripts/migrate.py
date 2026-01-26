@@ -869,6 +869,25 @@ class Migration026(Migration):
             print(f"   ⚠️  Index creation queued: {e}")
 
 
+class Migration027(Migration):
+    """Add rules_agreement table for tracking user agreement to rules messages"""
+
+    def __init__(self):
+        super().__init__("027", "Add rules_agreement table for reaction-based rules tracking")
+
+    def up(self):
+        print("   📋 Creating rules_agreement table...")
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.rules_agreement (
+                guild_id BIGINT PRIMARY KEY,
+                message_data JSONB NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        print("   ✅ Created rules_agreement table")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -895,6 +914,7 @@ MIGRATIONS = [
     Migration024(),  # Create channel_restrictions table
     Migration025(),  # Create message_mirrors and mirrored_messages tables
     Migration026(),  # Add mode column to channel_restrictions
+    Migration027(),  # Add rules_agreement table
 ]
 
 def get_applied_migrations():

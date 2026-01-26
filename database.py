@@ -25,12 +25,6 @@ class Database:
         self.region = os.getenv('AWS_REGION', 'us-east-1')
         self.connection_pool: Optional[pool.SimpleConnectionPool] = None
         self.persistent_panel_ids = set()
-        self._persistent_panels_table_initialized = False
-        self._echo_logs_table_initialized = False
-        self._tts_logs_table_initialized = False
-        self._birthdays_table_initialized = False
-        self._command_bans_table_initialized = False
-        self._command_toggles_table_initialized = False
         
     def _get_iam_token(self) -> str:
         """Generate IAM authentication token for Aurora DSQL"""
@@ -334,7 +328,6 @@ class Database:
         day: Optional[int]
     ):
         """Set or update a user's birthday for a guild."""
-        self.init_birthdays_table()
         delete_query = """
         DELETE FROM main.birthdays
         WHERE guild_id = %s AND user_id = %s
@@ -348,7 +341,6 @@ class Database:
 
     def clear_birthday(self, guild_id: int, user_id: int):
         """Remove a user's birthday for a guild."""
-        self.init_birthdays_table()
         query = """
         DELETE FROM main.birthdays
         WHERE guild_id = %s AND user_id = %s
@@ -357,7 +349,6 @@ class Database:
 
     def get_birthday(self, guild_id: int, user_id: int) -> Optional[dict]:
         """Get a user's birthday for a guild."""
-        self.init_birthdays_table()
         query = """
         SELECT guild_id, user_id, year, month, day, last_announced
         FROM main.birthdays
@@ -378,7 +369,6 @@ class Database:
 
     def get_birthdays_for_date(self, guild_id: int, month: int, day: int) -> list[dict]:
         """Get all birthdays for a guild on a specific month/day."""
-        self.init_birthdays_table()
         query = """
         SELECT guild_id, user_id, year, month, day, last_announced
         FROM main.birthdays
@@ -399,7 +389,6 @@ class Database:
 
     def get_birthdays_for_month(self, guild_id: int, month: int) -> list[dict]:
         """Get all birthdays for a guild in a specific month."""
-        self.init_birthdays_table()
         query = """
         SELECT guild_id, user_id, year, month, day, last_announced
         FROM main.birthdays
@@ -420,7 +409,6 @@ class Database:
 
     def get_birthdays_for_guild(self, guild_id: int) -> list[dict]:
         """Get all birthdays for a guild."""
-        self.init_birthdays_table()
         query = """
         SELECT guild_id, user_id, year, month, day, last_announced
         FROM main.birthdays
@@ -441,7 +429,6 @@ class Database:
 
     def get_birthdays_with_year_and_day(self, guild_id: int) -> list[dict]:
         """Get birthdays with full date (year/month/day) for a guild."""
-        self.init_birthdays_table()
         query = """
         SELECT guild_id, user_id, year, month, day, last_announced
         FROM main.birthdays
@@ -462,7 +449,6 @@ class Database:
 
     def mark_birthday_announced(self, guild_id: int, user_id: int, announced_date):
         """Update last_announced for a user's birthday."""
-        self.init_birthdays_table()
         query = """
         UPDATE main.birthdays
         SET last_announced = %s, updated_at = CURRENT_TIMESTAMP
@@ -597,194 +583,6 @@ class Database:
         """
         self.execute_query(query, (new_role_id, user_id, guild_id), fetch=False)
     
-    def init_starboard_tables(self):
-        """Initialize starboard tables if needed"""
-        if getattr(self, '_starboard_tables_initialized', False):
-            return
-        create_boards = """
-        CREATE TABLE IF NOT EXISTS main.starboard_boards (
-            id INTEGER PRIMARY KEY,
-            guild_id BIGINT NOT NULL,
-            channel_id BIGINT NOT NULL,
-            emoji TEXT NOT NULL,
-            threshold INTEGER NOT NULL,
-            allow_nsfw BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-        create_posts = """
-        CREATE TABLE IF NOT EXISTS main.starboard_posts (
-            message_id BIGINT NOT NULL,
-            board_id INTEGER NOT NULL,
-            star_message_id BIGINT,
-            guild_id BIGINT NOT NULL,
-            channel_id BIGINT NOT NULL,
-            author_id BIGINT NOT NULL,
-            current_count INTEGER DEFAULT 0,
-            forced BOOLEAN DEFAULT FALSE,
-            blocked BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (message_id, board_id)
-        )
-        """
-        self.execute_query(create_boards, fetch=False)
-        self.execute_query(create_posts, fetch=False)
-        self._starboard_tables_initialized = True
-
-    def init_echo_logs_table(self):
-        """Create the echo_logs table if it does not exist."""
-        if self._echo_logs_table_initialized:
-            return
-        query = """
-        CREATE TABLE IF NOT EXISTS main.echo_logs (
-            id BIGINT PRIMARY KEY,
-            guild_id BIGINT NOT NULL,
-            user_id BIGINT NOT NULL,
-            username TEXT NOT NULL,
-            channel_id BIGINT NOT NULL,
-            message_id BIGINT,
-            message TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-        self.execute_query(query, fetch=False)
-        try:
-            self.execute_query(
-                "ALTER TABLE main.echo_logs ADD COLUMN IF NOT EXISTS message_id BIGINT",
-                fetch=False
-            )
-            self.execute_query(
-                "ALTER TABLE main.echo_logs ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT ''",
-                fetch=False
-            )
-        except Exception as e:
-            print(f"Failed to ensure echo_logs columns: {e}")
-        self._echo_logs_table_initialized = True
-
-    def init_tts_logs_table(self):
-        """Create the tts_logs table if it does not exist."""
-        if self._tts_logs_table_initialized:
-            return
-        query = """
-        CREATE TABLE IF NOT EXISTS main.tts_logs (
-            id BIGINT PRIMARY KEY,
-            guild_id BIGINT NOT NULL,
-            user_id BIGINT NOT NULL,
-            username TEXT NOT NULL,
-            channel_id BIGINT NOT NULL,
-            voice_channel_id BIGINT,
-            message_id BIGINT,
-            text TEXT NOT NULL,
-            voice TEXT,
-            engine TEXT,
-            language TEXT,
-            provider TEXT DEFAULT 'polly',
-            announce_author BOOLEAN DEFAULT FALSE,
-            post_text BOOLEAN DEFAULT TRUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-        self.execute_query(query, fetch=False)
-        try:
-            self.execute_query(
-                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT ''",
-                fetch=False
-            )
-            self.execute_query(
-                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS voice_channel_id BIGINT",
-                fetch=False
-            )
-            self.execute_query(
-                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS message_id BIGINT",
-                fetch=False
-            )
-            self.execute_query(
-                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS voice TEXT",
-                fetch=False
-            )
-            self.execute_query(
-                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS engine TEXT",
-                fetch=False
-            )
-            self.execute_query(
-                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS language TEXT",
-                fetch=False
-            )
-            self.execute_query(
-                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS announce_author BOOLEAN DEFAULT FALSE",
-                fetch=False
-            )
-            self.execute_query(
-                "ALTER TABLE main.tts_logs ADD COLUMN IF NOT EXISTS post_text BOOLEAN DEFAULT TRUE",
-                fetch=False
-            )
-        except Exception as e:
-            print(f"Failed to ensure tts_logs columns: {e}")
-        self._tts_logs_table_initialized = True
-
-    def init_birthdays_table(self):
-        """Create the birthdays table if it does not exist."""
-        if self._birthdays_table_initialized:
-            return
-        query = """
-        CREATE TABLE IF NOT EXISTS main.birthdays (
-            guild_id BIGINT NOT NULL,
-            user_id BIGINT NOT NULL,
-            year INTEGER,
-            month INTEGER NOT NULL,
-            day INTEGER,
-            last_announced DATE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (guild_id, user_id)
-        )
-        """
-        self.execute_query(query, fetch=False)
-        try:
-            self.execute_query(
-                "ALTER TABLE main.birthdays ALTER COLUMN day DROP NOT NULL",
-                fetch=False
-            )
-        except Exception:
-            pass
-        self._birthdays_table_initialized = True
-
-    def init_command_toggles_table(self):
-        """Create the command_toggles table if it does not exist."""
-        if self._command_toggles_table_initialized:
-            return
-        query = """
-        CREATE TABLE IF NOT EXISTS main.command_toggles (
-            guild_id BIGINT NOT NULL,
-            command TEXT NOT NULL,
-            enabled BOOLEAN DEFAULT TRUE,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (guild_id, command)
-        )
-        """
-        self.execute_query(query, fetch=False)
-        self._command_toggles_table_initialized = True
-
-    def init_command_bans_table(self):
-        """Create the command_bans table if it does not exist."""
-        if self._command_bans_table_initialized:
-            return
-        query = """
-        CREATE TABLE IF NOT EXISTS main.command_bans (
-            guild_id BIGINT NOT NULL,
-            user_id BIGINT NOT NULL,
-            command TEXT NOT NULL,
-            reason TEXT DEFAULT '',
-            banned_by BIGINT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (guild_id, user_id, command)
-        )
-        """
-        self.execute_query(query, fetch=False)
-        self._command_bans_table_initialized = True
-
-    # Poll methods
     def create_poll(self, guild_id: int, channel_id: int, creator_id: int, question: str, 
                     max_responses: int = None, close_at = None, show_responses: bool = False,
                     public_results: bool = True, allow_multiple_responses: bool = True) -> int:
@@ -881,7 +679,6 @@ class Database:
     # Starboard methods
     def upsert_starboard_board(self, guild_id: int, channel_id: int, emoji: str, threshold: int, allow_nsfw: bool) -> int:
         """Create or update a starboard for a guild/channel."""
-        self.init_starboard_tables()
         existing = self.execute_query(
             "SELECT id FROM main.starboard_boards WHERE guild_id = %s AND channel_id = %s",
             (guild_id, channel_id)
@@ -911,7 +708,6 @@ class Database:
         )
 
     def get_starboard_boards(self, guild_id: int) -> list[dict]:
-        self.init_starboard_tables()
         query = """
         SELECT id, channel_id, emoji, threshold, allow_nsfw
         FROM main.starboard_boards
@@ -1083,7 +879,6 @@ class Database:
         message_id: int | None = None
     ):
         """Store a record of an /echo command."""
-        self.init_echo_logs_table()
         next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.echo_logs")[0][0]
         query = """
         INSERT INTO main.echo_logs (id, guild_id, user_id, username, channel_id, message_id, message)
@@ -1105,7 +900,6 @@ class Database:
         banned_by: int | None = None
     ):
         """Ban a user from a specific command."""
-        self.init_command_bans_table()
         command_key = command.lower()
         # Aurora DSQL lacks ON CONFLICT; delete then insert.
         self.execute_query(
@@ -1124,7 +918,6 @@ class Database:
 
     def unban_user_for_command(self, guild_id: int, user_id: int, command: str):
         """Remove a user's ban for a specific command."""
-        self.init_command_bans_table()
         self.execute_query(
             "DELETE FROM main.command_bans WHERE guild_id = %s AND user_id = %s AND command = %s",
             (guild_id, user_id, command.lower()),
@@ -1133,7 +926,6 @@ class Database:
 
     def is_user_banned_for_command(self, guild_id: int, user_id: int, command: str) -> tuple[bool, str | None]:
         """Return whether a user is banned for a command and the stored reason."""
-        self.init_command_bans_table()
         result = self.execute_query(
             """
             SELECT reason FROM main.command_bans
@@ -1150,7 +942,6 @@ class Database:
     # Command toggles (per guild)
     def set_command_enabled(self, guild_id: int, command: str, enabled: bool):
         """Enable or disable a command for a guild."""
-        self.init_command_toggles_table()
         command_key = command.lower()
         # Aurora DSQL lacks ON CONFLICT; delete then insert.
         self.execute_query(
@@ -1169,7 +960,6 @@ class Database:
 
     def is_command_disabled(self, guild_id: int, command: str) -> bool:
         """Return True if the command is disabled in the guild."""
-        self.init_command_toggles_table()
         result = self.execute_query(
             """
             SELECT enabled FROM main.command_toggles
@@ -1183,36 +973,8 @@ class Database:
         return False
 
     # Counting feature
-    def init_counting_tables(self):
-        """Create tables for counting channel configuration and penalties."""
-        self.execute_query(
-            """
-            CREATE TABLE IF NOT EXISTS main.counting_configs (
-                guild_id BIGINT PRIMARY KEY,
-                channel_id BIGINT NOT NULL,
-                idiot_role_id BIGINT NULL,
-                next_number BIGINT DEFAULT 1,
-                last_user_id BIGINT NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """,
-            fetch=False
-        )
-        self.execute_query(
-            """
-            CREATE TABLE IF NOT EXISTS main.counting_penalties (
-                guild_id BIGINT NOT NULL,
-                user_id BIGINT NOT NULL,
-                expires_at TIMESTAMP NOT NULL,
-                PRIMARY KEY (guild_id, user_id)
-            );
-            """,
-            fetch=False
-        )
-
     def set_counting_config(self, guild_id: int, channel_id: int, idiot_role_id: int | None, next_number: int = 1):
         """Upsert counting configuration for a guild."""
-        self.init_counting_tables()
         self.execute_query(
             "DELETE FROM main.counting_configs WHERE guild_id = %s",
             (guild_id,),
@@ -1229,13 +991,11 @@ class Database:
 
     def clear_counting_config(self, guild_id: int):
         """Remove counting config and penalties for a guild."""
-        self.init_counting_tables()
         self.execute_query("DELETE FROM main.counting_configs WHERE guild_id = %s", (guild_id,), fetch=False)
         self.execute_query("DELETE FROM main.counting_penalties WHERE guild_id = %s", (guild_id,), fetch=False)
 
     def get_counting_config(self, guild_id: int) -> dict | None:
         """Fetch counting config for a guild."""
-        self.init_counting_tables()
         result = self.execute_query(
             """
             SELECT guild_id, channel_id, idiot_role_id, next_number, last_user_id
@@ -1258,7 +1018,6 @@ class Database:
 
     def update_counting_state(self, guild_id: int, next_number: int, last_user_id: int | None):
         """Persist next expected number and last user."""
-        self.init_counting_tables()
         self.execute_query(
             """
             UPDATE main.counting_configs
@@ -1271,7 +1030,6 @@ class Database:
 
     def set_counting_number(self, guild_id: int, next_number: int):
         """Set the next expected counting number."""
-        self.init_counting_tables()
         self.execute_query(
             """
             UPDATE main.counting_configs
@@ -1284,7 +1042,6 @@ class Database:
 
     def record_counting_penalty(self, guild_id: int, user_id: int, expires_at):
         """Create or update a penalty entry for a user."""
-        self.init_counting_tables()
         self.execute_query(
             "DELETE FROM main.counting_penalties WHERE guild_id = %s AND user_id = %s",
             (guild_id, user_id),
@@ -1301,7 +1058,6 @@ class Database:
 
     def get_counting_penalty(self, guild_id: int, user_id: int):
         """Return the penalty expiry for a user if it exists."""
-        self.init_counting_tables()
         result = self.execute_query(
             """
             SELECT expires_at FROM main.counting_penalties
@@ -1316,7 +1072,6 @@ class Database:
 
     def clear_counting_penalty(self, guild_id: int, user_id: int):
         """Remove a user's penalty record."""
-        self.init_counting_tables()
         self.execute_query(
             "DELETE FROM main.counting_penalties WHERE guild_id = %s AND user_id = %s",
             (guild_id, user_id),
@@ -1325,7 +1080,6 @@ class Database:
 
     def get_expired_counting_penalties(self, now):
         """Return list of expired penalties."""
-        self.init_counting_tables()
         results = self.execute_query(
             """
             SELECT guild_id, user_id, expires_at
@@ -1338,7 +1092,6 @@ class Database:
 
     def get_all_counting_penalties(self):
         """Return all counting penalties (for robust expiry checks)."""
-        self.init_counting_tables()
         results = self.execute_query(
             """
             SELECT guild_id, user_id, expires_at
@@ -1364,7 +1117,6 @@ class Database:
         post_text: bool
     ):
         """Store a record of a /voice tts command."""
-        self.init_tts_logs_table()
         provider_to_store = provider or 'polly'
         next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.tts_logs")[0][0]
         query = """
@@ -1472,34 +1224,6 @@ class Database:
         return []
 
     # Persistent panel methods
-    def init_persistent_panels_table(self):
-        """Create the persistent_panels table if it does not exist."""
-        if self._persistent_panels_table_initialized:
-            return
-        query = """
-        CREATE TABLE IF NOT EXISTS main.persistent_panels (
-            message_id BIGINT PRIMARY KEY,
-            guild_id BIGINT NOT NULL,
-            channel_id BIGINT NOT NULL,
-            panel_type VARCHAR(100) NOT NULL,
-            metadata TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-        self.execute_query(query, fetch=False)
-        # Make sure updated_at exists for legacy tables
-        try:
-            alter_query = """
-            ALTER TABLE main.persistent_panels
-            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            """
-            self.execute_query(alter_query, fetch=False)
-        except Exception as e:
-            print(f"Note: Could not ensure updated_at column (may already exist): {e}")
-        self._persistent_panels_table_initialized = True
-        print("✅ persistent_panels table initialized")
-
     def save_persistent_panel(self, message_id: int, guild_id: int, channel_id: int,
                                panel_type: str, metadata: Optional[dict] = None):
         """Insert or update a persistent panel record."""
@@ -1713,27 +1437,7 @@ class Database:
         return []
 
     # Message audit logs (edits/deletions)
-    def init_message_audit_logs_table(self):
-        """Create message audit log table for edits/deletions."""
-        self.execute_query(
-            """
-            CREATE TABLE IF NOT EXISTS main.message_audit_logs (
-                id BIGINT PRIMARY KEY,
-                guild_id BIGINT,
-                channel_id BIGINT,
-                message_id BIGINT,
-                user_id BIGINT,
-                event_type VARCHAR(16) NOT NULL,
-                old_content TEXT,
-                new_content TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """,
-            fetch=False
-        )
-
     def _next_message_audit_id(self):
-        self.init_message_audit_logs_table()
         return self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.message_audit_logs")[0][0]
 
     def log_message_edit(self, guild_id: int | None, channel_id: int | None, message_id: int | None, user_id: int | None, old_content: str | None, new_content: str | None):
@@ -1805,29 +1509,6 @@ class Database:
     # CHANNEL RESTRICTIONS
     # ============================================================================
     
-    def init_channel_restrictions_table(self):
-        """Initialize channel_restrictions table for role-based channel access control."""
-        query = """
-        CREATE TABLE IF NOT EXISTS main.channel_restrictions (
-            guild_id BIGINT NOT NULL,
-            channel_id BIGINT NOT NULL,
-            blocking_role_id BIGINT NOT NULL,
-            mode VARCHAR(16) DEFAULT 'block',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (guild_id, channel_id, blocking_role_id, mode)
-        )
-        """
-        self.execute_query(query, fetch=False)
-        # Backfill mode column if table existed previously without it
-        try:
-            self.execute_query(
-                "ALTER TABLE main.channel_restrictions ADD COLUMN IF NOT EXISTS mode VARCHAR(16) DEFAULT 'block'",
-                fetch=False
-            )
-        except Exception:
-            pass
-        print("✅ Channel restrictions table initialized")
-    
     def add_channel_restriction(self, guild_id: int, channel_id: int, blocking_role_id: int, mode: str = "block"):
         """Add a channel restriction.
         
@@ -1885,123 +1566,9 @@ class Database:
     # Message Mirroring
     # ============================================================================
     
-    def init_message_mirrors_table(self):
-        """Initialize the message mirrors table."""
-        query = """
-        CREATE TABLE IF NOT EXISTS main.message_mirrors (
-            guild_id BIGINT NOT NULL,
-            source_channel_id BIGINT NOT NULL,
-            target_channel_id BIGINT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (guild_id, source_channel_id, target_channel_id)
-        )
-        """
-        self.execute_query(query, fetch=False)
-        
-        # Create index on guild_id for faster lookups
-        try:
-            index_query = """
-            CREATE INDEX ASYNC IF NOT EXISTS idx_message_mirrors_guild 
-            ON main.message_mirrors (guild_id)
-            """
-            self.execute_query(index_query, fetch=False)
-        except Exception as e:
-            pass  # Index creation queued
-        
-        # Create index on source_channel_id for faster lookups
-        try:
-            source_index_query = """
-            CREATE INDEX ASYNC IF NOT EXISTS idx_message_mirrors_source 
-            ON main.message_mirrors (source_channel_id)
-            """
-            self.execute_query(source_index_query, fetch=False)
-        except Exception as e:
-            pass  # Index creation queued
-        
-        print("✅ message_mirrors table initialized")
-    
-    def init_mirrored_messages_table(self):
-        """Initialize the mirrored messages tracking table."""
-        query = """
-        CREATE TABLE IF NOT EXISTS main.mirrored_messages (
-            original_message_id BIGINT NOT NULL,
-            original_channel_id BIGINT NOT NULL,
-            mirror_message_id BIGINT NOT NULL,
-            mirror_channel_id BIGINT NOT NULL,
-            guild_id BIGINT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (original_message_id, mirror_channel_id)
-        )
-        """
-        self.execute_query(query, fetch=False)
-        
-        # Create index on original_message_id for faster lookups
-        try:
-            index_query = """
-            CREATE INDEX ASYNC IF NOT EXISTS idx_mirrored_messages_original 
-            ON main.mirrored_messages (original_message_id)
-            """
-            self.execute_query(index_query, fetch=False)
-        except Exception as e:
-            pass  # Index creation queued
-        
-        # Create index on mirror_message_id for reverse lookups
-        try:
-            mirror_index_query = """
-            CREATE INDEX ASYNC IF NOT EXISTS idx_mirrored_messages_mirror 
-            ON main.mirrored_messages (mirror_message_id)
-            """
-            self.execute_query(mirror_index_query, fetch=False)
-        except Exception as e:
-            pass  # Index creation queued
-        
-        print("✅ mirrored_messages table initialized")
-
     # ============================================================================
     # Alarms
     # ============================================================================
-
-    def init_alarms_table(self):
-        """Initialize the alarms table for persisted scheduled alarms."""
-        query = """
-        CREATE TABLE IF NOT EXISTS main.alarms (
-            id TEXT PRIMARY KEY,
-            guild_id BIGINT NOT NULL,
-            creator_id BIGINT,
-            channel_id BIGINT,
-            message TEXT,
-            tts BOOLEAN DEFAULT FALSE,
-            tone BOOLEAN DEFAULT FALSE,
-            alternate BOOLEAN DEFAULT FALSE,
-            repeat INTEGER DEFAULT 1,
-            interval_seconds INTEGER DEFAULT NULL,
-            fire_at TIMESTAMP NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            fired BOOLEAN DEFAULT FALSE
-        )
-        """
-        self.execute_query(query, fetch=False)
-
-        # Indexes for faster lookup
-        try:
-            idx_q = """
-            CREATE INDEX ASYNC IF NOT EXISTS idx_alarms_guild
-            ON main.alarms (guild_id)
-            """
-            self.execute_query(idx_q, fetch=False)
-        except Exception:
-            pass
-
-        try:
-            idx_q2 = """
-            CREATE INDEX ASYNC IF NOT EXISTS idx_alarms_fire_at
-            ON main.alarms (fire_at)
-            """
-            self.execute_query(idx_q2, fetch=False)
-        except Exception:
-            pass
-
-        print("✅ alarms table initialized")
 
     def add_alarm(self, alarm_id: str, guild_id: int, creator_id: int, channel_id: int, message: str, tts: bool, tone: bool, alternate: bool, repeat: int, interval_seconds: int, fire_at: str):
         """Persist a new alarm. `fire_at` should be a timestamp string accepted by the DB (ISO)."""
@@ -2109,27 +1676,8 @@ class Database:
     # Scheduled Role Changes
     # ============================================================================
 
-    def init_scheduled_roles_table(self):
-        """Initialize scheduled role change table."""
-        query = """
-        CREATE TABLE IF NOT EXISTS main.scheduled_roles (
-            id BIGINT PRIMARY KEY,
-            guild_id BIGINT NOT NULL,
-            user_id BIGINT NOT NULL,
-            role_ids_to_add TEXT,
-            role_ids_to_remove TEXT,
-            run_at TIMESTAMP NOT NULL,
-            created_by BIGINT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status VARCHAR(16) DEFAULT 'pending',
-            last_error TEXT
-        );
-        """
-        self.execute_query(query, fetch=False)
-
     def create_scheduled_role_change(self, guild_id: int, user_id: int, role_ids_to_add: list[int], role_ids_to_remove: list[int], run_at, created_by: int):
         """Create a scheduled role change entry."""
-        self.init_scheduled_roles_table()
         sched_id = int(time.time() * 1_000_000)
         add_str = ",".join(str(rid) for rid in role_ids_to_add) if role_ids_to_add else ""
         remove_str = ",".join(str(rid) for rid in role_ids_to_remove) if role_ids_to_remove else ""
@@ -2142,7 +1690,6 @@ class Database:
 
     def list_scheduled_role_changes(self, guild_id: int):
         """List scheduled role changes for a guild."""
-        self.init_scheduled_roles_table()
         query = """
         SELECT id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, status, last_error
         FROM main.scheduled_roles
@@ -2168,12 +1715,10 @@ class Database:
 
     def delete_scheduled_role_change(self, sched_id: int, guild_id: int):
         """Delete a scheduled role change."""
-        self.init_scheduled_roles_table()
         self.execute_query("DELETE FROM main.scheduled_roles WHERE id = %s AND guild_id = %s", (sched_id, guild_id), fetch=False)
 
     def get_due_scheduled_role_changes(self, now):
         """Get scheduled role changes that are due to run."""
-        self.init_scheduled_roles_table()
         query = """
         SELECT id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at
         FROM main.scheduled_roles
@@ -2198,7 +1743,6 @@ class Database:
 
     def mark_scheduled_role_status(self, sched_id: int, status: str, error: str | None = None):
         """Update scheduled role status and optional error."""
-        self.init_scheduled_roles_table()
         self.execute_query(
             "UPDATE main.scheduled_roles SET status = %s, last_error = %s WHERE id = %s",
             (status, error, sched_id),
@@ -2209,21 +1753,8 @@ class Database:
     # Member Activity Tracking
     # ============================================================================
 
-    def init_member_activity_table(self):
-        """Create table for tracking last message activity per guild/user."""
-        query = """
-        CREATE TABLE IF NOT EXISTS main.member_activity (
-            guild_id BIGINT NOT NULL,
-            user_id BIGINT NOT NULL,
-            last_message_at TIMESTAMP NOT NULL,
-            PRIMARY KEY (guild_id, user_id)
-        );
-        """
-        self.execute_query(query, fetch=False)
-
     def log_member_activity(self, guild_id: int, user_id: int, timestamp):
         """Upsert member's last message timestamp."""
-        self.init_member_activity_table()
         delete_query = "DELETE FROM main.member_activity WHERE guild_id = %s AND user_id = %s"
         self.execute_query(delete_query, (guild_id, user_id), fetch=False)
         insert_query = """
@@ -2234,7 +1765,6 @@ class Database:
 
     def get_member_last_activity(self, guild_id: int, user_id: int):
         """Get a member's last message timestamp, or None."""
-        self.init_member_activity_table()
         res = self.execute_query(
             "SELECT last_message_at FROM main.member_activity WHERE guild_id = %s AND user_id = %s LIMIT 1",
             (guild_id, user_id)
@@ -2342,24 +1872,6 @@ class Database:
     # ROLE RULES
     # ========================================================================
     
-    def init_role_rules_table(self):
-        """Create role_rules table if it doesn't exist (Aurora DSQL compatible)."""
-        query = """
-        CREATE TABLE IF NOT EXISTS main.role_rules (
-            id BIGINT PRIMARY KEY,
-            guild_id BIGINT NOT NULL,
-            rule_name VARCHAR(100) NOT NULL,
-            trigger_role_id BIGINT NOT NULL,
-            roles_to_add TEXT,
-            roles_to_remove TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(guild_id, rule_name)
-        )
-        """
-        self.execute_query(query, fetch=False)
-        print("✅ role_rules table initialized")
-    
     def add_role_rule(self, guild_id: int, rule_name: str, trigger_role_id: int, 
                       roles_to_add: list[int] = None, roles_to_remove: list[int] = None):
         """
@@ -2466,50 +1978,6 @@ class Database:
     # CONDITIONAL ROLE ASSIGNMENTS
     # ========================================================================
     
-    def init_conditional_roles_tables(self):
-        """Create conditional role assignment tables."""
-        # Table for role configurations (which roles have conditional assignment)
-        config_query = """
-        CREATE TABLE IF NOT EXISTS main.conditional_role_configs (
-            guild_id BIGINT NOT NULL,
-            role_id BIGINT NOT NULL,
-            role_name VARCHAR(100),
-            blocking_role_ids TEXT,
-            deferral_role_ids TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY(guild_id, role_id)
-        )
-        """
-        self.execute_query(config_query, fetch=False)
-        
-        # Add deferral_role_ids column if it doesn't exist (for existing tables)
-        try:
-            alter_query = """
-            ALTER TABLE main.conditional_role_configs 
-            ADD COLUMN IF NOT EXISTS deferral_role_ids TEXT
-            """
-            self.execute_query(alter_query, fetch=False)
-        except Exception as e:
-            print(f"Note: Could not add deferral_role_ids column (may already exist): {e}")
-        
-        # Table for user eligibility
-        eligibility_query = """
-        CREATE TABLE IF NOT EXISTS main.conditional_role_eligibility (
-            guild_id BIGINT NOT NULL,
-            user_id BIGINT NOT NULL,
-            role_id BIGINT NOT NULL,
-            eligible BOOLEAN DEFAULT TRUE,
-            marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            marked_by_user_id BIGINT,
-            notes TEXT,
-            PRIMARY KEY (guild_id, user_id, role_id)
-        )
-        """
-        self.execute_query(eligibility_query, fetch=False)
-        print("✅ conditional_role_configs and conditional_role_eligibility tables initialized")
-    
-    # Configuration management
     def add_conditional_role_config(self, guild_id: int, role_id: int, role_name: str = None, 
                                    blocking_role_ids: list[int] = None, deferral_role_ids: list[int] = None):
         """Add or update a conditional role configuration.
@@ -2697,29 +2165,11 @@ class Database:
             ]
         return []
     
-    def _ensure_rules_agreement_table(self):
-        """Ensure the rules_agreement table exists"""
-        if hasattr(self, '_rules_agreement_table_initialized') and self._rules_agreement_table_initialized:
-            return
-        
-        query = """
-        CREATE TABLE IF NOT EXISTS main.rules_agreement (
-            guild_id BIGINT PRIMARY KEY,
-            message_data JSONB NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-        self.execute_update(query)
-        self._rules_agreement_table_initialized = True
-    
     def set_rules_agreement_messages(self, guild_id: int, message_data: list):
         """
         Store rules agreement message tracking for a guild
         message_data should be a list of dicts with channel_id, message_id, jump_url
         """
-        self._ensure_rules_agreement_table()
-        
         query = """
         INSERT INTO main.rules_agreement (guild_id, message_data, updated_at)
         VALUES (%s, %s, CURRENT_TIMESTAMP)
@@ -2734,8 +2184,6 @@ class Database:
     
     def get_rules_agreement_messages(self, guild_id: int) -> list:
         """Get the rules agreement messages for a guild"""
-        self._ensure_rules_agreement_table()
-        
         query = """
         SELECT message_data
         FROM main.rules_agreement
@@ -2752,8 +2200,6 @@ class Database:
     
     def clear_rules_agreement_messages(self, guild_id: int):
         """Clear rules agreement tracking for a guild"""
-        self._ensure_rules_agreement_table()
-        
         query = """
         DELETE FROM main.rules_agreement
         WHERE guild_id = %s

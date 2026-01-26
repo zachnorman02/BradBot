@@ -141,7 +141,6 @@ async def handle_channel_restrictions(before: discord.Member, after: discord.Mem
         # Ensure DB is ready
         if not db.connection_pool:
             db.init_pool()
-        db.init_channel_restrictions_table()
         
         # Get all channel restrictions for this guild
         restrictions = db.get_channel_restrictions(after.guild.id)
@@ -1205,7 +1204,6 @@ async def birthday_check(bot):
 
             if not db.connection_pool:
                 db.init_pool()
-            db.init_birthdays_table()
 
             today = dt.datetime.now(dt.timezone.utc).date()
             settings = db.get_guild_settings_by_name('birthday_channel_id')
@@ -1375,7 +1373,6 @@ async def scheduled_role_check(bot):
 
             if not db.connection_pool:
                 db.init_pool()
-            db.init_scheduled_roles_table()
 
             now = dt.datetime.now(dt.timezone.utc)
             due = db.get_due_scheduled_role_changes(now)

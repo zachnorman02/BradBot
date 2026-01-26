@@ -412,7 +412,6 @@ class AdminToolsGroup(app_commands.Group):
                 db.init_pool()
             
             # Ensure table exists
-            db.init_role_rules_table()
             
             if action.value == "list":
                 rules = db.get_role_rules(interaction.guild.id)
@@ -646,7 +645,6 @@ class AdminToolsGroup(app_commands.Group):
                 db.init_pool()
             
             # Ensure table exists
-            db.init_channel_restrictions_table()
 
             mode_value = mode.value if mode else None
             
@@ -899,7 +897,6 @@ class AdminToolsGroup(app_commands.Group):
 
         if not db.connection_pool:
             db.init_pool()
-        db.init_scheduled_roles_table()
 
         # List
         if list_only:
@@ -1004,7 +1001,6 @@ class AdminToolsGroup(app_commands.Group):
 
         if not db.connection_pool:
             db.init_pool()
-        db.init_member_activity_table()
 
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
         candidates = []
@@ -1074,8 +1070,6 @@ class AdminToolsGroup(app_commands.Group):
                 db.init_pool()
             
             # Ensure tables exist
-            db.init_message_mirrors_table()
-            db.init_mirrored_messages_table()
             
             if action.value == "list":
                 mirrors = db.get_message_mirrors(interaction.guild.id)
@@ -1445,7 +1439,6 @@ class AdminToolsGroup(app_commands.Group):
                 db.init_pool()
             
             # Ensure tables exist
-            db.init_conditional_roles_tables()
             
             # ================================================================
             # CONFIGURATION ACTIONS
@@ -2168,7 +2161,6 @@ class AdminMaintenanceGroup(app_commands.Group):
             expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=seconds)
             if not db.connection_pool:
                 db.init_pool()
-            db.init_scheduled_roles_table()
 
             sched_id = db.create_scheduled_role_change(
                 interaction.guild.id,
@@ -2374,7 +2366,6 @@ class AdminGroup(app_commands.Group):
             if not db.connection_pool:
                 db.init_pool()
             
-            db.init_persistent_panels_table()
             custom_prefix = f"admin_panel:{interaction.guild.id}:{int(dt.datetime.now(dt.timezone.utc).timestamp())}"
             view = AdminSettingsView(interaction.guild.id, persistent=True, custom_id_prefix=custom_prefix)
             
@@ -2439,7 +2430,6 @@ class AdminGroup(app_commands.Group):
         try:
             await interaction.response.defer(ephemeral=True)
 
-            db.init_persistent_panels_table()
             custom_prefix = f"command_panel:{interaction.guild.id}:{int(dt.datetime.now(dt.timezone.utc).timestamp())}"
             view = CommandToggleView(interaction.guild.id, persistent=True, custom_id_prefix=custom_prefix)
             # Ensure persistence invariants in case decorators change children at runtime

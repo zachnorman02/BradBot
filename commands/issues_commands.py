@@ -162,7 +162,6 @@ class IssuesGroup(app_commands.Group):
             if not db.connection_pool:
                 db.init_pool()
 
-            db.init_persistent_panels_table()
             prefix = f"issue_panel:{interaction.guild.id}:{int(dt.datetime.now(dt.timezone.utc).timestamp())}"
             view = IssuePanelView(interaction.guild.id, custom_id_prefix=prefix)
 
