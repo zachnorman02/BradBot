@@ -38,8 +38,6 @@ class StarboardGroup(app_commands.Group):
             await interaction.response.send_message("❌ Admins only.", ephemeral=True)
         return False
 
-    async def _ensure_tables(self):
-        await starboard_core.ensure_tables()
 
     @app_commands.command(name="set", description="Create or update a starboard channel")
     @app_commands.describe(
@@ -59,7 +57,6 @@ class StarboardGroup(app_commands.Group):
         if not interaction.user.guild_permissions.manage_guild:
             await interaction.response.send_message("❌ You need Manage Server to do that.", ephemeral=True)
             return
-        await self._ensure_tables()
         emoji_str = _normalize_emoji_str(discord.PartialEmoji.from_str(emoji) or emoji)
         board_id = db.upsert_starboard_board(interaction.guild.id, channel.id, emoji_str, threshold, allow_nsfw)
         await interaction.response.send_message(
@@ -69,7 +66,6 @@ class StarboardGroup(app_commands.Group):
 
     @app_commands.command(name="list", description="List starboard channels in this server")
     async def list_boards(self, interaction: discord.Interaction):
-        await self._ensure_tables()
         boards = db.get_starboard_boards(interaction.guild.id)
         if not boards:
             await interaction.response.send_message("ℹ️ No starboards configured.", ephemeral=True)
@@ -121,7 +117,6 @@ class StarboardGroup(app_commands.Group):
         message_link: str,
         starboard_channel: discord.TextChannel
     ):
-        await self._ensure_tables()
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages to use this.", ephemeral=True)
             return
@@ -142,7 +137,6 @@ class StarboardGroup(app_commands.Group):
         message_link: str,
         starboard_channel: discord.TextChannel
     ):
-        await self._ensure_tables()
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages.", ephemeral=True)
             return
@@ -182,7 +176,6 @@ class StarboardGroup(app_commands.Group):
         message_link: str,
         starboard_channel: discord.TextChannel
     ):
-        await self._ensure_tables()
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages.", ephemeral=True)
             return
@@ -206,7 +199,6 @@ class StarboardGroup(app_commands.Group):
         starboard_channel: discord.TextChannel,
         limit: app_commands.Range[int, 1, 20] = 5
     ):
-        await self._ensure_tables()
         board = db.get_starboard_board(interaction.guild.id, starboard_channel.id)
         if not board:
             await interaction.response.send_message("❌ That channel is not a starboard.", ephemeral=True)
