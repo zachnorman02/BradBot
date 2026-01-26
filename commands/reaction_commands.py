@@ -20,7 +20,6 @@ class ReactionGroup(app_commands.Group):
         message_id="The ID of the message to check",
         user="The user to check reactions for"
     )
-    @require_guild()
     async def check_reaction(
         self,
         interaction: discord.Interaction,
@@ -28,6 +27,9 @@ class ReactionGroup(app_commands.Group):
         user: discord.User
     ):
         """Check if a user reacted to a specific message"""
+        if not await require_guild(interaction):
+            return
+        
         try:
             # Try to find the message in the current channel first
             channel = interaction.channel
@@ -93,7 +95,6 @@ class ReactionGroup(app_commands.Group):
         message_url="The URL of the message (right-click → Copy Message Link)",
         user="The user to check reactions for"
     )
-    @require_guild()
     async def check_reaction_url(
         self,
         interaction: discord.Interaction,
@@ -101,6 +102,9 @@ class ReactionGroup(app_commands.Group):
         user: discord.User
     ):
         """Check if a user reacted to a message using the message URL"""
+        if not await require_guild(interaction):
+            return
+        
         # Parse message URL: https://discord.com/channels/guild_id/channel_id/message_id
         pattern = r'https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)'
         match = re.match(pattern, message_url)
@@ -175,13 +179,15 @@ class RulesAgreementGroup(app_commands.Group):
         message_urls="Message URLs separated by commas or newlines"
     )
     @app_commands.checks.has_permissions(administrator=True)
-    @require_guild()
     async def setup_rules(
         self,
         interaction: discord.Interaction,
         message_urls: str
     ):
         """Set up which messages to track for rules agreement"""
+        if not await require_guild(interaction):
+            return
+        
         # Parse multiple URLs
         urls = [url.strip() for url in re.split(r'[,\n]+', message_urls) if url.strip()]
         
@@ -262,13 +268,15 @@ class RulesAgreementGroup(app_commands.Group):
     
     @app_commands.command(name="check", description="Check which rules messages a user has reacted to")
     @app_commands.describe(user="The user to check")
-    @require_guild()
     async def check_agreement(
         self,
         interaction: discord.Interaction,
         user: discord.User
     ):
         """Check which rules messages a user has agreed to by reacting"""
+        if not await require_guild(interaction):
+            return
+        
         rules_messages = db.get_rules_agreement_messages(interaction.guild.id)
         
         if not rules_messages:
@@ -359,9 +367,11 @@ class RulesAgreementGroup(app_commands.Group):
         await interaction.followup.send(embed=embed)
     
     @app_commands.command(name="status", description="Show current rules agreement configuration")
-    @require_guild()
     async def show_status(self, interaction: discord.Interaction):
         """Show which messages are being tracked for rules agreement"""
+        if not await require_guild(interaction):
+            return
+        
         rules_messages = db.get_rules_agreement_messages(interaction.guild.id)
         
         if not rules_messages:
@@ -389,9 +399,11 @@ class RulesAgreementGroup(app_commands.Group):
     
     @app_commands.command(name="clear", description="Clear rules agreement configuration (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
-    @require_guild()
     async def clear_rules(self, interaction: discord.Interaction):
         """Clear the rules agreement tracking configuration"""
+        if not await require_guild(interaction):
+            return
+        
         rules_messages = db.get_rules_agreement_messages(interaction.guild.id)
         
         if not rules_messages:
