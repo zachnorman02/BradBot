@@ -15,6 +15,7 @@ from utils.github_helper import (
     create_discussion,
     GitHubDiscussionError,
 )
+from utils.logger import logger
 
 
 class IssueReportModal(discord.ui.Modal, title="Submit to GitHub"):
@@ -121,7 +122,7 @@ class IssueReportModal(discord.ui.Modal, title="Submit to GitHub"):
                 "GITHUB_TOKEN, and discussion category IDs if using discussions.",
                 ephemeral=True,
             )
-            print(f"[ISSUES] Issue/discussion panel misconfigured: {config_error}")
+            logger.warning(f"Issue/discussion panel misconfigured: {config_error}")
         except GitHubIssueError as issue_error:
             await interaction.response.send_message(
                 f"❌ Failed to create GitHub issue: {issue_error}",
@@ -137,7 +138,7 @@ class IssueReportModal(discord.ui.Modal, title="Submit to GitHub"):
                 "❌ An unexpected error occurred while submitting your request.",
                 ephemeral=True,
             )
-            print(f"[ISSUES] Unexpected GitHub submission error: {e}")
+            logger.error(f"Unexpected GitHub submission error: {e}")
 
 
 # IssuePanelView moved to commands/views/issue_views.py
@@ -191,7 +192,7 @@ class IssuesGroup(app_commands.Group):
                 ephemeral=True,
             )
         except Exception as e:
-            print(f"[ISSUES] Error creating issues panel: {e}")
+            logger.error(f"Error creating issues panel: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while creating the issues panel.",
                 ephemeral=True,

@@ -1,9 +1,10 @@
-"""
-Standalone utility commands and their helpers
-"""
+"""Standalone utility commands and their helpers"""
 import discord
 from discord import app_commands
+
 from database import db
+from utils.logger import logger
+from utils.interaction_helpers import send_error, send_success, require_guild
 from utils.timestamp_helpers import TimestampStyle, create_discord_timestamp, format_timestamp_examples
 
 async def echo_command(
@@ -12,18 +13,17 @@ async def echo_command(
     allow_mentions: bool = False,
 ):
     """Echo a message to the current channel."""
-    if not interaction.guild:
-        await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+    if not await require_guild(interaction):
         return
 
     if db.is_command_disabled(interaction.guild.id, 'echo') and not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ Echo is disabled in this server.", ephemeral=True)
+        await send_error(interaction, "Echo is disabled in this server.")
         return
 
     banned, ban_reason = db.is_user_banned_for_command(interaction.guild.id, interaction.user.id, 'echo')
     if banned:
         reason_note = f" Reason: {ban_reason}" if ban_reason else ""
-        await interaction.response.send_message(f"❌ You are banned from using echo in this server.{reason_note}", ephemeral=True)
+        await send_error(interaction, f"You are banned from using echo in this server.{reason_note}")
         return
 
     allowed = discord.AllowedMentions.all() if allow_mentions else discord.AllowedMentions.none()
@@ -44,10 +44,10 @@ async def echo_command(
                 sent_message.id
             )
         except Exception as log_error:
-            print(f"Failed to log echo message: {log_error}")
-        await interaction.followup.send("✅ Message sent.", ephemeral=True)
+            logger.error(f"Failed to log echo message: {log_error}")
+        await send_success(interaction, "Message sent.")
     except Exception as e:
-        await interaction.followup.send(f"❌ Failed to send message: {e}", ephemeral=True)
+        await send_error(interaction, f"Failed to send message: {e}")
 
 
 # ============================================================================
@@ -67,7 +67,7 @@ async def timestamp_command(
         
         # Check if there was an error
         if result[0] is None:
-            await interaction.response.send_message(f"❌ {result[2]}", ephemeral=True)
+            await send_error(interaction, result[2])
             return
         
         unix_timestamp, combined_datetime, combined_datetime_utc = result
@@ -92,4 +92,5 @@ async def timestamp_command(
         await interaction.response.send_message(response)
         
     except Exception as e:
-        await interaction.response.send_message(f"❌ An error occurred: {e}", ephemeral=True)
+        logger.error(f"Error in timestamp command: {e}")
+        await send_error(interaction, f"An error occurred: {e}")

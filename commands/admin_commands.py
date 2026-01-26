@@ -1,6 +1,4 @@
-"""
-Admin command group for server and database management
-"""
+"""Admin command group for server and database management"""
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -8,14 +6,16 @@ from discord import ui
 import datetime as dt
 import re
 from typing import Optional
+
 from commands.booster_commands import restore_member_booster_role
-from database import db
 from commands.views import (
     AdminSettingsView,
     CommandToggleView,
     ChannelRestrictionListView,
     ConditionalRoleListView
 )
+from database import db
+from utils.logger import logger
 
 
 async def _enforce_default_permissions(interaction: discord.Interaction) -> bool:
@@ -223,7 +223,7 @@ class AdminToolsGroup(app_commands.Group):
                         try:
                             icon_data = await role.icon.read()
                         except Exception as e:
-                            print(f"Could not read icon for {member.display_name}: {e}")
+                            logger.error(f"Could not read icon for {member.display_name}: {e}")
                     
                     # Save to database (preserve existing color_type or default to 'solid')
                     db.store_booster_role(
@@ -246,7 +246,7 @@ class AdminToolsGroup(app_commands.Group):
                 except Exception as e:
                     errors += 1
                     report_lines.append(f"❌ {member.display_name}: Error - {str(e)[:50]}")
-                    print(f"Error saving role for {member.display_name}: {e}")
+                    logger.error(f"Error saving role for {member.display_name}: {e}")
             
             # Build summary message
             summary = f"**Booster Roles Scan Complete**\n\n"
@@ -265,7 +265,7 @@ class AdminToolsGroup(app_commands.Group):
             await interaction.followup.send(summary, ephemeral=True)
             
         except Exception as e:
-            print(f"Error loading booster roles: {e}")
+            logger.error(f"Error loading booster roles: {e}")
             await interaction.followup.send(
                 f"❌ An error occurred while loading booster roles: {str(e)[:100]}",
                 ephemeral=True
@@ -339,7 +339,7 @@ class AdminToolsGroup(app_commands.Group):
                 try:
                     icon_data = await role.icon.read()
                 except Exception as e:
-                    print(f"Could not read icon for role {role.name}: {e}")
+                    logger.error(f"Could not read icon for role {role.name}: {e}")
             
             # Save to database
             db.store_booster_role(
@@ -370,7 +370,7 @@ class AdminToolsGroup(app_commands.Group):
             )
             
         except Exception as e:
-            print(f"Error saving booster role: {e}")
+            logger.error(f"Error saving booster role: {e}")
             await interaction.followup.send(
                 f"❌ An error occurred while saving the booster role: {str(e)[:100]}",
                 ephemeral=True
@@ -605,7 +605,7 @@ class AdminToolsGroup(app_commands.Group):
                 return
         
         except Exception as e:
-            print(f"Error in autorole command: {e}")
+            logger.error(f"Error in autorole command: {e}")
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @app_commands.command(name="channelrestriction", description="Configure channel access restrictions based on roles")
@@ -786,7 +786,7 @@ class AdminToolsGroup(app_commands.Group):
                 return
         
         except Exception as e:
-            print(f"Error in channelrestriction command: {e}")
+            logger.error(f"Error in channelrestriction command: {e}")
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @app_commands.command(name="globalmute_role", description="Create or configure a role that mutes users in all channels")
@@ -867,7 +867,7 @@ class AdminToolsGroup(app_commands.Group):
                 summary.append(f"⚠️ Errors on {len(errors)} channel(s): " + "; ".join(errors[:3]))
             await interaction.followup.send("\n".join(summary), ephemeral=True)
         except Exception as e:
-            print(f"Error creating/applying mute role: {e}")
+            logger.error(f"Error creating/applying mute role: {e}")
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @app_commands.command(name="schedule_role", description="Schedule role add/remove for a member at a specific time")
@@ -1320,12 +1320,12 @@ class AdminToolsGroup(app_commands.Group):
                                 target_channel.id,
                                 msg.guild.id
                             )
-                            print(f"[MIRROR] Tracked mirror: original={msg.id} -> mirror={mirror_msg.id} in channel={target_channel.id}")
+                            logger.info(f"Tracked mirror: original={msg.id} -> mirror={mirror_msg.id} in channel={target_channel.id}")
                             
                             copied_count += 1
                             
                         except Exception as e:
-                            print(f"[MIRROR] Error copying message {msg.id}: {e}")
+                            logger.error(f"Error copying message {msg.id}: {e}")
                             errors += 1
                     
                     # Send completion message
@@ -1341,7 +1341,7 @@ class AdminToolsGroup(app_commands.Group):
                         "❌ I don't have permission to access one of the channels.",
                     )
                 except Exception as e:
-                    print(f"[MIRROR] Error in copy-existing: {e}")
+                    logger.error(f"Error in copy-existing: {e}")
                     await interaction.channel.send(
                         f"❌ Error copying messages: {str(e)[:200]}",
                     )
@@ -1391,7 +1391,7 @@ class AdminToolsGroup(app_commands.Group):
                 return
         
         except Exception as e:
-            print(f"Error in messagemirror command: {e}")
+            logger.error(f"Error in messagemirror command: {e}")
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @app_commands.command(name="conditionalrole", description="Manage conditional role assignments with blocking roles")
@@ -1854,7 +1854,7 @@ class AdminToolsGroup(app_commands.Group):
             # check-all action - run all conditional role checks
         
         except Exception as e:
-            print(f"Error in conditionalrole command: {e}")
+            logger.error(f"Error in conditionalrole command: {e}")
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
 
@@ -1929,11 +1929,11 @@ class AdminMaintenanceGroup(app_commands.Group):
                         try:
                             await member.add_roles(lvl0_role, reason=f"Manual lvl 0 assignment by {interaction.user}")
                             assigned_count += 1
-                            print(f"[ADMIN] Assigned lvl 0 to {member.display_name}")
+                            logger.info(f"Assigned lvl 0 to {member.display_name}")
                         except Exception as e:
                             error_msg = f"{member.display_name}: {str(e)[:50]}"
                             errors.append(error_msg)
-                            print(f"[ADMIN] Error assigning lvl 0 to {member.display_name}: {e}")
+                            logger.error(f"Error assigning lvl 0 to {member.display_name}: {e}")
             
             # Build response
             response = f"✅ Assigned lvl 0 to **{assigned_count}** member(s)"
@@ -1948,7 +1948,7 @@ class AdminMaintenanceGroup(app_commands.Group):
             await interaction.followup.send(response, ephemeral=True)
             
         except Exception as e:
-            print(f"[ADMIN] Error in assign_lvl0 command: {e}")
+            logger.error(f"Error in assign_lvl0 command: {e}")
             await interaction.followup.send(
                 f"❌ An error occurred: {str(e)[:200]}",
                 ephemeral=True
@@ -2010,7 +2010,7 @@ class AdminMaintenanceGroup(app_commands.Group):
                         
                         if in_verification_ticket:
                             skipped_count += 1
-                            print(f"[ADMIN] Skipped {member.display_name} (in verification ticket)")
+                            logger.info(f"Skipped {member.display_name} (in verification ticket)")
                         else:
                             # Kick the member (or add to dry run list)
                             if dry_run:
@@ -2020,11 +2020,11 @@ class AdminMaintenanceGroup(app_commands.Group):
                                 try:
                                     await member.kick(reason=f"Kicked by {interaction.user}: Unverified for {days_since_join} days with no active verification ticket")
                                     kicked_count += 1
-                                    print(f"[ADMIN] Kicked {member.display_name} (unverified for {days_since_join} days)")
+                                    logger.info(f"Kicked {member.display_name} (unverified for {days_since_join} days)")
                                 except Exception as e:
                                     error_msg = f"{member.display_name}: {str(e)[:50]}"
                                     errors.append(error_msg)
-                                    print(f"[ADMIN] Error kicking {member.display_name}: {e}")
+                                    logger.error(f"Error kicking {member.display_name}: {e}")
             
             # Build response
             if dry_run:
@@ -2053,7 +2053,7 @@ class AdminMaintenanceGroup(app_commands.Group):
             await interaction.followup.send(response, ephemeral=True)
             
         except Exception as e:
-            print(f"[ADMIN] Error in kick_unverified command: {e}")
+            logger.error(f"Error in kick_unverified command: {e}")
             await interaction.followup.send(
                 f"❌ An error occurred: {str(e)[:200]}",
                 ephemeral=True
@@ -2244,7 +2244,7 @@ class AdminMaintenanceGroup(app_commands.Group):
                     skipped += 1
                     continue
 
-                role_obj = await restore_member_booster_role(
+                role_obj, icon_applied = await restore_member_booster_role(
                     interaction.guild,
                     member,
                     entry,
@@ -2253,6 +2253,8 @@ class AdminMaintenanceGroup(app_commands.Group):
                 )
                 if role_obj:
                     restored += 1
+                    if entry.get("icon_data") and not icon_applied:
+                        errors.append(f"{member.display_name} (icon failed)")
                 else:
                     errors.append(f"{member.display_name}")
 
@@ -2354,7 +2356,7 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
         except Exception as e:
-            print(f"Error opening admin menu: {e}")
+            logger.error(f"Error opening admin menu: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while opening the admin menu.",
                 ephemeral=True
@@ -2398,7 +2400,7 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
         except Exception as e:
-            print(f"Error creating admin panel: {e}")
+            logger.error(f"Error creating admin panel: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while creating the admin panel.",
                 ephemeral=True
@@ -2420,7 +2422,7 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
         except Exception as e:
-            print(f"Error opening command toggle menu: {e}")
+            logger.error(f"Error opening command toggle menu: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while opening the command toggle menu.",
                 ephemeral=True
@@ -2464,7 +2466,7 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
         except Exception as e:
-            print(f"Error creating command panel: {e}")
+            logger.error(f"Error creating command panel: {e}")
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(
@@ -2827,8 +2829,8 @@ class AdminGroup(app_commands.Group):
                 db.init_pool()
             
             # Log the query execution
-            print(f"🔍 SQL Query executed by {interaction.user} (ID: {interaction.user.id}):")
-            print(f"   Query: {query}")
+            logger.info(f"🔍 SQL Query executed by {interaction.user} (ID: {interaction.user.id}):")
+            logger.info(f"   Query: {query}")
             
             # Determine if this is a SELECT query or a modification query
             is_select = query.strip().upper().startswith('SELECT')
@@ -2864,11 +2866,11 @@ class AdminGroup(app_commands.Group):
                 db.execute_query(query, fetch=False)
                 await interaction.followup.send("✅ Query executed successfully.", ephemeral=True)
             
-            print(f"   ✅ Query completed successfully")
+            logger.info("   ✅ Query completed successfully")
             
         except Exception as e:
             error_msg = str(e)
-            print(f"   ❌ Query failed: {error_msg}")
+            logger.error(f"   ❌ Query failed: {error_msg}")
             await interaction.followup.send(
                 f"❌ Error executing query:\n```\n{error_msg[:1800]}\n```",
                 ephemeral=True
@@ -2943,7 +2945,7 @@ class AdminGroup(app_commands.Group):
             await interaction.followup.send(response, ephemeral=True)
             
         except Exception as e:
-            print(f"Error viewing task logs: {e}")
+            logger.error(f"Error viewing task logs: {e}")
             await interaction.followup.send(
                 f"❌ Error retrieving task logs: {str(e)[:100]}",
                 ephemeral=True
@@ -3130,7 +3132,7 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
         except Exception as e:
-            print(f"Error in audit log query: {e}")
+            logger.error(f"Error in audit log query: {e}")
             await interaction.followup.send(
                 f"❌ Error executing query: {str(e)[:200]}",
                 ephemeral=True

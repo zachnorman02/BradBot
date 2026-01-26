@@ -1,90 +1,104 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
+"""BradBot - Discord Bot Main Entry Point"""
+# Standard library imports
 import os
-import datetime as dt
-import asyncio
 from typing import Literal
+
+# Third-party imports
+import discord
+from discord import app_commands
+from discord.ext import commands
 from dotenv import load_dotenv
 
-# Import database
+# Local imports - Configuration
+from config import (
+    BOT_PREFIX,
+    PANEL_TYPE_ADMIN_SETTINGS,
+    PANEL_TYPE_COMMAND_SETTINGS,
+    PANEL_TYPE_ISSUE_PANEL,
+    SETTING_AUTO_BAN_SINGLE_SERVER,
+    SETTING_AUTO_KICK_SINGLE_SERVER,
+    DEFAULT_FALSE
+)
 from database import db
-
-# Import command groups
-from commands import (
-    EmojiGroup, 
-    BoosterGroup, 
-    AdminGroup, 
-    SettingsGroup,
-    IssuesGroup,
-    ConversionGroup,
-    PollGroup,
-    UtilityGroup,
-    VoiceGroup,
-    AlarmGroup,
-    LinkGroup,
-    StarboardGroup,
-    BirthdayGroup,
-    timestamp_command,
-    echo_command
-)
-
-# Import views
-from commands.views import PollView, AdminSettingsView, CommandToggleView, IssuePanelView
-
-# Import core functionality
-from core import (
-    daily_booster_role_check,
-    poll_auto_close_check,
-    poll_results_refresh,
-    reminder_check,
-    timer_check,
-    birthday_check,
-    on_member_update_handler,
-    handle_reply_notification,
-    process_message_links,
-    send_processed_message,
-    handle_message_mirror,
-    handle_message_edit,
-    handle_message_delete,
-    handle_counting_message,
-    counting_penalty_check,
-    scheduled_role_check,
-    log_message_edit_event,
-    log_message_delete_event,
-    log_raw_message_delete_event
-)
-from core import starboard as starboard_core
-from utils.ffmpeg_helper import ensure_ffmpeg, which_ffmpeg
-
-# Import helpers for standalone commands
-from utils.timestamp_helpers import TimestampStyle
+from utils.logger import logger
 from utils.secrets_manager import load_secret_env
 
-# Load environment variables from .env file
+# Local imports - Command groups
+from commands import (
+    AdminGroup,
+    AlarmGroup,
+    BirthdayGroup,
+    BoosterGroup,
+    ConversionGroup,
+    EmojiGroup,
+    IssuesGroup,
+    LinkGroup,
+    PollGroup,
+    SettingsGroup,
+    StarboardGroup,
+    UtilityGroup,
+    VoiceGroup,
+    echo_command,
+    timestamp_command
+)
+from commands.views import AdminSettingsView, CommandToggleView, IssuePanelView, PollView
+
+# Local imports - Core functionality
+from core import (
+    birthday_check,
+    counting_penalty_check,
+    daily_booster_role_check,
+    handle_counting_message,
+    handle_message_delete,
+    handle_message_edit,
+    handle_message_mirror,
+    handle_reply_notification,
+    log_message_delete_event,
+    log_message_edit_event,
+    log_raw_message_delete_event,
+    on_member_update_handler,
+    poll_auto_close_check,
+    poll_results_refresh,
+    process_message_links,
+    reminder_check,
+    scheduled_role_check,
+    send_processed_message,
+    starboard,
+    timer_check
+)
+from utils.ffmpeg_helper import ensure_ffmpeg, which_ffmpeg
+from utils.timestamp_helpers import TimestampStyle
+
+# Load environment variables
 load_dotenv()
 load_secret_env()
 
+# Setup Discord intents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix=":", intents=intents)
+# Initialize bot
+bot = commands.Bot(command_prefix=BOT_PREFIX, intents=intents)
+
+# ============================================================================
+# COMMAND REGISTRATION
+# ============================================================================
 
 # Add command groups to the tree
-bot.tree.add_command(EmojiGroup(bot))
-bot.tree.add_command(BoosterGroup())
-bot.tree.add_command(SettingsGroup())
 bot.tree.add_command(AdminGroup())
-bot.tree.add_command(IssuesGroup())
+bot.tree.add_command(AlarmGroup())
+bot.tree.add_command(BirthdayGroup())
+bot.tree.add_command(BoosterGroup())
 bot.tree.add_command(ConversionGroup())
+bot.tree.add_command(EmojiGroup(bot))
+bot.tree.add_command(IssuesGroup())
+bot.tree.add_command(LinkGroup())
 bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
+bot.tree.add_command(SettingsGroup())
+bot.tree.add_command(StarboardGroup())
 bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
 bot.tree.add_command(VoiceGroup())
-bot.tree.add_command(AlarmGroup())
-bot.tree.add_command(LinkGroup())
-bot.tree.add_command(StarboardGroup())
-bot.tree.add_command(BirthdayGroup())
 
 
 # ============================================================================
@@ -106,8 +120,8 @@ async def on_member_join(member: discord.Member):
         return
     
     # Check if auto-kick for single-server members is enabled
-    kick_enabled = db.get_guild_setting(guild.id, 'auto_kick_single_server', 'false').lower() == 'true'
-    ban_enabled = db.get_guild_setting(guild.id, 'auto_ban_single_server', 'false').lower() == 'true'
+    kick_enabled = db.get_guild_setting(guild.id, SETTING_AUTO_KICK_SINGLE_SERVER, DEFAULT_FALSE).lower() == 'true'
+    ban_enabled = db.get_guild_setting(guild.id, SETTING_AUTO_BAN_SINGLE_SERVER, DEFAULT_FALSE).lower() == 'true'
     
     if not kick_enabled and not ban_enabled:
         return  # Feature disabled
@@ -118,68 +132,68 @@ async def on_member_join(member: discord.Member):
         try:
             if ban_enabled:
                 await member.ban(reason="Auto-ban: Member is only in this server with bot")
-                print(f"Auto-banned {member} ({member.id}) from {guild.name} - single server member")
+                logger.info(f"Auto-banned {member} ({member.id}) from {guild.name} - single server member")
             elif kick_enabled:
                 await member.kick(reason="Auto-kick: Member is only in this server with bot")
-                print(f"Auto-kicked {member} ({member.id}) from {guild.name} - single server member")
+                logger.info(f"Auto-kicked {member} ({member.id}) from {guild.name} - single server member")
         except discord.Forbidden:
-            print(f"Failed to kick/ban {member} - insufficient permissions")
+            logger.warning(f"Failed to kick/ban {member} - insufficient permissions")
         except (discord.HTTPException, discord.NotFound) as e:
-            print(f"Error auto-kicking/banning {member}: {e}")
+            logger.error(f"Error auto-kicking/banning {member}: {e}")
 
 @bot.event
 async def on_ready():
-    print(f'{bot.user} has logged in!')
+    logger.info(f'{bot.user} has logged in!')
     
     # Initialize database connection pool
     try:
         db.init_pool()
         # Test the connection with a simple query
         db.execute_query("SELECT 1")
-        print(f"✅ Database connected successfully")
+        logger.info("Database connected successfully")
         
         # Initialize all database tables
         try:
             db.init_conditional_roles_tables()
-            print(f"✅ Initialized conditional roles tables")
+            logger.info("Initialized conditional roles tables")
         except Exception as table_error:
-            print(f"⚠️  Could not initialize conditional roles tables: {table_error}")
+            logger.warning(f"Could not initialize conditional roles tables: {table_error}")
 
         # Initialize alarms table and schedule persisted alarms
         try:
             db.init_alarms_table()
             from commands.alarm_commands import schedule_all_existing_alarms
             schedule_all_existing_alarms(bot)
-            print("✅ alarms initialized and scheduled")
+            logger.info("Alarms initialized and scheduled")
         except Exception as e:
-            print(f"⚠️  Could not initialize/schedule alarms: {e}")
+            logger.warning(f"Could not initialize/schedule alarms: {e}")
 
         # Ensure ffmpeg is available (try auto-download on Linux if missing)
         try:
             ff = which_ffmpeg()
             if ff:
-                print(f"✅ ffmpeg found at: {ff}")
+                logger.info(f"ffmpeg found at: {ff}")
             else:
-                print("⚠️ ffmpeg not found on PATH — attempting to download static build (Linux only)")
+                logger.warning("ffmpeg not found on PATH — attempting to download static build (Linux only)")
                 installed = ensure_ffmpeg()
                 if installed:
-                    print(f"✅ ffmpeg installed for runtime at: {installed}")
+                    logger.info(f"ffmpeg installed for runtime at: {installed}")
                 else:
-                    print("⚠️ ffmpeg not available. Please install ffmpeg on the host (apt/dnf/brew) or place binary in PATH.")
+                    logger.warning("ffmpeg not available. Please install ffmpeg on the host (apt/dnf/brew) or place binary in PATH.")
         except Exception as e:
-            print(f"⚠️ ffmpeg check/install failed: {e}")
+            logger.warning(f"ffmpeg check/install failed: {e}")
         
         # Grant admin permissions on all tables
         try:
             db.execute_query("""
                 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA main TO admin
             """, fetch=False)
-            print(f"✅ Granted admin privileges on all tables")
+            logger.info("Granted admin privileges on all tables")
         except Exception as perm_error:
-            print(f"⚠️  Could not grant admin privileges: {perm_error}")
+            logger.warning(f"Could not grant admin privileges: {perm_error}")
     except Exception as e:
-        print(f"⚠️  Database initialization failed: {e}")
-        print("   Reply notifications will not work until database is configured")
+        logger.error(f"Database initialization failed: {e}")
+        logger.warning("Reply notifications will not work until database is configured")
     
     # Re-register persistent views for active polls
     try:
@@ -190,9 +204,9 @@ async def on_ready():
         for poll_id, question in active_polls:
             view = PollView(poll_id, question)
             bot.add_view(view)
-        print(f"✅ Registered {len(active_polls)} active poll view(s)")
+        logger.info(f"Registered {len(active_polls)} active poll view(s)")
     except Exception as e:
-        print(f"⚠️  Failed to register poll views: {e}")
+        logger.warning(f"Failed to register poll views: {e}")
 
     # Re-register persistent panels (admin + issues)
     try:
@@ -216,28 +230,28 @@ async def on_ready():
                 db.delete_persistent_panel(panel['message_id'])
                 continue
             except (discord.Forbidden, discord.HTTPException) as fetch_error:
-                print(f"⚠️  Could not verify panel message {panel['message_id']}: {fetch_error}")
+                logger.warning(f"Could not verify panel message {panel['message_id']}: {fetch_error}")
                 continue
 
-            if panel['panel_type'] == 'admin_settings':
+            if panel['panel_type'] == PANEL_TYPE_ADMIN_SETTINGS:
                 view = AdminSettingsView(
                     guild_id=panel['guild_id'],
                     persistent=True,
                     custom_id_prefix=custom_prefix
                 )
-            elif panel['panel_type'] == 'command_settings':
+            elif panel['panel_type'] == PANEL_TYPE_COMMAND_SETTINGS:
                 view = CommandToggleView(
                     guild_id=panel['guild_id'],
                     persistent=True,
                     custom_id_prefix=custom_prefix
                 )
-            elif panel['panel_type'] == 'issue_panel':
+            elif panel['panel_type'] == PANEL_TYPE_ISSUE_PANEL:
                 view = IssuePanelView(
                     guild_id=panel['guild_id'],
                     custom_id_prefix=custom_prefix
                 )
             else:
-                print(f"⚠️  Unknown panel type {panel['panel_type']}, skipping.")
+                logger.warning(f"Unknown panel type {panel['panel_type']}, skipping.")
                 continue
 
             bot.add_view(view, message_id=panel['message_id'])
@@ -245,42 +259,30 @@ async def on_ready():
 
         if restored_counts:
             summary = ", ".join(f"{ptype}: {count}" for ptype, count in restored_counts.items())
-            print(f"✅ Registered persistent panels ({summary})")
+            logger.info(f"Registered persistent panels ({summary})")
         else:
-            print("ℹ️ No persistent panels to restore")
+            logger.info("No persistent panels to restore")
     except Exception as e:
-        print(f"⚠️  Failed to register persistent panels: {e}")
+        logger.warning(f"Failed to register persistent panels: {e}")
     
     try:
         # Sync slash commands
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
+        logger.info(f"Synced {len(synced)} command(s)")
     except Exception as e:
-        print(f"Failed to sync commands: {e}")
+        logger.error(f"Failed to sync commands: {e}")
     
-    # Start daily booster role check task
+    # Start background tasks
+    logger.info("Starting background tasks...")
     bot.loop.create_task(daily_booster_role_check(bot))
-    
-    # Start poll auto-close check task
     bot.loop.create_task(poll_auto_close_check(bot))
-
-    # Start poll results refresh task
     bot.loop.create_task(poll_results_refresh(bot))
-    
-    # Start reminder check task
     bot.loop.create_task(reminder_check(bot))
-    
-    # Start timer check task
     bot.loop.create_task(timer_check(bot))
-
-    # Start birthday check task
     bot.loop.create_task(birthday_check(bot))
-
-    # Start counting penalty cleanup task
     bot.loop.create_task(counting_penalty_check(bot))
-
-    # Start scheduled role change task
     bot.loop.create_task(scheduled_role_check(bot))
+    logger.info("All background tasks started")
     
 @bot.event
 async def on_message(message):
@@ -296,7 +298,7 @@ async def on_message(message):
                 db.init_pool()
             db.log_member_activity(message.guild.id, message.author.id, message.created_at)
     except Exception as e:
-        print(f"[ACTIVITY] Failed to log activity: {e}")
+        logger.error(f"Failed to log activity: {e}")
     
     # Handle replies to bot's messages - ping the original poster if they have notifications enabled
     await handle_reply_notification(message, bot)
@@ -317,10 +319,10 @@ async def on_message(message):
 async def on_message_edit(before: discord.Message, after: discord.Message):
     """Handle message edits for mirrored messages"""
     try:
-        print(f"[DEBUG] on_message_edit event: before_id={before.id} after_id={after.id} author_id={after.author.id} guild_id={getattr(after.guild, 'id', None)} channel_id={after.channel.id}")
+        logger.debug(f"on_message_edit event: before_id={before.id} after_id={after.id} author_id={after.author.id} guild_id={getattr(after.guild, 'id', None)} channel_id={after.channel.id}")
     except AttributeError:
         # Defensive logging - ensure we never crash event handling
-        print("[DEBUG] on_message_edit event fired (could not introspect message objects)")
+        logger.debug("on_message_edit event fired (could not introspect message objects)")
 
     await log_message_edit_event(before, after)
     await handle_message_edit(before, after)
@@ -335,7 +337,7 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
     the cached previous state.
     """
     try:
-        print(f"[DEBUG] on_raw_message_edit fired: message_id={payload.message_id} channel_id={payload.channel_id} guild_id={payload.guild_id}")
+        logger.debug(f"on_raw_message_edit fired: message_id={payload.message_id} channel_id={payload.channel_id} guild_id={payload.guild_id}")
         # Try to resolve channel and fetch the message
         channel = None
         if payload.guild_id:
@@ -346,19 +348,19 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
             channel = bot.get_channel(payload.channel_id)
 
         if not channel:
-            print(f"[DEBUG] Could not resolve channel for raw edit: {payload.channel_id}")
+            logger.debug(f"Could not resolve channel for raw edit: {payload.channel_id}")
             return
 
         try:
             after = await channel.fetch_message(payload.message_id)
         except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
-            print(f"[DEBUG] Failed to fetch edited message {payload.message_id}: {e}")
+            logger.debug(f"Failed to fetch edited message {payload.message_id}: {e}")
             return
 
         await log_message_edit_event(None, after)
         await handle_message_edit(None, after)
     except Exception as e:
-        print(f"[DEBUG] on_raw_message_edit handler error: {e}")
+        logger.error(f"on_raw_message_edit handler error: {e}")
 
 @bot.event
 async def on_message_delete(message: discord.Message):
@@ -373,19 +375,21 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
         await log_raw_message_delete_event(payload)
         if payload.message_id in getattr(db, 'persistent_panel_ids', set()):
             db.delete_persistent_panel(payload.message_id)
-            print(f"🗑️ Removed persistent panel record for message {payload.message_id}")
+            logger.info(f"Removed persistent panel record for message {payload.message_id}")
     except Exception as e:
-        print(f"⚠️  Error cleaning up persistent panel {payload.message_id}: {e}")
+        logger.warning(f"Error cleaning up persistent panel {payload.message_id}: {e}")
 
 
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    await starboard_core.handle_raw_reaction(bot, payload)
+    """Handle reaction additions for starboard"""
+    await starboard.handle_raw_reaction(bot, payload)
 
 
 @bot.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
-    await starboard_core.handle_raw_reaction(bot, payload)
+    """Handle reaction removals for starboard"""
+    await starboard.handle_raw_reaction(bot, payload)
 
 # Manual sync command (useful for testing) - keep as text command
 @bot.command()

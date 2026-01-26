@@ -1,12 +1,12 @@
-"""
-Emoji and sticker management command group and helpers
-"""
+"""Emoji and sticker management command group and helpers"""
 import discord
 from discord import app_commands
 import aiohttp
 import io
 import re
+
 from database import db
+from utils.interaction_helpers import send_error, send_success, send_warning, require_guild
 
 
 def check_emoji_permissions(interaction: discord.Interaction) -> str | None:
@@ -17,13 +17,13 @@ def check_emoji_permissions(interaction: discord.Interaction) -> str | None:
         Error message string if permissions are insufficient, None if OK
     """
     if not interaction.guild:
-        return "❌ This command can only be used in a server!"
+        return "This command can only be used in a server!"
     
     if not interaction.user.guild_permissions.manage_emojis_and_stickers:
-        return "❌ You need 'Manage Expressions' permission to use this command."
+        return "You need 'Manage Expressions' permission to use this command."
     
     if not interaction.guild.me.guild_permissions.manage_emojis_and_stickers:
-        return "❌ I don't have 'Manage Expressions' permission to create/edit emojis or stickers."
+        return "I don't have 'Manage Expressions' permission to create/edit emojis or stickers."
     
     return None
 
@@ -67,14 +67,14 @@ async def create_emoji_or_sticker_with_overwrite(
                 try:
                     await existing_sticker.delete(reason="Replaced with new sticker")
                 except discord.Forbidden:
-                    return f"❌ I don't have permission to delete the existing sticker '{name}'."
+                    return f"I don't have permission to delete the existing sticker '{name}'."
                 except Exception as e:
-                    return f"❌ Failed to delete existing sticker: {e}"
+                    return f"Failed to delete existing sticker: {e}"
             else:
-                return f"❌ A sticker named '{name}' already exists. Use replace_existing=True to overwrite."
+                return f"A sticker named '{name}' already exists. Use replace_existing=True to overwrite."
         
         if len(guild.stickers) >= sticker_limit:
-            return f"❌ This server has reached its sticker limit ({sticker_limit})."
+            return f"This server has reached its sticker limit ({sticker_limit})."
         
         try:
             new_sticker = await guild.create_sticker(

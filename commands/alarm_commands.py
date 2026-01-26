@@ -10,13 +10,12 @@ from typing import Dict
 import discord
 from discord import app_commands
 import shutil
-import logging
 
 from database import db
+from utils.logger import logger
+from utils.interaction_helpers import send_error, send_success, require_guild
 from utils.tts_helper import synthesize_tts_to_file
 from utils.ffmpeg_helper import which_ffmpeg
-
-logger = logging.getLogger('bradbot.alarm')
 
 # In-process scheduled tasks for alarms: alarm_id -> asyncio.Task
 ALARM_TASKS: Dict[str, asyncio.Task] = {}
@@ -199,7 +198,7 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                                         synthesize_tts_to_file(message or 'Alarm', tmp_tts)
                                         await _play_and_wait(tmp_tts)
                                     except Exception as e:
-                                        print(f'[bradbot.alarm] TTS generation/playback failed: {e}')
+                                        logger.error(f'TTS generation/playback failed: {e}')
                                         logger.exception('TTS generation/playback failed: %s', e)
                                         try:
                                             os.remove(tmp_tts)
@@ -260,7 +259,7 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                                             synthesize_tts_to_file(message or 'Alarm', tmp_path)
                                             await _play_and_wait(tmp_path)
                                         except Exception as e:
-                                            print(f'[bradbot.alarm] TTS generation/playback failed: {e}')
+                                            logger.error(f'TTS generation/playback failed: {e}')
                                             logger.exception('TTS generation/playback failed: %s', e)
                                             try:
                                                 os.remove(tmp_path)
@@ -454,8 +453,7 @@ class AlarmGroup(app_commands.Group):
     @app_commands.command(name='set', description='Set an alarm. Example: "in 10m" or "2025-12-31 08:00"')
     @app_commands.describe(time='Relative (e.g. "in 10m") or absolute (YYYY-MM-DD HH:MM)', message='Message to send when alarm fires', channel='Channel to send the alarm to (defaults to current channel)', tts='If true, try to speak the message in voice if connected', tone='If true, play a loud tone in voice instead of TTS', alternate='If true and both tone+tts are set, alternate tone and TTS (tone->tts->tone)', repeat='Number of times to play the alarm audio (default 1, max 10; set 0 to hold continuously until cancelled)', interval='Optional recurrence interval (e.g. "daily", "hourly", or "in 1h30m")', tz='Optional timezone for absolute times (e.g. "Europe/London" or "+02:00")')
     async def set(self, interaction: discord.Interaction, time: str, message: str = None, channel: discord.TextChannel = None, tts: bool = False, tone: bool = False, alternate: bool = False, repeat: int = 1, interval: str = None, tz: str = None):
-        if not interaction.guild:
-            await interaction.response.send_message('❌ Alarms must be set in a server.', ephemeral=True)
+        if not await require_guild(interaction):
             return
 
         # Parse 'in X' basic format or absolute YYYY-MM-DD HH:MM
@@ -592,24 +590,25 @@ class AlarmGroup(app_commands.Group):
 
             db.add_alarm(aid, interaction.guild.id, interaction.user.id, channel.id, message, tts, tone, alternate, repeat_val, interval_seconds, fire_at_iso)
         except Exception as e:
-            await interaction.response.send_message(f'❌ Failed to save alarm: {e}', ephemeral=True)
+            logger.error(f"Failed to save alarm: {e}")
+            await send_error(interaction, f'Failed to save alarm: {e}')
             return
 
         # schedule
         schedule_alarm_task(interaction.client, (aid, interaction.guild.id, interaction.user.id, channel.id, message, tts, tone, alternate, repeat_val, interval_seconds, fire_at_iso))
 
-        await interaction.response.send_message(f'✅ Alarm set (id: `{aid}`) to fire <t:{int((now + dt.timedelta(seconds=delay)).timestamp())}:F>.', ephemeral=True)
+        await send_success(interaction, f'Alarm set (id: `{aid}`) to fire <t:{int((now + dt.timedelta(seconds=delay)).timestamp())}:F>.')
 
     @app_commands.command(name='list', description='List scheduled alarms for this server')
     async def list(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            await interaction.response.send_message('❌ Use this in a server.', ephemeral=True)
+        if not await require_guild(interaction):
             return
 
         try:
             rows = db.get_alarms_for_guild(interaction.guild.id)
         except Exception as e:
-            await interaction.response.send_message(f'❌ Failed to query alarms: {e}', ephemeral=True)
+            logger.error(f"Failed to query alarms: {e}")
+            await send_error(interaction, f'Failed to query alarms: {e}')
             return
 
         if not rows:
@@ -650,8 +649,7 @@ class AlarmGroup(app_commands.Group):
     @app_commands.command(name='cancel', description='Cancel a scheduled alarm by id')
     @app_commands.describe(id='Alarm id to cancel (use /alarm list to see ids). Use `all` to cancel all alarms for this guild')
     async def cancel(self, interaction: discord.Interaction, id: str):
-        if not interaction.guild:
-            await interaction.response.send_message('❌ Use this in a server.', ephemeral=True)
+        if not await require_guild(interaction):
             return
 
         if id == 'all':
@@ -680,7 +678,8 @@ class AlarmGroup(app_commands.Group):
                 await interaction.response.send_message('Alarm id not found.', ephemeral=True)
                 return
         except Exception as e:
-            await interaction.response.send_message(f'❌ DB error: {e}', ephemeral=True)
+            logger.error(f"DB error cancelling alarm: {e}")
+            await send_error(interaction, f'DB error: {e}')
             return
 
         t = ALARM_TASKS.pop(id, None)

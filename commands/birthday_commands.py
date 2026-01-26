@@ -1,6 +1,4 @@
-"""
-Birthday command group for setting birthday channels and user birthdays
-"""
+"""Birthday command group for setting birthday channels and user birthdays"""
 import calendar
 import datetime as dt
 from typing import Optional
@@ -9,6 +7,7 @@ import discord
 from discord import app_commands
 
 from database import db
+from utils.interaction_helpers import send_error, send_success, send_info, require_guild
 
 
 class BirthdayChannelGroup(app_commands.Group):
@@ -21,31 +20,26 @@ class BirthdayChannelGroup(app_commands.Group):
     @app_commands.describe(channel="Channel where birthday pings will be sent")
     @app_commands.default_permissions(manage_guild=True)
     async def set_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        if not await require_guild(interaction):
             return
         if not interaction.user.guild_permissions.manage_guild:
-            await interaction.response.send_message("❌ You need Manage Server to do that.", ephemeral=True)
+            await send_error(interaction, "You need Manage Server to do that.")
             return
 
         db.set_guild_setting(interaction.guild.id, 'birthday_channel_id', str(channel.id))
-        await interaction.response.send_message(
-            f"✅ Birthday channel set to {channel.mention}.",
-            ephemeral=True
-        )
+        await send_success(interaction, f"Birthday channel set to {channel.mention}.")
 
     @app_commands.command(name="clear", description="Clear the birthday announcement channel")
     @app_commands.default_permissions(manage_guild=True)
     async def clear_channel(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        if not await require_guild(interaction):
             return
         if not interaction.user.guild_permissions.manage_guild:
-            await interaction.response.send_message("❌ You need Manage Server to do that.", ephemeral=True)
+            await send_error(interaction, "You need Manage Server to do that.")
             return
 
         db.set_guild_setting(interaction.guild.id, 'birthday_channel_id', '')
-        await interaction.response.send_message("✅ Birthday channel cleared.", ephemeral=True)
+        await send_success(interaction, "Birthday channel cleared.")
 
 
 class BirthdayGroup(app_commands.Group):
@@ -95,8 +89,7 @@ class BirthdayGroup(app_commands.Group):
         month: Optional[app_commands.Range[int, 1, 12]] = None,
         day: Optional[app_commands.Range[int, 1, 31]] = None
     ):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        if not await require_guild(interaction):
             return
 
         valid, error = self._validate_birthday(year, month, day)
@@ -107,25 +100,21 @@ class BirthdayGroup(app_commands.Group):
         db.set_birthday(interaction.guild.id, interaction.user.id, year, month, day)
         date_text = self._format_birthday(year, month, day)
         if day is None:
-            await interaction.response.send_message(
-                f"✅ Birthday set to {date_text} (no day set, so no announcements).",
-                ephemeral=True
+            await send_success(
+                interaction,
+                f"Birthday set to {date_text} (no day set, so no announcements)."
             )
             return
-        await interaction.response.send_message(
-            f"✅ Birthday set to {date_text}.",
-            ephemeral=True
-        )
+        await send_success(interaction, f"Birthday set to {date_text}.")
         return
 
     @app_commands.command(name="clear", description="Clear your birthday for this server")
     async def clear_birthday(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        if not await require_guild(interaction):
             return
 
         db.clear_birthday(interaction.guild.id, interaction.user.id)
-        await interaction.response.send_message("✅ Birthday cleared.", ephemeral=True)
+        await send_success(interaction, "Birthday cleared.")
 
     @app_commands.command(name="set_for", description="Set a birthday for another user")
     @app_commands.describe(
@@ -143,11 +132,10 @@ class BirthdayGroup(app_commands.Group):
         month: Optional[app_commands.Range[int, 1, 12]] = None,
         day: Optional[app_commands.Range[int, 1, 31]] = None
     ):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        if not await require_guild(interaction):
             return
         if not interaction.user.guild_permissions.manage_guild:
-            await interaction.response.send_message("❌ You need Manage Server to do that.", ephemeral=True)
+            await send_error(interaction, "You need Manage Server to do that.")
             return
 
         valid, error = self._validate_birthday(year, month, day)
@@ -158,34 +146,24 @@ class BirthdayGroup(app_commands.Group):
         db.set_birthday(interaction.guild.id, user.id, year, month, day)
         date_text = self._format_birthday(year, month, day)
         if day is None:
-            await interaction.response.send_message(
-                f"✅ Birthday set for {user.mention}: {date_text} (no day set, so no announcements).",
-                ephemeral=True
+            await send_success(
+                interaction,
+                f"Birthday set for {user.mention}: {date_text} (no day set, so no announcements)."
             )
             return
-        await interaction.response.send_message(
-            f"✅ Birthday set for {user.mention}: {date_text}.",
-            ephemeral=True
-        )
-
-    @app_commands.command(name="month", description="List birthdays for a given month")
-    @app_commands.describe(month="Month number (1-12); defaults to current month")
+        await send_success(interaction, f"Birthday set for {user.mention}: {date_text}.")
     async def list_month_birthdays(
         self,
         interaction: discord.Interaction,
         month: Optional[app_commands.Range[int, 1, 12]] = None
     ):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        if not await require_guild(interaction):
             return
 
         target_month = month or dt.datetime.now(dt.timezone.utc).month
         entries = db.get_birthdays_for_month(interaction.guild.id, target_month)
         if not entries:
-            await interaction.response.send_message(
-                f"ℹ️ No birthdays recorded for {calendar.month_name[target_month]}.",
-                ephemeral=True
-            )
+            await send_info(interaction, f"No birthdays recorded for {calendar.month_name[target_month]}.")
             return
 
         lines = []
@@ -200,10 +178,7 @@ class BirthdayGroup(app_commands.Group):
                 lines.append(f"- {member.mention} — {calendar.month_name[target_month]} {day:02d}")
 
         if not lines:
-            await interaction.response.send_message(
-                f"ℹ️ No birthdays recorded for {calendar.month_name[target_month]}.",
-                ephemeral=True
-            )
+            await send_info(interaction, f"No birthdays recorded for {calendar.month_name[target_month]}.")
             return
 
         header = f"🎂 Birthdays in {calendar.month_name[target_month]}"
@@ -219,8 +194,7 @@ class BirthdayGroup(app_commands.Group):
         interaction: discord.Interaction,
         age: app_commands.Range[int, 1, 120]
     ):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        if not await require_guild(interaction):
             return
 
         today = dt.datetime.now(dt.timezone.utc).date()
@@ -242,10 +216,7 @@ class BirthdayGroup(app_commands.Group):
                 matches.append(member.mention)
 
         if not matches:
-            await interaction.response.send_message(
-                f"ℹ️ No users with age {age} found.",
-                ephemeral=True
-            )
+            await send_info(interaction, f"No users with age {age} found.")
             return
 
         response = f"🎉 Users with age {age}:\n" + "\n".join(f"- {m}" for m in matches)
@@ -255,13 +226,12 @@ class BirthdayGroup(app_commands.Group):
 
     @app_commands.command(name="list", description="List all birthdays in this server")
     async def list_all_birthdays(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        if not await require_guild(interaction):
             return
 
         entries = db.get_birthdays_for_guild(interaction.guild.id)
         if not entries:
-            await interaction.response.send_message("ℹ️ No birthdays recorded.", ephemeral=True)
+            await send_info(interaction, "No birthdays recorded.")
             return
 
         lines = []
@@ -277,7 +247,7 @@ class BirthdayGroup(app_commands.Group):
                 lines.append(f"- {member.mention} — {calendar.month_name[month]} {day:02d}")
 
         if not lines:
-            await interaction.response.send_message("ℹ️ No birthdays recorded.", ephemeral=True)
+            await send_info(interaction, "No birthdays recorded.")
             return
 
         response = "🎂 All birthdays\n" + "\n".join(lines)

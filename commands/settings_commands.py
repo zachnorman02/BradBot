@@ -6,6 +6,8 @@ from discord import app_commands
 from discord.ext import commands
 from database import db
 
+from utils.logger import logger
+
 
 class SettingsView(discord.ui.View):
     """Interactive view for user settings"""
@@ -41,7 +43,7 @@ class SettingsView(discord.ui.View):
                         item.label = "🔄 Refresh"
                         item.style = discord.ButtonStyle.blurple
         except Exception as e:
-            print(f"Error updating buttons: {e}")
+            logger.error(f"Error updating buttons: {e}")
     
     def get_embed(self) -> discord.Embed:
         """Generate the settings embed"""
@@ -78,7 +80,7 @@ class SettingsView(discord.ui.View):
             
             return embed
         except Exception as e:
-            print(f"Error generating embed: {e}")
+            logger.error(f"Error generating embed: {e}")
             return discord.Embed(
                 title="⚙️ Settings",
                 description="Error loading settings",
@@ -108,7 +110,7 @@ class SettingsView(discord.ui.View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
         except Exception as e:
-            print(f"Error toggling send pings: {e}")
+            logger.error(f"Error toggling send pings: {e}")
             await interaction.response.send_message("❌ An error occurred", ephemeral=True)
     
     @discord.ui.button(label="📩 Receive Notifications", style=discord.ButtonStyle.success, custom_id="toggle_receive_pings", row=0)
@@ -135,7 +137,7 @@ class SettingsView(discord.ui.View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
         except Exception as e:
-            print(f"Error toggling receive pings: {e}")
+            logger.error(f"Error toggling receive pings: {e}")
             await interaction.response.send_message("❌ An error occurred", ephemeral=True)
     
     @discord.ui.button(label="🌍 Switch Scope", style=discord.ButtonStyle.primary, custom_id="toggle_scope", row=1)
@@ -197,7 +199,7 @@ class SettingsGroup(app_commands.Group):
                 ephemeral=True
             )
         except Exception as e:
-            print(f"Error opening settings menu: {e}")
+            logger.error(f"Error opening settings menu: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while opening the settings menu.",
                 ephemeral=True
@@ -247,7 +249,7 @@ class SettingsGroup(app_commands.Group):
             
             await interaction.response.send_message(response, ephemeral=True)
         except Exception as e:
-            print(f"Error updating send pings preference: {e}")
+            logger.error(f"Error updating send pings preference: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while updating your preference. Please try again later.",
                 ephemeral=True
@@ -296,7 +298,7 @@ class SettingsGroup(app_commands.Group):
             
             await interaction.response.send_message(response, ephemeral=True)
         except Exception as e:
-            print(f"Error updating notification preference: {e}")
+            logger.error(f"Error updating notification preference: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while updating your notification preference. Please try again later.",
                 ephemeral=True

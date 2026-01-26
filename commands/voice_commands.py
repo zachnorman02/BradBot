@@ -1,15 +1,18 @@
 import asyncio
 import os
 import tempfile
+import traceback
+
+import boto3
 import discord
 from discord import app_commands, FFmpegPCMAudio
 from yt_dlp import YoutubeDL
+
+from database import db
 from utils.cookie_helper import fetch_youtube_cookies
+from utils.logger import logger
 from utils.tts_helper import synthesize_tts_to_file
 import utils.tts_helper as tts_helper
-from database import db
-import boto3
-import traceback
 
 
 # Simple per-guild audio player
@@ -103,18 +106,18 @@ class GuildPlayer:
                     try:
                         cleanup()
                     except Exception as cleanup_error:
-                        print(f"[VOICE] Cleanup error: {cleanup_error}")
+                        logger.error(f"Cleanup error: {cleanup_error}")
                 if err:
-                    print(f"[VOICE] Playback error: {err}")
+                    logger.error(f"Playback error: {err}")
                 # schedule next
                 try:
                     asyncio.run_coroutine_threadsafe(self._play_next(), self.bot.loop)
                 except Exception as e:
-                    print(f"[VOICE] Failed to schedule next track: {e}")
+                    logger.error(f"Failed to schedule next track: {e}")
 
             vc.play(player, after=_after)
         except Exception as e:
-            print(f"[VOICE] Error playing source: {e}")
+            logger.error(f"Error playing source: {e}")
             # clear current and try next
             self.current = None
             try:
@@ -246,7 +249,7 @@ class VoiceGroup(app_commands.Group):
         announce_author: bool = False,
         post_text: bool = True
     ):
-        print(f"DEBUG: text={text}, voice={voice}, engine={engine}, language={language}, announce_author={announce_author}, post_text={post_text}")
+        logger.debug(f"text={text}, voice={voice}, engine={engine}, language={language}, announce_author={announce_author}, post_text={post_text}")
 
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
@@ -313,7 +316,7 @@ class VoiceGroup(app_commands.Group):
                     os.remove(temp_audio_path)
                 except FileNotFoundError:
                     pass
-                print(f"[TTS] Synthesis failed: {synth_err}")
+                logger.error(f"Synthesis failed: {synth_err}")
                 traceback.print_exc()
                 raise
 
@@ -378,7 +381,7 @@ class VoiceGroup(app_commands.Group):
                     post_text
                 )
             except Exception as log_error:
-                print(f"Failed to log TTS message: {log_error}")
+                logger.error(f"Failed to log TTS message: {log_error}")
         except Exception as e:
             await interaction.followup.send(f"❌ TTS failed: {e}", ephemeral=True)
 

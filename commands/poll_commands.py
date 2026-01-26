@@ -14,6 +14,8 @@ import matplotlib
 matplotlib.use('Agg')  # Use non-GUI backend
 import matplotlib.pyplot as plt
 
+from utils.logger import logger
+
 
 async def update_poll_embed(poll_id: int, channel, message_id: int):
     """Helper function to update poll embed with current responses"""
@@ -84,7 +86,7 @@ async def update_poll_embed(poll_id: int, channel, message_id: int):
         
         await message.edit(embed=embed)
     except Exception as e:
-        print(f"Error updating poll embed: {e}")
+        logger.error(f"Error updating poll embed: {e}")
 
 
 class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
@@ -107,7 +109,7 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
     async def on_submit(self, interaction: discord.Interaction):
         """Handle response submission"""
         try:
-            print(f"[POLL] Response submission started for poll {self.poll_id} by {interaction.user}")
+            logger.info(f"Response submission started for poll {self.poll_id} by {interaction.user}")
             
             # Store response in database
             try:
@@ -126,7 +128,7 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
                     return
                 raise
             
-            print(f"[POLL] Response stored successfully")
+            logger.info("Response stored successfully")
             
             # Check if poll just closed due to max_responses
             poll_info = db.get_poll(self.poll_id)
@@ -160,25 +162,25 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
                                 
                                 await message.edit(embed=embed, view=view)
                     except Exception as e:
-                        print(f"Error updating poll message after auto-close: {e}")
+                        logger.error(f"Error updating poll message after auto-close: {e}")
                     
                     return
             
-            print(f"[POLL] Sending success message")
+            logger.info("Sending success message")
             await interaction.response.send_message(
                 "✅ Your response has been submitted!",
                 ephemeral=True
             )
             
-            print(f"[POLL] Attempting to update poll embed")
+            logger.info("Attempting to update poll embed")
             # Update poll embed to show response count and responses if enabled
             poll_info = db.get_poll(self.poll_id)
             if poll_info and poll_info['message_id']:
                 await update_poll_embed(self.poll_id, interaction.channel, poll_info['message_id'])
-            print(f"[POLL] Poll embed updated successfully")
+            logger.info("Poll embed updated successfully")
                 
         except Exception as e:
-            print(f"[POLL ERROR] Error in response submission: {e}")
+            logger.error(f"Error in response submission: {e}")
             traceback.print_exc()
             try:
                 await interaction.response.send_message(
@@ -193,7 +195,7 @@ class ResponseModal(discord.ui.Modal, title="Submit Your Response"):
                         ephemeral=True
                     )
                 except Exception as followup_error:
-                    print(f"[POLL ERROR] Could not send error message: {followup_error}")
+                    logger.error(f"Could not send error message: {followup_error}")
 
 
 # PollView moved to commands/views/poll_views.py
@@ -284,10 +286,10 @@ class PollGroup(app_commands.Group):
             message = await interaction.original_response()
             db.update_poll_message_id(poll_id, message.id)
             
-            print(f"📊 Poll created by {interaction.user} in {interaction.guild.name}: {question}")
+            logger.info(f"📊 Poll created by {interaction.user} in {interaction.guild.name}: {question}")
             
         except Exception as e:
-            print(f"Error creating poll: {e}")
+            logger.error(f"Error creating poll: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while creating the poll. Please try again.",
                 ephemeral=True
@@ -348,7 +350,7 @@ class PollGroup(app_commands.Group):
                         )
                         return
                 except Exception as e:
-                    print(f"Error checking channel permissions: {e}")
+                    logger.error(f"Error checking channel permissions: {e}")
                     await interaction.response.send_message(
                         "❌ Could not verify channel access.",
                         ephemeral=True
@@ -393,7 +395,7 @@ class PollGroup(app_commands.Group):
             await interaction.response.send_message(embed=embed)
             
         except Exception as e:
-            print(f"Error viewing poll results: {e}")
+            logger.error(f"Error viewing poll results: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while fetching poll results.",
                 ephemeral=True
@@ -434,7 +436,7 @@ class PollGroup(app_commands.Group):
                     try:
                         await update_poll_embed(poll_id, channel, poll_info['message_id'])
                     except Exception as e:
-                        print(f"[POLL] Could not refresh poll embed after toggling responses: {e}")
+                        logger.error(f"Could not refresh poll embed after toggling responses: {e}")
 
             status = "now showing" if show_responses else "no longer showing"
             await interaction.response.send_message(
@@ -442,7 +444,7 @@ class PollGroup(app_commands.Group):
                 ephemeral=True
             )
         except Exception as e:
-            print(f"[POLL] Error toggling show_responses: {e}")
+            logger.error(f"Error toggling show_responses: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while updating the poll.",
                 ephemeral=True
@@ -490,17 +492,17 @@ class PollGroup(app_commands.Group):
                         # Remove the button
                         await message.edit(embed=embed, view=None)
                 except Exception as e:
-                    print(f"Could not edit poll message: {e}")
+                    logger.error(f"Could not edit poll message: {e}")
             
             await interaction.response.send_message(
                 f"✅ Poll #{poll_id} has been closed. No new responses will be accepted.",
                 ephemeral=True
             )
             
-            print(f"📊 Poll {poll_id} closed by {interaction.user}")
+            logger.info(f"📊 Poll {poll_id} closed by {interaction.user}")
             
         except Exception as e:
-            print(f"Error closing poll: {e}")
+            logger.error(f"Error closing poll: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while closing the poll.",
                 ephemeral=True
@@ -557,17 +559,17 @@ class PollGroup(app_commands.Group):
                         view = PollView(poll_id, poll_info['question'])
                         await message.edit(embed=embed, view=view)
                 except Exception as e:
-                    print(f"Could not edit poll message: {e}")
+                    logger.error(f"Could not edit poll message: {e}")
             
             await interaction.response.send_message(
                 f"✅ Poll #{poll_id} has been reopened. Responses are now accepted.",
                 ephemeral=True
             )
             
-            print(f"📊 Poll {poll_id} reopened by {interaction.user}")
+            logger.info(f"📊 Poll {poll_id} reopened by {interaction.user}")
             
         except Exception as e:
-            print(f"Error reopening poll: {e}")
+            logger.error(f"Error reopening poll: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while reopening the poll.",
                 ephemeral=True
@@ -637,7 +639,7 @@ class PollGroup(app_commands.Group):
                     ephemeral=True
                 )
                 
-                print(f"📊 Poll {poll_id} refreshed by {interaction.user}")
+                logger.info(f"📊 Poll {poll_id} refreshed by {interaction.user}")
                 
             except discord.NotFound:
                 await interaction.response.send_message(
@@ -645,14 +647,14 @@ class PollGroup(app_commands.Group):
                     ephemeral=True
                 )
             except Exception as e:
-                print(f"Error fetching/editing poll message: {e}")
+                logger.error(f"Error fetching/editing poll message: {e}")
                 await interaction.response.send_message(
                     f"❌ Could not refresh poll message: {str(e)[:100]}",
                     ephemeral=True
                 )
             
         except Exception as e:
-            print(f"Error refreshing poll: {e}")
+            logger.error(f"Error refreshing poll: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while refreshing the poll.",
                 ephemeral=True
@@ -699,7 +701,7 @@ class PollGroup(app_commands.Group):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             
         except Exception as e:
-            print(f"Error listing polls: {e}")
+            logger.error(f"Error listing polls: {e}")
             await interaction.response.send_message(
                 "❌ An error occurred while listing polls.",
                 ephemeral=True
@@ -744,7 +746,7 @@ class PollGroup(app_commands.Group):
                         )
                         return
                 except Exception as e:
-                    print(f"Error checking channel permissions: {e}")
+                    logger.error(f"Error checking channel permissions: {e}")
                     await interaction.followup.send(
                         "❌ Could not verify channel access."
                     )
@@ -806,10 +808,10 @@ class PollGroup(app_commands.Group):
             
             await interaction.followup.send(embed=embed, file=file)
             
-            print(f"📊 Generated word cloud for poll {poll_id} requested by {interaction.user}")
+            logger.info(f"📊 Generated word cloud for poll {poll_id} requested by {interaction.user}")
             
         except Exception as e:
-            print(f"Error generating word cloud: {e}")
+            logger.error(f"Error generating word cloud: {e}")
             traceback.print_exc()
             await interaction.followup.send(
                 f"❌ An error occurred while generating the word cloud: {str(e)[:200]}"
@@ -854,7 +856,7 @@ class PollGroup(app_commands.Group):
                         )
                         return
                 except Exception as e:
-                    print(f"Error checking channel permissions: {e}")
+                    logger.error(f"Error checking channel permissions: {e}")
                     await interaction.followup.send(
                         "❌ Could not verify channel access."
                     )
@@ -946,10 +948,10 @@ class PollGroup(app_commands.Group):
             
             await interaction.followup.send(embed=embed, file=file)
             
-            print(f"📊 Generated statistics for poll {poll_id} requested by {interaction.user}")
+            logger.info(f"📊 Generated statistics for poll {poll_id} requested by {interaction.user}")
             
         except Exception as e:
-            print(f"Error generating poll statistics: {e}")
+            logger.error(f"Error generating poll statistics: {e}")
             traceback.print_exc()
             await interaction.followup.send(
                 f"❌ An error occurred while generating statistics: {str(e)[:200]}"

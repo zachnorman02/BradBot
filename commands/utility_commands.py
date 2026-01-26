@@ -8,8 +8,10 @@ import asyncio
 import re
 from typing import Optional
 from dateutil import parser
+
 from database import db
 from utils.cookie_helper import fetch_youtube_cookies
+from utils.logger import logger
 
 
 class UtilityGroup(app_commands.Group):
@@ -107,14 +109,14 @@ class UtilityGroup(app_commands.Group):
                     ephemeral=True
                 )
             except Exception as e:
-                print(f"Error storing reminder: {e}")
+                logger.error(f"Error storing reminder: {e}")
                 await interaction.response.send_message(
                     "❌ An error occurred while setting the reminder.",
                     ephemeral=True
                 )
             
         except Exception as e:
-            print(f"Error setting reminder: {e}")
+            logger.error(f"Error setting reminder: {e}")
             try:
                 await interaction.response.send_message(
                     "❌ An error occurred while setting the reminder.",
@@ -210,10 +212,10 @@ class UtilityGroup(app_commands.Group):
             # Update database with message ID
             db.update_timer_message_id(timer_id, message.id)
             
-            print(f"⏱️ Timer {timer_id} created by {interaction.user} for {duration}")
+            logger.info(f"⏱️ Timer {timer_id} created by {interaction.user} for {duration}")
             
         except Exception as e:
-            print(f"Error creating timer: {e}")
+            logger.error(f"Error creating timer: {e}")
             try:
                 await interaction.response.send_message(
                     "❌ An error occurred while creating the timer.",
