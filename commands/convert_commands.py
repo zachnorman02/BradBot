@@ -333,22 +333,20 @@ class ConversionGroup(app_commands.Group):
         except Exception as e:
             await interaction.response.send_message(f"❌ Liquid conversion failed: {e}", ephemeral=True)
 
-    @app_commands.command(name="currency", description="Convert currencies with live or historical rates")
+    @app_commands.command(name="currency", description="Convert currencies with live exchange rates")
     @app_commands.describe(
         amount="Amount to convert",
         from_currency="Three-letter code to convert from (e.g., USD)",
-        to_currency="Three-letter code to convert to (e.g., EUR)",
-        date="Optional historical date (YYYY-MM-DD). Default: latest rate"
+        to_currency="Three-letter code to convert to (e.g., EUR)"
     )
     async def currency(
         self,
         interaction: discord.Interaction,
         amount: float,
         from_currency: str,
-        to_currency: str,
-        date: Optional[str] = None
+        to_currency: str
     ):
-        """Fetch rate from exchangerate.host and convert the amount."""
+        """Fetch real-time rate from open.er-api.com and convert the amount."""
         from_code = from_currency.upper()
         to_code = to_currency.upper()
 
@@ -357,24 +355,14 @@ class ConversionGroup(app_commands.Group):
             await interaction.response.send_message("❌ Currency codes must be 3 letters (e.g., USD, EUR).", ephemeral=True)
             return
 
-        query_date = "latest"
-        if date:
-            try:
-                parsed_date = dt.datetime.fromisoformat(date).date()
-                query_date = parsed_date.isoformat()
-            except Exception:
-                await interaction.response.send_message("❌ Invalid date format. Use YYYY-MM-DD.", ephemeral=True)
-                return
+        await interaction.response.defer(ephemeral=False)
 
-        await interaction.response.defer(ephemeral=True)
-
-        url = f"https://api.exchangerate.host/{query_date}"
-        params = {"base": from_code, "symbols": to_code}
+        url = f"https://open.er-api.com/v6/latest/{from_code}"
 
         try:
             timeout = aiohttp.ClientTimeout(total=10)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, params=params) as resp:
+                async with session.get(url) as resp:
                     if resp.status != 200:
                         await interaction.followup.send(f"❌ Rate lookup failed (HTTP {resp.status}).", ephemeral=True)
                         return
@@ -383,149 +371,30 @@ class ConversionGroup(app_commands.Group):
             await interaction.followup.send(f"❌ Error calling rate API: {e}", ephemeral=True)
             return
 
-        rate = (data or {}).get("rates", {}).get(to_code)
-        effective_date = (data or {}).get("date") or query_date
+        # Check if API returned an error
+        if data.get("result") != "success":
+            error_msg = data.get("error-type", "Unknown error")
+            await interaction.followup.send(f"❌ Currency conversion failed: {error_msg}", ephemeral=True)
+            return
+
+        rate = data.get("rates", {}).get(to_code)
         if rate is None:
-            await interaction.followup.send("❌ Could not find that currency pair.", ephemeral=True)
+            await interaction.followup.send(
+                f"❌ Could not find rate for {to_code}. "
+                f"Please check that both currency codes are valid.",
+                ephemeral=True
+            )
             return
 
         converted = amount * rate
+        update_time = data.get("time_last_update_utc", "")
+        
         await interaction.followup.send(
             f"💱 {amount:.2f} {from_code} = {converted:.2f} {to_code}\n"
-            f"Rate: {rate:.6f} ({effective_date})",
+            f"Rate: {rate:.6f}\n"
+            f"Updated: {update_time}",
             ephemeral=False
         )
-
-    @app_commands.command(name="inflation", description="Calculate inflation between two dates for a currency")
-    @app_commands.describe(
-        amount="Amount in the original currency",
-        currency="Three-letter currency code (e.g., USD, EUR, GBP)",
-        from_date="Starting date (YYYY-MM-DD)",
-        to_date="Ending date (YYYY-MM-DD, default: today)"
-    )
-    async def inflation(
-        self,
-        interaction: discord.Interaction,
-        amount: float,
-        currency: str,
-        from_date: str,
-        to_date: Optional[str] = None
-    ):
-        """Calculate purchasing power change between two dates using currency exchange rate changes as a proxy."""
-        currency_code = currency.upper()
-        
-        # Validate currency code
-        if len(currency_code) != 3:
-            await interaction.response.send_message("❌ Currency code must be 3 letters (e.g., USD, EUR).", ephemeral=True)
-            return
-        
-        # Parse dates
-        try:
-            parsed_from = dt.datetime.fromisoformat(from_date).date()
-            from_date_str = parsed_from.isoformat()
-        except Exception:
-            await interaction.response.send_message("❌ Invalid from_date format. Use YYYY-MM-DD.", ephemeral=True)
-            return
-        
-        if to_date:
-            try:
-                parsed_to = dt.datetime.fromisoformat(to_date).date()
-                to_date_str = parsed_to.isoformat()
-            except Exception:
-                await interaction.response.send_message("❌ Invalid to_date format. Use YYYY-MM-DD.", ephemeral=True)
-                return
-        else:
-            parsed_to = dt.date.today()
-            to_date_str = "latest"
-        
-        # Ensure from_date is before to_date
-        if parsed_from >= parsed_to:
-            await interaction.response.send_message("❌ from_date must be before to_date.", ephemeral=True)
-            return
-        
-        await interaction.response.defer(ephemeral=False)
-        
-        # Fetch exchange rates for both dates using USD as base
-        # This gives us a proxy for relative currency value changes
-        base = "USD"
-        url_from = f"https://api.exchangerate.host/{from_date_str}"
-        url_to = f"https://api.exchangerate.host/{to_date_str}"
-        params = {"base": base, "symbols": currency_code}
-        
-        try:
-            timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                # Get rate for from_date
-                async with session.get(url_from, params=params) as resp:
-                    if resp.status != 200:
-                        await interaction.followup.send(f"❌ Rate lookup failed for {from_date_str} (HTTP {resp.status}).", ephemeral=True)
-                        return
-                    data_from = await resp.json()
-                
-                # Get rate for to_date
-                async with session.get(url_to, params=params) as resp:
-                    if resp.status != 200:
-                        await interaction.followup.send(f"❌ Rate lookup failed for {to_date_str} (HTTP {resp.status}).", ephemeral=True)
-                        return
-                    data_to = await resp.json()
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error calling rate API: {e}", ephemeral=True)
-            return
-        
-        rate_from = (data_from or {}).get("rates", {}).get(currency_code)
-        rate_to = (data_to or {}).get("rates", {}).get(currency_code)
-        actual_from_date = (data_from or {}).get("date", from_date_str)
-        actual_to_date = (data_to or {}).get("date", to_date_str)
-        
-        if rate_from is None or rate_to is None:
-            await interaction.followup.send(f"❌ Could not find rates for {currency_code}.", ephemeral=True)
-            return
-        
-        # Calculate the change in value
-        # If the currency strengthened against USD, its purchasing power increased
-        value_change_ratio = rate_to / rate_from
-        adjusted_amount = amount * value_change_ratio
-        
-        # Calculate percentage change
-        percent_change = ((value_change_ratio - 1) * 100)
-        
-        # Build response
-        embed = discord.Embed(
-            title="📊 Inflation Calculator",
-            color=discord.Color.blue() if percent_change >= 0 else discord.Color.red()
-        )
-        
-        embed.add_field(
-            name="Original Amount",
-            value=f"{amount:.2f} {currency_code} ({actual_from_date})",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="Adjusted Amount",
-            value=f"{adjusted_amount:.2f} {currency_code} ({actual_to_date})",
-            inline=False
-        )
-        
-        change_emoji = "📈" if percent_change >= 0 else "📉"
-        embed.add_field(
-            name="Value Change",
-            value=f"{change_emoji} {percent_change:+.2f}%",
-            inline=False
-        )
-        
-        years_diff = (parsed_to - parsed_from).days / 365.25
-        if years_diff > 0:
-            annual_rate = ((value_change_ratio ** (1 / years_diff)) - 1) * 100
-            embed.add_field(
-                name="Annualized Rate",
-                value=f"{annual_rate:+.2f}% per year",
-                inline=False
-            )
-        
-        embed.set_footer(text=f"Note: Using {base}-based exchange rate changes as proxy for purchasing power")
-        
-        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="timezone", description="Convert a date/time between timezones")
     @app_commands.describe(
