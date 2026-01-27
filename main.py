@@ -151,6 +151,12 @@ async def on_ready():
     
     # Initialize database connection pool
     try:
+        # Force close any existing pool to ensure fresh connections with current IAM token
+        try:
+            db.close_pool()
+        except Exception:
+            pass
+        
         db.init_pool()
         # Test the connection with a simple query
         db.execute_query("SELECT 1")
