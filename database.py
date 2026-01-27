@@ -29,6 +29,16 @@ class Database:
     def _get_iam_token(self) -> str:
         """Generate IAM authentication token for Aurora DSQL"""
         session = boto3.Session(region_name=self.region)
+        
+        # Debug: Print AWS identity being used for authentication
+        try:
+            sts_client = session.client('sts', region_name=self.region)
+            identity = sts_client.get_caller_identity()
+            print(f"DEBUG IAM TOKEN: Using identity ARN: {identity['Arn']}")
+            print(f"DEBUG IAM TOKEN: Account: {identity['Account']}, UserId: {identity['UserId']}")
+        except Exception as e:
+            print(f"DEBUG IAM TOKEN: Failed to get caller identity: {e}")
+        
         dsql_client = session.client('dsql', region_name=self.region)
         
         # Generate authentication token
@@ -75,6 +85,7 @@ class Database:
     
     def get_connection(self):
         """Get a connection from the pool, handling IAM token expiration"""
+        print(f"DEBUG IDENTITY: {boto3.client('sts').get_caller_identity()['Arn']}")
         if not self.connection_pool:
             self.init_pool()
         
