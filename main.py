@@ -23,6 +23,11 @@ from database import db
 from utils.logger import logger
 from utils.secrets_manager import load_secret_env
 
+# Debug: Check environment at import time
+logger.info(f"[IMPORT] DB_USER={os.getenv('DB_USER')}")
+logger.info(f"[IMPORT] USE_IAM_AUTH={os.getenv('USE_IAM_AUTH')}")
+logger.info(f"[IMPORT] AWS_ACCESS_KEY_ID={'SET' if os.getenv('AWS_ACCESS_KEY_ID') else 'NOT SET'}")
+
 # Local imports - Command groups
 from commands import (
     AdminGroup,
@@ -148,6 +153,13 @@ async def on_member_join(member: discord.Member):
 @bot.event
 async def on_ready():
     logger.info(f'{bot.user} has logged in!')
+    
+    # Debug: Check environment at runtime
+    logger.info(f"[RUNTIME] DB_USER={os.getenv('DB_USER')}")
+    logger.info(f"[RUNTIME] db.user={db.user}")
+    logger.info(f"[RUNTIME] USE_IAM_AUTH={os.getenv('USE_IAM_AUTH')}")
+    logger.info(f"[RUNTIME] db.use_iam_auth={db.use_iam_auth}")
+    logger.info(f"[RUNTIME] AWS_ACCESS_KEY_ID={'SET' if os.getenv('AWS_ACCESS_KEY_ID') else 'NOT SET'}")
     
     # Initialize database connection pool
     try:
