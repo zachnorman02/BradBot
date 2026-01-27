@@ -20,15 +20,17 @@ BradBot is a feature-rich Discord bot that powers moderation tools, boosters, po
 - [Local development guide](docs/local-development.md)
 - [Deployment & operations](docs/deployment.md)
 
-## Quick Start
+## Quick Start (Local Development)
 
 ```bash
-git clone https://github.com/your-org/BradBot.git
+git clone https://github.com/zachnorman02/BradBot.git
 cd BradBot
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # edit with your tokens + DB config
-python scripts/migrate.py
+cp .env.example .env
+# Edit .env and add your DISCORD_TOKEN
+docker-compose up -d  # Start PostgreSQL
+python scripts/migrate.py migrate
 python main.py
 ```
 

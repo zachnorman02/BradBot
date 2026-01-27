@@ -64,6 +64,201 @@ class Migration001(Migration):
             CREATE INDEX ASYNC IF NOT EXISTS idx_settings_name ON main.settings(setting_name)
         """, fetch=False)
         
+        # Additional core tables (these were originally created via init methods)
+        # Adding them here so new local setups get all tables from migrations
+        
+        # Birthdays table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.birthdays (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                year INTEGER,
+                month INTEGER NOT NULL,
+                day INTEGER,
+                last_announced DATE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """, fetch=False)
+        
+        # Starboard boards table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.starboard_boards (
+                id INTEGER PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                emoji TEXT NOT NULL,
+                threshold INTEGER NOT NULL,
+                allow_nsfw BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        
+        # Starboard posts table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.starboard_posts (
+                message_id BIGINT NOT NULL,
+                board_id INTEGER NOT NULL,
+                star_message_id BIGINT,
+                guild_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                author_id BIGINT NOT NULL,
+                current_count INTEGER DEFAULT 0,
+                forced BOOLEAN DEFAULT FALSE,
+                blocked BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (message_id, board_id)
+            )
+        """, fetch=False)
+        
+        # Counting configs table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.counting_configs (
+                guild_id BIGINT PRIMARY KEY,
+                channel_id BIGINT NOT NULL,
+                idiot_role_id BIGINT,
+                next_number INTEGER DEFAULT 1,
+                last_user_id BIGINT
+            )
+        """, fetch=False)
+        
+        # Counting penalties table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.counting_penalties (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                penalty_end_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """, fetch=False)
+        
+        # Echo logs table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.echo_logs (
+                id BIGINT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                username TEXT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                message_id BIGINT,
+                message TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        
+        # TTS logs table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.tts_logs (
+                id BIGINT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                username TEXT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                voice_channel_id BIGINT,
+                message_id BIGINT,
+                text TEXT NOT NULL,
+                voice TEXT,
+                engine TEXT,
+                language TEXT,
+                provider TEXT DEFAULT 'polly',
+                announce_author BOOLEAN DEFAULT FALSE,
+                post_text BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        
+        # Command toggles table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.command_toggles (
+                guild_id BIGINT NOT NULL,
+                command TEXT NOT NULL,
+                enabled BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, command)
+            )
+        """, fetch=False)
+        
+        # Command bans table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.command_bans (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                command TEXT NOT NULL,
+                reason TEXT,
+                banned_by BIGINT,
+                banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, user_id, command)
+            )
+        """, fetch=False)
+        
+        # Persistent panels table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.persistent_panels (
+                message_id BIGINT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                panel_type TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        
+        # Message audit logs table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.message_audit_logs (
+                id BIGINT PRIMARY KEY,
+                guild_id BIGINT,
+                channel_id BIGINT,
+                message_id BIGINT,
+                user_id BIGINT,
+                action TEXT,
+                old_content TEXT,
+                new_content TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        
+        # Alarms table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.alarms (
+                id TEXT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                channel_id BIGINT,
+                user_id BIGINT NOT NULL,
+                message TEXT,
+                alarm_time TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        
+        # Scheduled roles table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.scheduled_roles (
+                id BIGINT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                role_ids_to_add TEXT,
+                role_ids_to_remove TEXT,
+                run_at TIMESTAMP NOT NULL,
+                completed BOOLEAN DEFAULT FALSE,
+                created_by BIGINT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        
+        # Member activity table
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.member_activity (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """, fetch=False)
+        
         print(f"✅ Applied migration {self.version}: {self.description}")
 
 # Migration: Message Tracking

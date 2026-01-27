@@ -20,20 +20,19 @@ pip install -r requirements.txt
 
 ## 3. Configure Environment
 
-Copy `.env.example` to `.env` and edit:
+Copy `.env.example` to `.env`:
 
-```env
-DISCORD_TOKEN=your_dev_bot_token
-
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=bradbot
-DB_USER=bradbot
-DB_PASSWORD=bradbot_dev
-USE_IAM_AUTH=false
+```bash
+cp .env.example .env
 ```
 
-> Tip: production loads AWS Secrets Manager (`SECRETS_MANAGER_ID=BradBot/creds`) automatically, but for local dev you usually keep everything in `.env`.
+The defaults in `.env.example` are already configured for local Docker development. You only need to edit:
+
+```env
+DISCORD_TOKEN=your_dev_bot_token_here
+```
+
+> **Note**: AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) are optional. Without them, TTS and S3 features won't work locally, but everything else will. GitHub token is also optional unless testing issue commands.
 
 ## 4. Start PostgreSQL
 
@@ -68,8 +67,9 @@ Invite your dev bot to a test guild and run `/admin sync` (or `:resync`) after y
 | --- | --- |
 | `psycopg2.OperationalError` | Ensure Postgres is running; verify host/port/user/password in `.env`. |
 | Slash command changes not showing | Run `/admin sync` or `:resync` in your dev guild. |
-| Missing env vars | Double-check `.env` lives next to `main.py` and is loaded before `load_secret_env()`. |
-| Voice/TTS errors | Confirm `ffmpeg` is installed and on your `PATH`. |
+| Missing env vars | Double-check `.env` lives next to `main.py`. |
+| Voice/TTS errors | Confirm `ffmpeg` is installed and on your `PATH`. Add AWS credentials to `.env` to test Polly TTS. |
+| GitHub commands not working | Add `GITHUB_TOKEN` to `.env` for issue/discussion commands. |
 
 ## 8. Useful Commands
 
