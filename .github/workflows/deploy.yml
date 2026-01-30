@@ -1,4 +1,4 @@
-name: Deploy to EC2
+name: Deploy to Lightsail
 
 on:
   push:
@@ -19,11 +19,11 @@ jobs:
     - name: Setup SSH
       uses: webfactory/ssh-agent@v0.7.0
       with:
-        ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+        ssh-private-key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
         
-    - name: Deploy to EC2
+    - name: Deploy to Lightsail
       run: |
-        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
           cd /home/ubuntu/bradbot &&
           git pull origin main &&
           git submodule update --init --recursive &&
@@ -43,27 +43,12 @@ jobs:
           source venv/bin/activate &&
           pip install -r requirements.txt &&
           echo "Updating systemd service file..." &&
-          if [ -f /etc/systemd/system/bradbot.service ]; then
-            echo "Backing up existing service file..." &&
-            sudo cp /etc/systemd/system/bradbot.service /etc/systemd/system/bradbot.service.backup &&
-            sudo cp bradbot.service /etc/systemd/system/bradbot.service &&
-            # Restore YouTube environment variables if they exist in backup
-            if grep -q "YOUTUBE_USERNAME" /etc/systemd/system/bradbot.service.backup; then
-              echo "Restoring YouTube credentials from backup..." &&
-              YOUTUBE_USERNAME=$(grep "YOUTUBE_USERNAME" /etc/systemd/system/bradbot.service.backup | cut -d'=' -f2-) &&
-              YOUTUBE_PASSWORD=$(grep "YOUTUBE_PASSWORD" /etc/systemd/system/bradbot.service.backup | cut -d'=' -f2-) &&
-              sudo sed -i "/^Environment=YOUTUBE_USERNAME=/d" /etc/systemd/system/bradbot.service &&
-              sudo sed -i "/^Environment=YOUTUBE_PASSWORD=/d" /etc/systemd/system/bradbot.service &&
-              sudo sed -i "/^\[Install\]/i Environment=YOUTUBE_USERNAME=$YOUTUBE_USERNAME\nEnvironment=YOUTUBE_PASSWORD=$YOUTUBE_PASSWORD" /etc/systemd/system/bradbot.service
-            fi
-          else
-            sudo cp bradbot.service /etc/systemd/system/bradbot.service
-          fi &&
+          sudo cp bradbot.service /etc/systemd/system/bradbot.service &&
           sudo systemctl daemon-reload &&
           echo "Stopping bot to run migrations..." &&
           sudo systemctl stop bradbot &&
-          echo "Running database migrations with service environment..." &&
-          sudo -u ubuntu bash -c "cd /home/ubuntu/bradbot && source venv/bin/activate && export DB_HOST=ontgcoj4pznoqbq4aznk64mehy.dsql.us-east-1.on.aws DB_PORT=5432 DB_NAME=postgres DB_USER=bradbotrole USE_IAM_AUTH=true AWS_REGION=us-east-1 && python scripts/migrate.py migrate" &&
+          echo "Running database migrations with .env file..." &&
+          sudo -u ubuntu bash -c "cd /home/ubuntu/bradbot && source venv/bin/activate && source <(grep -v '^#' .env | xargs -I {} echo export \'{}\') && python scripts/migrate.py migrate" &&
           echo "Starting bot..." &&
           sudo systemctl start bradbot &&
           sleep 3 &&
@@ -72,7 +57,21 @@ jobs:
         
     - name: Health Check
       run: |
-        sleep 10
-        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} '
-          sudo systemctl is-active bradbot
+        echo "Waiting for bot to initialize..."
+        sleep 15
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.LIGHTSAIL_HOST }} '
+          if sudo systemctl is-active --quiet bradbot; then
+            echo "✅ Bot service is active"
+            echo "Recent logs:"
+            sudo journalctl -u bradbot -n 20 --no-pager
+            exit 0
+          else
+            echo "❌ Bot service is not active"
+            echo "Service status:"
+            sudo systemctl status bradbot --no-pager
+            echo ""
+            echo "Recent logs:"
+            sudo journalctl -u bradbot -n 50 --no-pager
+            exit 1
+          fi
         '

@@ -7,17 +7,6 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/bradbot
 Environment=PATH=/home/ubuntu/bradbot/venv/bin:/home/ubuntu/.deno/bin
-Environment=DB_HOST=ontgcoj4pznoqbq4aznk64mehy.dsql.us-east-1.on.aws
-Environment=DB_PORT=5432
-Environment=DB_NAME=postgres
-Environment=DB_USER=bradbotrole
-Environment=USE_IAM_AUTH=true
-Environment=AWS_REGION=us-east-1
-Environment=BRADBOT_FFMPEG_VOLUME=5.0
-Environment=BRADBOT_TTS_PROVIDER=polly
-Environment=BRADBOT_TTS_VOICE=Matthew
-Environment=GITHUB_REPO=zachnorman02/BradBot
-Environment=SECRETS_MANAGER_ID=BradBot/creds
 EnvironmentFile=/home/ubuntu/bradbot/.env
 ExecStart=/home/ubuntu/bradbot/venv/bin/python main.py
 Restart=always
