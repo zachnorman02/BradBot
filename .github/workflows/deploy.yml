@@ -29,7 +29,7 @@ jobs:
           git submodule update --init --recursive &&
           # Ensure system packages are up-to-date and install required packages
           echo "Installing system dependencies..." &&
-          sudo apt-get update && sudo apt-get install -y ffmpeg google-chrome-stable python3-venv python3-pip virtualenv jq curl unzip &&
+          sudo apt-get update && sudo apt-get install -y ffmpeg python3-venv python3-pip virtualenv jq curl unzip &&
           # Install Deno if not present
           if ! command -v deno &> /dev/null; then
             echo "Installing Deno..." &&
