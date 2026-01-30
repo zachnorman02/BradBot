@@ -59,7 +59,7 @@ jobs:
           echo "Stopping bot to run migrations..." &&
           sudo systemctl stop bradbot &&
           echo "Running database migrations with .env file..." &&
-          sudo -u ubuntu bash -c "cd /home/ubuntu/bradbot && source venv/bin/activate && source <(grep -v '^#' .env | xargs -I {} echo export \'{}\') && python scripts/migrate.py migrate" &&
+          sudo -u ubuntu bash -c "cd /home/ubuntu/bradbot && source venv/bin/activate && set -a && source .env && set +a && python scripts/migrate.py migrate" &&
           echo "Starting bot..." &&
           sudo systemctl start bradbot &&
           echo "Deployment complete!"
