@@ -23,13 +23,22 @@ jobs:
         
     - name: Deploy to Lightsail
       run: |
-        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
-          cd /home/ubuntu/bradbot &&
-          git pull origin main &&
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+          # Clone repo if it doesn't exist, otherwise pull updates
+          if [ ! -d "/home/ubuntu/bradbot" ]; then
+            echo "Cloning repository..." &&
+            cd /home/ubuntu &&
+            git clone https://github.com/zachnorman02/BradBot.git bradbot &&
+            cd bradbot
+          else
+            echo "Updating repository..." &&
+            cd /home/ubuntu/bradbot &&
+            git pull origin main
+          fi &&
           git submodule update --init --recursive &&
           # Ensure system packages are up-to-date and install required packages
           echo "Installing system dependencies..." &&
-          sudo apt-get update && sudo apt-get install -y ffmpeg python3-venv python3-pip virtualenv jq curl unzip &&
+          sudo apt-get update && sudo apt-get install -y ffmpeg python3-venv python3-pip virtualenv jq curl unzip postgresql-client &&
           # Install Deno if not present
           if ! command -v deno &> /dev/null; then
             echo "Installing Deno..." &&
@@ -53,8 +62,7 @@ jobs:
           sudo -u ubuntu bash -c "cd /home/ubuntu/bradbot && source venv/bin/activate && source <(grep -v '^#' .env | xargs -I {} echo export \'{}\') && python scripts/migrate.py migrate" &&
           echo "Starting bot..." &&
           sudo systemctl start bradbot &&
-          sleep 3 &&
-          sudo systemctl status bradbot --no-pager
+          echo "Deployment complete!"
         EOF
         
     - name: Health Check

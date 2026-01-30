@@ -50,7 +50,7 @@ Create the database/user if necessary.
 ## 5. Run Migrations
 
 ```bash
-python scripts/migrate.py
+python scripts/migrate.py migrate
 ```
 
 ## 6. Run BradBot
@@ -80,5 +80,5 @@ docker-compose exec postgres psql -U bradbot -d bradbot
 
 # Drop & recreate DB
 docker-compose down -v && docker-compose up -d
-python scripts/migrate.py
+python scripts/migrate.py migrate
 ```

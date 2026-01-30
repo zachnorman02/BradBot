@@ -38,8 +38,10 @@ Use `/admin sync` or the owner-only `:resync` text command whenever you change s
 
 ## Deployment Notes
 
-- Production instances should run via `systemd` (`bradbot.service`) and set `SECRETS_MANAGER_ID=BradBot/creds`.
-- Grant the EC2 IAM role `secretsmanager:GetSecretValue` on that secret; BradBot will fetch `DISCORD_TOKEN`, `GITHUB_TOKEN`, and other sensitive values automatically at startup.
-- Polls, reminders, boosters, and conditional roles rely on the background tasks in `core/tasks.py`. Restarting the bot will respawn the tasks if needed.
+- Production instances run via `systemd` (`bradbot.service`) on AWS Lightsail with Aurora DSQL (PostgreSQL-compatible serverless database).
+- Environment configuration is managed via `.env` file (not tracked in git) containing `DISCORD_TOKEN`, database credentials, AWS credentials, and other sensitive values.
+- Optional: Store frequently-changing secrets in AWS Secrets Manager (`SECRETS_MANAGER_ID=BradBot/creds`) - the bot will automatically fetch and merge them at startup.
+- Database uses IAM authentication for enhanced security. Lightsail requires IAM user credentials (access keys) since it doesn't support IAM roles.
+- Polls, reminders, boosters, and conditional roles rely on background tasks in `core/tasks.py`. Restarting the bot will respawn tasks automatically.
 
 See the docs directory for full instructions, troubleshooting tips, and command-by-command breakdowns.
