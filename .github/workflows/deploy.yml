@@ -23,7 +23,7 @@ jobs:
         
     - name: Deploy to Lightsail
       run: |
-        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
           # Clone repo if it doesn't exist, otherwise pull updates
           if [ ! -d "/home/ubuntu/bradbot" ]; then
             echo "Cloning repository..." &&
