@@ -3187,6 +3187,106 @@ class AdminGroup(app_commands.Group):
                 ephemeral=True
             )
     
+    @app_commands.command(name="test_booster_role", description="Test booster role creation and positioning (BOT OWNER ONLY)")
+    @app_commands.describe(
+        user="User to create test role for (defaults to you)",
+        cleanup="Automatically delete the test role after 10 seconds"
+    )
+    async def test_booster_role(self, interaction: discord.Interaction, user: discord.Member = None, cleanup: bool = True):
+        """Test booster role creation and positioning without touching the database"""
+        # Check if user is the bot owner
+        app_info = await interaction.client.application_info()
+        if interaction.user.id != app_info.owner.id:
+            await interaction.response.send_message(
+                "❌ This command is restricted to the bot owner only.",
+                ephemeral=True
+            )
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        target_user = user or interaction.user
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Import positioning function
+            from commands.booster_commands import _ensure_role_position
+            
+            # Create test role
+            test_role = await interaction.guild.create_role(
+                name=f"🧪 TEST - {target_user.display_name}",
+                reason=f"Test booster role positioning (by {interaction.user})"
+            )
+            
+            # Get initial position
+            initial_position = test_role.position
+            
+            # Apply positioning logic
+            await _ensure_role_position(test_role, interaction.guild.me, target_user)
+            
+            # Get final position
+            final_position = test_role.position
+            
+            # Get user's highest role for comparison
+            user_roles = [r for r in target_user.roles if not r.is_default() and r.id != test_role.id]
+            highest_user_role = max(user_roles, key=lambda r: r.position) if user_roles else None
+            
+            # Build response
+            response = [
+                f"✅ **Booster Role Test Complete**",
+                f"",
+                f"**Target User:** {target_user.mention}",
+                f"**Test Role:** {test_role.mention}",
+                f"",
+                f"**Position Changes:**",
+                f"• Initial: `{initial_position}` (bottom)",
+                f"• Final: `{final_position}`",
+                f"• Moved: `{final_position - initial_position}` positions",
+                f"",
+            ]
+            
+            if highest_user_role:
+                response.append(f"**User's Highest Role:** {highest_user_role.mention} (position `{highest_user_role.position}`)")
+                if final_position > highest_user_role.position:
+                    response.append(f"✅ Test role is above user's highest role")
+                else:
+                    response.append(f"⚠️ Test role is NOT above user's highest role")
+            else:
+                response.append(f"ℹ️ User has no roles to compare against")
+            
+            response.append(f"")
+            response.append(f"**Bot's Top Role:** {interaction.guild.me.top_role.mention} (position `{interaction.guild.me.top_role.position}`)")
+            if final_position < interaction.guild.me.top_role.position:
+                response.append(f"✅ Test role is below bot's top role")
+            else:
+                response.append(f"❌ Test role is NOT below bot's top role")
+            
+            if cleanup:
+                response.append(f"")
+                response.append(f"🧹 Test role will be deleted in 10 seconds...")
+            else:
+                response.append(f"")
+                response.append(f"⚠️ **Manual cleanup required** - delete {test_role.mention} when done testing")
+            
+            await interaction.followup.send("\n".join(response), ephemeral=True)
+            
+            # Cleanup if requested
+            if cleanup:
+                await asyncio.sleep(10)
+                try:
+                    await test_role.delete(reason="Test booster role cleanup")
+                except Exception as e:
+                    logger.warning(f"Could not delete test role: {e}")
+            
+        except Exception as e:
+            logger.error(f"Error testing booster role: {e}")
+            await interaction.followup.send(
+                f"❌ Error during test: {str(e)}",
+                ephemeral=True
+            )
+    
     @app_commands.command(name="auditlog", description="Query audit log with SQL-like syntax")
     @app_commands.describe(
         query="SQL-like query: SELECT * WHERE action='kick' AND user='@User' LIMIT 10"
