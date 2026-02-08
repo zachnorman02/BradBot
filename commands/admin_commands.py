@@ -3224,6 +3224,9 @@ class AdminGroup(app_commands.Group):
             # Get initial position
             initial_position = test_role.position
             
+            # Assign role to user
+            await target_user.add_roles(test_role, reason=f"Test booster role positioning (by {interaction.user})")
+            
             # Apply positioning logic
             await _ensure_role_position(test_role, interaction.guild.me, target_user)
             
