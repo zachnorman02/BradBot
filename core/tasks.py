@@ -384,7 +384,6 @@ async def _restore_or_create_booster_role(member: discord.Member) -> bool:
             # No saved role - create a new default role
             new_role = await member.guild.create_role(
                 name=member.name,
-                color=discord.Color.random(),
                 reason=f"Auto-creating booster role for new booster {member.name}"
             )
             

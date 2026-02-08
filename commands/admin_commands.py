@@ -2260,6 +2260,253 @@ class AdminMaintenanceGroup(app_commands.Group):
         except Exception as e:
             await interaction.followup.send(f"❌ Error restoring booster roles: {e}", ephemeral=True)
 
+    @app_commands.command(name="edit_booster_role_color", description="Admin: Change a user's booster role color")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        user="The booster whose role to edit",
+        style="Color style type",
+        hex="Primary color (hex code like #FF0000)",
+        hex2="Secondary color for gradient/holographic",
+        hex3="Tertiary color for holographic only"
+    )
+    @app_commands.choices(style=[
+        app_commands.Choice(name="Solid", value="solid"),
+        app_commands.Choice(name="Gradient", value="gradient"),
+        app_commands.Choice(name="Holographic", value="holographic")
+    ])
+    async def edit_booster_role_color(self, interaction: discord.Interaction, user: discord.Member, style: str = "solid", hex: str = None, hex2: str = None, hex3: str = None):
+        """Admin tool: Edit a booster's role color."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        # Check if user is a booster
+        if not any(role.is_premium_subscriber() for role in user.roles):
+            await interaction.response.send_message("❌ That user is not a server booster!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Import here to avoid circular dependency
+        from commands.booster_commands import get_or_create_booster_role, save_role_to_db
+
+        # Get user's booster role
+        db_role_data = db.get_booster_role(user.id, interaction.guild.id)
+        
+        # Find personal role
+        personal_roles = [
+            role for role in user.roles 
+            if not role.is_default() 
+            and len(role.members) == 1
+        ]
+        personal_role = max(personal_roles, key=lambda r: r.position) if personal_roles else None
+        
+        if not personal_role:
+            await interaction.followup.send("❌ Could not find that user's booster role.", ephemeral=True)
+            return
+
+        # Generate color based on style and hex values
+        primary_color = None
+        secondary_color = None
+        tertiary_color = None
+        description = ""
+        
+        if style == "solid":
+            if hex:
+                try:
+                    primary_color = discord.Color(int(hex.replace('#', ''), 16))
+                    description = f"Solid color: {hex}"
+                except ValueError:
+                    await interaction.followup.send("❌ Invalid hex color format. Use format like #FF0000", ephemeral=True)
+                    return
+            else:
+                primary_color = discord.Color.random()
+                description = f"Random solid color: #{primary_color.value:06X}"
+        
+        elif style == "gradient":
+            if hex:
+                try:
+                    primary_color = discord.Color(int(hex.replace('#', ''), 16))
+                except ValueError:
+                    await interaction.followup.send("❌ Invalid primary hex color format.", ephemeral=True)
+                    return
+            else:
+                primary_color = discord.Color.random()
+            
+            if hex2:
+                try:
+                    secondary_color = discord.Color(int(hex2.replace('#', ''), 16))
+                except ValueError:
+                    await interaction.followup.send("❌ Invalid secondary hex color format.", ephemeral=True)
+                    return
+            else:
+                secondary_color = discord.Color.random()
+            
+            description = f"Gradient: #{primary_color.value:06X} → #{secondary_color.value:06X}"
+        
+        elif style == "holographic":
+            if hex and hex2 and hex3:
+                try:
+                    primary_color = discord.Color(int(hex.replace('#', ''), 16))
+                    secondary_color = discord.Color(int(hex2.replace('#', ''), 16))
+                    tertiary_color = discord.Color(int(hex3.replace('#', ''), 16))
+                    description = f"Holographic: #{primary_color.value:06X}, #{secondary_color.value:06X}, #{tertiary_color.value:06X}"
+                except ValueError:
+                    await interaction.followup.send("❌ Invalid hex color format.", ephemeral=True)
+                    return
+            else:
+                # Use Discord's default holographic values
+                primary_color = discord.Color(11127295)
+                secondary_color = discord.Color(16759788)
+                tertiary_color = discord.Color(16761760)
+                description = f"Holographic (Discord default)"
+        
+        try:
+            await personal_role.edit(
+                color=primary_color,
+                secondary_color=secondary_color,
+                tertiary_color=tertiary_color,
+                reason=f"Admin edit by {interaction.user}"
+            )
+            
+            # Save to database
+            await save_role_to_db(user.id, interaction.guild.id, personal_role)
+            
+            await interaction.followup.send(
+                f"✅ Updated {user.mention}'s booster role color\n{description}",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.followup.send("❌ I don't have permission to edit that role.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error updating role: {e}", ephemeral=True)
+
+    @app_commands.command(name="edit_booster_role_name", description="Admin: Change a user's booster role name")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        user="The booster whose role to edit",
+        name="New name for the role"
+    )
+    async def edit_booster_role_name(self, interaction: discord.Interaction, user: discord.Member, name: str):
+        """Admin tool: Edit a booster's role name."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        # Check if user is a booster
+        if not any(role.is_premium_subscriber() for role in user.roles):
+            await interaction.response.send_message("❌ That user is not a server booster!", ephemeral=True)
+            return
+
+        # Validate name
+        if len(name) > 100:
+            await interaction.response.send_message("❌ Role name must be 100 characters or less.", ephemeral=True)
+            return
+        if not name.strip():
+            await interaction.response.send_message("❌ Role name cannot be empty.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Import here to avoid circular dependency
+        from commands.booster_commands import save_role_to_db
+
+        # Find personal role
+        personal_roles = [
+            role for role in user.roles 
+            if not role.is_default() 
+            and len(role.members) == 1
+        ]
+        personal_role = max(personal_roles, key=lambda r: r.position) if personal_roles else None
+        
+        if not personal_role:
+            await interaction.followup.send("❌ Could not find that user's booster role.", ephemeral=True)
+            return
+
+        old_name = personal_role.name
+        try:
+            await personal_role.edit(name=name, reason=f"Admin edit by {interaction.user}")
+            
+            # Save to database
+            await save_role_to_db(user.id, interaction.guild.id, personal_role)
+            
+            await interaction.followup.send(
+                f"✅ Updated {user.mention}'s booster role name from **{old_name}** to **{name}**",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.followup.send("❌ I don't have permission to edit that role.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error updating role: {e}", ephemeral=True)
+
+    @app_commands.command(name="edit_booster_role_icon", description="Admin: Change a user's booster role icon")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        user="The booster whose role to edit",
+        icon_url="Image URL for the role icon"
+    )
+    async def edit_booster_role_icon(self, interaction: discord.Interaction, user: discord.Member, icon_url: str):
+        """Admin tool: Edit a booster's role icon."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        # Check if guild has role icons feature
+        if "ROLE_ICONS" not in interaction.guild.features:
+            await interaction.response.send_message("❌ This server doesn't support role icons.", ephemeral=True)
+            return
+
+        # Check if user is a booster
+        if not any(role.is_premium_subscriber() for role in user.roles):
+            await interaction.response.send_message("❌ That user is not a server booster!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Import here to avoid circular dependency
+        from commands.booster_commands import save_role_to_db
+        import aiohttp
+
+        # Find personal role
+        personal_roles = [
+            role for role in user.roles 
+            if not role.is_default() 
+            and len(role.members) == 1
+        ]
+        personal_role = max(personal_roles, key=lambda r: r.position) if personal_roles else None
+        
+        if not personal_role:
+            await interaction.followup.send("❌ Could not find that user's booster role.", ephemeral=True)
+            return
+
+        try:
+            # Download the image
+            async with aiohttp.ClientSession() as session:
+                async with session.get(icon_url) as resp:
+                    if resp.status != 200:
+                        await interaction.followup.send("❌ Could not download the image. Please check the URL.", ephemeral=True)
+                        return
+                    image_bytes = await resp.read()
+            
+            await personal_role.edit(icon=image_bytes, reason=f"Admin edit by {interaction.user}")
+            
+            # Save to database
+            await save_role_to_db(user.id, interaction.guild.id, personal_role)
+            
+            await interaction.followup.send(
+                f"✅ Updated {user.mention}'s booster role icon",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.followup.send("❌ I don't have permission to edit that role.", ephemeral=True)
+        except discord.HTTPException as e:
+            if e.code == 50035:
+                await interaction.followup.send("❌ Invalid image format. Please use PNG, JPG, or GIF.", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Discord error: {e}", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+
     @app_commands.command(name="delete_role", description="Delete a single role (admin only)")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(

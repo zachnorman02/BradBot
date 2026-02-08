@@ -13,8 +13,8 @@ from utils.logger import logger
 # ============================================================================
 
 
-async def _ensure_role_position(role: discord.Role, bot_member: discord.Member) -> None:
-    """Place personal booster roles just under the counting penalty role if present, else above booster role, while staying under the bot."""
+async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, member: Optional[discord.Member] = None) -> None:
+    """Place personal booster roles just under the counting penalty role if present, else above user's highest role, while staying under the bot."""
     guild = role.guild
     target = None
 
@@ -28,7 +28,15 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member) 
     except Exception as e:
         logger.warning(f"Could not read counting config: {e}")
 
+    if target is None and member:
+        # Place above the user's highest role (excluding the personal booster role itself)
+        user_roles = [r for r in member.roles if not r.is_default() and r.id != role.id]
+        if user_roles:
+            highest_user_role = max(user_roles, key=lambda r: r.position)
+            target = highest_user_role.position + 1
+    
     if target is None:
+        # Fallback to above the server's booster role
         booster_role = guild.premium_subscriber_role
         if booster_role and booster_role.position is not None:
             target = booster_role.position + 1
@@ -47,7 +55,7 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member) 
 
     try:
         if role.position != target:
-            await role.edit(position=target, reason="Place booster role under bot for management")
+            await role.edit(position=target, reason="Place booster role above user roles")
     except Exception as e:
         logger.warning(f"Could not adjust position for {role.name}: {e}")
 
@@ -118,7 +126,7 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
                 tertiary_color=tertiary_color,
                 reason="Restoring saved booster role"
             )
-            await _ensure_role_position(personal_role, interaction.guild.me)
+            await _ensure_role_position(personal_role, interaction.guild.me, interaction.user)
             
             # Set icon if it exists
             await _apply_icon(personal_role, icon_payload, interaction.guild)
@@ -140,14 +148,14 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
                 name=f"{interaction.user.display_name}'s Role",
                 reason="Booster role customization"
             )
-            await _ensure_role_position(personal_role, interaction.guild.me)
+            await _ensure_role_position(personal_role, interaction.guild.me, interaction.user)
             await interaction.user.add_roles(personal_role, reason="Booster role customization")
         except Exception as e:
             logger.error(f"Error creating new role: {e}")
             return None
     else:
         # Ensure position is still under the bot in case server roles moved
-        await _ensure_role_position(personal_role, interaction.guild.me)
+        await _ensure_role_position(personal_role, interaction.guild.me, interaction.user)
         # Restore saved icon if the role is missing one but DB has data and guild supports role icons
         icon_payload = _icon_bytes(db_role_data.get("icon_data")) if db_role_data else None
         if db_role_data:
@@ -195,7 +203,7 @@ async def restore_member_booster_role(
                 tertiary_color=tertiary_color,
                 reason=reason
             )
-            await _ensure_role_position(personal_role, bot_member)
+            await _ensure_role_position(personal_role, bot_member, member)
             await member.add_roles(personal_role, reason=reason)
             db.update_booster_role_id(member.id, guild.id, personal_role.id)
         except Exception as e:
@@ -213,7 +221,7 @@ async def restore_member_booster_role(
         except Exception as e:
             logger.error(f"Could not edit colors for {personal_role}: {e}")
 
-        await _ensure_role_position(personal_role, bot_member)
+        await _ensure_role_position(personal_role, bot_member, member)
         # Make sure the member has this role
         if personal_role not in member.roles:
             try:
