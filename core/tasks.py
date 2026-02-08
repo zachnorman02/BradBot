@@ -387,12 +387,9 @@ async def _restore_or_create_booster_role(member: discord.Member) -> bool:
                 reason=f"Auto-creating booster role for new booster {member.name}"
             )
             
-            # Position it above the user's current highest role
-            try:
-                user_top_role = member.top_role
-                await new_role.edit(position=user_top_role.position + 1)
-            except Exception as e:
-                print(f"Could not position role: {e}")
+            # Position it using the same logic as commands
+            from commands.booster_commands import _ensure_role_position
+            await _ensure_role_position(new_role, member.guild.me, member)
             
             # Assign to user
             await member.add_roles(new_role, reason="Auto-creating booster role")
