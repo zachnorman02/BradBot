@@ -106,6 +106,16 @@ def _normalize_digits(expr: str) -> str:
     chinese_digits = set(extra_map.keys()) | {"百", "千", "万"}
     roman_chars = set("IVXLCDMivxlcdm")
 
+    def _is_number_like(ch: str) -> bool:
+        if not ch:
+            return False
+        return ch.isdigit() or ch in chinese_digits or ch in roman_chars or ch == ')'
+
+    def _is_factor_start(ch: str) -> bool:
+        if not ch:
+            return False
+        return ch.isdigit() or ch in chinese_digits or ch in roman_chars or ch == '('
+
     def _roman_to_int(seq: str) -> str:
         """Convert a Roman numeral string to int; return original string on failure."""
         values = {
@@ -192,6 +202,11 @@ def _normalize_digits(expr: str) -> str:
     for idx, ch in enumerate(expr):
         prev_ch = expr[idx - 1] if idx > 0 else ''
         next_ch = expr[idx + 1] if idx + 1 < len(expr) else ''
+        # Accept common multiplication aliases like "4x4" or "4×4".
+        if ch in {'x', 'X', '×'} and _is_number_like(prev_ch) and _is_factor_start(next_ch):
+            _flush_buffers()
+            normalized.append('*')
+            continue
         if ch.isdigit():
             _flush_buffers()
             try:

@@ -3225,7 +3225,15 @@ class AdminGroup(app_commands.Group):
             initial_position = test_role.position
             
             # Assign role to user
-            await target_user.add_roles(test_role, reason=f"Test booster role positioning (by {interaction.user})")
+            try:
+                await target_user.add_roles(test_role, reason=f"Test booster role positioning (by {interaction.user})")
+                role_assigned = True
+            except discord.Forbidden:
+                role_assigned = False
+                assignment_error = "Bot lacks permission to assign roles"
+            except Exception as e:
+                role_assigned = False
+                assignment_error = str(e)
             
             # Apply positioning logic
             await _ensure_role_position(test_role, interaction.guild.me, target_user)
@@ -3243,6 +3251,9 @@ class AdminGroup(app_commands.Group):
                 f"",
                 f"**Target User:** {target_user.mention}",
                 f"**Test Role:** {test_role.mention}",
+                f"",
+                f"**Role Assignment:**",
+                f"• {'✅ Role assigned to user' if role_assigned else f'❌ Failed: {assignment_error}'}",
                 f"",
                 f"**Position Changes:**",
                 f"• Initial: `{initial_position}` (bottom)",

@@ -25,11 +25,14 @@ from core.counting import _normalize_digits, _evaluate_expression, _is_expressio
         ("xii", 12),
         ("一万", 10000),
         ("一万三千二百", 13200),
+        ("4x4", 16),
+        ("4X4", 16),
+        ("4×4", 16),
     ],
 )
 def test_unicode_digits_normalize_and_eval(expr, expected):
     normalized = _normalize_digits(expr)
-    assert normalized != expr  # ensure we actually normalized non-ASCII digits
+    assert normalized != expr  # ensure we actually normalize alias forms/digits
     assert _is_expression_safe(normalized)
     assert _evaluate_expression(normalized) == expected
 
