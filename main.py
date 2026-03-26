@@ -62,6 +62,7 @@ from core import (
     log_message_delete_event,
     log_message_edit_event,
     log_raw_message_delete_event,
+    on_member_remove_handler,
     on_member_update_handler,
     poll_auto_close_check,
     poll_results_refresh,
@@ -118,6 +119,12 @@ setup_reaction_commands(bot.tree)
 async def on_member_update(before: discord.Member, after: discord.Member):
     """Handle member updates - delegate to core module"""
     await on_member_update_handler(before, after)
+
+
+@bot.event
+async def on_member_remove(member: discord.Member):
+    """Handle member leave events - delegate to core module"""
+    await on_member_remove_handler(member)
 
 @bot.event
 async def on_member_join(member: discord.Member):

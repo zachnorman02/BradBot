@@ -174,6 +174,123 @@ class RulesAgreementGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="rules_agreement", description="Manage rules agreement tracking")
 
+    async def _run_rules_reaction_cleanup(
+        self,
+        interaction: discord.Interaction,
+        dry_run: bool,
+        include_verified: bool,
+        include_departed: bool,
+    ):
+        """Shared cleanup implementation for rules-message reactions."""
+        if not await require_guild(interaction):
+            return
+
+        if not include_verified and not include_departed:
+            return await send_error(
+                interaction,
+                "Nothing to clean. Enable at least one target (verified or departed users)."
+            )
+
+        rules_messages = db.get_rules_agreement_messages(interaction.guild.id)
+        if not rules_messages:
+            return await send_error(
+                interaction,
+                "Rules agreement tracking is not set up. Use `/rules_agreement setup` first."
+            )
+
+        verified_member_ids = set()
+        verified_role_name = db.get_guild_setting(interaction.guild.id, "verified_role_name", "verified")
+        verified_role = discord.utils.get(interaction.guild.roles, name=verified_role_name)
+
+        if include_verified:
+            if not verified_role:
+                return await send_error(
+                    interaction,
+                    f"Could not find the verified role named '{verified_role_name}'."
+                )
+            verified_member_ids = {m.id for m in verified_role.members if not m.bot}
+
+        await interaction.response.defer(ephemeral=True)
+
+        processed_messages = 0
+        removed_reactions = 0
+        skipped_messages = 0
+        errors = 0
+        departed_matches = 0
+        verified_matches = 0
+
+        for msg_data in rules_messages:
+            try:
+                channel = interaction.guild.get_channel(msg_data['channel_id'])
+                if not channel:
+                    skipped_messages += 1
+                    continue
+
+                message = await channel.fetch_message(msg_data['message_id'])
+                processed_messages += 1
+
+                for reaction in message.reactions:
+                    users = [u async for u in reaction.users()]
+                    for user in users:
+                        should_remove = False
+                        is_verified_target = include_verified and user.id in verified_member_ids
+                        is_departed_target = include_departed and interaction.guild.get_member(user.id) is None
+
+                        if is_verified_target:
+                            verified_matches += 1
+                            should_remove = True
+                        if is_departed_target:
+                            departed_matches += 1
+                            should_remove = True
+
+                        if not should_remove:
+                            continue
+
+                        if dry_run:
+                            removed_reactions += 1
+                            continue
+                        try:
+                            await reaction.remove(user)
+                            removed_reactions += 1
+                        except (discord.Forbidden, discord.HTTPException, discord.NotFound):
+                            errors += 1
+
+            except (discord.NotFound, discord.Forbidden):
+                skipped_messages += 1
+            except Exception as e:
+                errors += 1
+                logger.error(f"Error during rules cleanup on message {msg_data.get('message_id')}: {e}")
+
+        mode = "Dry Run" if dry_run else "Cleanup Complete"
+        embed = discord.Embed(
+            title=f"🧹 Rules Reaction {mode}",
+            color=discord.Color.orange() if dry_run else discord.Color.green()
+        )
+        embed.add_field(name="Messages Processed", value=str(processed_messages), inline=True)
+        embed.add_field(name="Messages Skipped", value=str(skipped_messages), inline=True)
+        embed.add_field(
+            name="Reactions Matched" if dry_run else "Reactions Removed",
+            value=str(removed_reactions),
+            inline=True
+        )
+        embed.add_field(name="Matched Verified", value=str(verified_matches), inline=True)
+        embed.add_field(name="Matched Departed", value=str(departed_matches), inline=True)
+        embed.add_field(name="Errors", value=str(errors), inline=True)
+        if include_verified:
+            embed.add_field(name="Verified Members", value=str(len(verified_member_ids)), inline=True)
+        embed.add_field(
+            name="Targets",
+            value=(
+                f"Verified: {'Yes' if include_verified else 'No'}\n"
+                f"Departed: {'Yes' if include_departed else 'No'}"
+            ),
+            inline=True
+        )
+        if dry_run:
+            embed.set_footer(text="Dry run only. Run again with dry_run: false to apply removals.")
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     @app_commands.command(
         name="remove_on_verify",
         description="Toggle auto-removal of tracked rules reactions when a member gets verified (Admin only)"
@@ -195,6 +312,29 @@ class RulesAgreementGroup(app_commands.Group):
         await send_success(
             interaction,
             f"Rules reaction cleanup on verify is now **{status}**."
+        )
+
+    @app_commands.command(
+        name="remove_on_leave",
+        description="Toggle auto-removal of tracked rules reactions when a member leaves (Admin only)"
+    )
+    @app_commands.describe(enabled="Enable or disable automatic cleanup")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def toggle_remove_on_leave(self, interaction: discord.Interaction, enabled: bool):
+        """Toggle automatic cleanup of rules reactions when users leave the server."""
+        if not await require_guild(interaction):
+            return
+
+        db.set_guild_setting(
+            interaction.guild.id,
+            'rules_reaction_cleanup_on_leave_enabled',
+            'true' if enabled else 'false'
+        )
+
+        status = "enabled" if enabled else "disabled"
+        await send_success(
+            interaction,
+            f"Rules reaction cleanup on leave is now **{status}**."
         )
     
     @app_commands.command(name="setup", description="Set up rules messages to track (Admin only)")
@@ -433,11 +573,21 @@ class RulesAgreementGroup(app_commands.Group):
             'rules_reaction_cleanup_on_verify_enabled',
             'false'
         ).lower() == 'true'
+        remove_on_leave = db.get_guild_setting(
+            interaction.guild.id,
+            'rules_reaction_cleanup_on_leave_enabled',
+            'false'
+        ).lower() == 'true'
         verified_role_name = db.get_guild_setting(interaction.guild.id, 'verified_role_name', 'verified')
         verified_role = discord.utils.get(interaction.guild.roles, name=verified_role_name)
         embed.add_field(
             name="🧹 Remove Reactions On Verify",
             value="🟢 Enabled" if remove_on_verify else "🔴 Disabled",
+            inline=False
+        )
+        embed.add_field(
+            name="🚪 Remove Reactions On Leave",
+            value="🟢 Enabled" if remove_on_leave else "🔴 Disabled",
             inline=False
         )
         embed.add_field(
@@ -457,90 +607,30 @@ class RulesAgreementGroup(app_commands.Group):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(
-        name="cleanup_verified",
-        description="Remove tracked rules reactions from verified members (Admin only)"
+        name="cleanup",
+        description="Remove tracked rules reactions for verified and/or departed users (Admin only)"
     )
-    @app_commands.describe(dry_run="Preview counts only without removing reactions")
+    @app_commands.describe(
+        dry_run="Preview counts only without removing reactions",
+        include_verified="Include members with the configured verified role",
+        include_departed="Include users no longer in the server"
+    )
     @app_commands.checks.has_permissions(administrator=True)
-    async def cleanup_verified(self, interaction: discord.Interaction, dry_run: bool = False):
-        """Bulk-remove tracked rules reactions from members that already have the verified role."""
-        if not await require_guild(interaction):
-            return
-
-        rules_messages = db.get_rules_agreement_messages(interaction.guild.id)
-        if not rules_messages:
-            return await send_error(
-                interaction,
-                "Rules agreement tracking is not set up. Use `/rules_agreement setup` first."
-            )
-
-        verified_role_name = db.get_guild_setting(interaction.guild.id, "verified_role_name", "verified")
-        verified_role = discord.utils.get(interaction.guild.roles, name=verified_role_name)
-        if not verified_role:
-            return await send_error(
-                interaction,
-                f"Could not find the verified role named '{verified_role_name}'."
-            )
-
-        verified_member_ids = {m.id for m in verified_role.members if not m.bot}
-        if not verified_member_ids:
-            return await send_info(interaction, "No verified members found to process.")
-
-        await interaction.response.defer(ephemeral=True)
-
-        processed_messages = 0
-        removed_reactions = 0
-        skipped_messages = 0
-        errors = 0
-
-        for msg_data in rules_messages:
-            try:
-                channel = interaction.guild.get_channel(msg_data['channel_id'])
-                if not channel:
-                    skipped_messages += 1
-                    continue
-
-                message = await channel.fetch_message(msg_data['message_id'])
-                processed_messages += 1
-
-                for reaction in message.reactions:
-                    users = [u async for u in reaction.users()]
-                    for user in users:
-                        if user.id in verified_member_ids:
-                            if dry_run:
-                                removed_reactions += 1
-                                continue
-                            try:
-                                await reaction.remove(user)
-                                removed_reactions += 1
-                            except (discord.Forbidden, discord.HTTPException, discord.NotFound):
-                                errors += 1
-
-            except (discord.NotFound, discord.Forbidden):
-                skipped_messages += 1
-            except Exception as e:
-                errors += 1
-                logger.error(f"Error during cleanup_verified on message {msg_data.get('message_id')}: {e}")
-
-        mode = "Dry Run" if dry_run else "Cleanup Complete"
-        embed = discord.Embed(
-            title=f"🧹 Rules Reaction {mode}",
-            color=discord.Color.orange() if dry_run else discord.Color.green()
+    async def cleanup(
+        self,
+        interaction: discord.Interaction,
+        dry_run: bool = False,
+        include_verified: bool = True,
+        include_departed: bool = True,
+    ):
+        """Unified cleanup for rules-message reactions."""
+        await self._run_rules_reaction_cleanup(
+            interaction=interaction,
+            dry_run=dry_run,
+            include_verified=include_verified,
+            include_departed=include_departed,
         )
-        embed.add_field(name="Verified Members", value=str(len(verified_member_ids)), inline=True)
-        embed.add_field(name="Messages Processed", value=str(processed_messages), inline=True)
-        embed.add_field(name="Messages Skipped", value=str(skipped_messages), inline=True)
-        embed.add_field(
-            name="Reactions Matched" if dry_run else "Reactions Removed",
-            value=str(removed_reactions),
-            inline=True
-        )
-        embed.add_field(name="Errors", value=str(errors), inline=True)
-        if dry_run:
-            embed.set_footer(text="Dry run only. Run again with dry_run: false to apply removals.")
 
-        await interaction.followup.send(embed=embed, ephemeral=True)
-    
     @app_commands.command(name="clear", description="Clear rules agreement configuration (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
     async def clear_rules(self, interaction: discord.Interaction):

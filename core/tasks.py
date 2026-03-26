@@ -174,6 +174,48 @@ async def handle_rules_reaction_cleanup_on_verify(before: discord.Member, after:
         print(f"[RULES AGREEMENT] Error cleaning reactions for verified user: {e}")
 
 
+async def handle_rules_reaction_cleanup_on_leave(member: discord.Member):
+    """Remove tracked rules-message reactions when a member leaves the guild."""
+    try:
+        if member.bot:
+            return
+
+        enabled = db.get_guild_setting(
+            member.guild.id,
+            'rules_reaction_cleanup_on_leave_enabled',
+            'false'
+        ).lower() == 'true'
+        if not enabled:
+            return
+
+        rules_messages = db.get_rules_agreement_messages(member.guild.id)
+        if not rules_messages:
+            return
+
+        removed = 0
+        user_ref = discord.Object(id=member.id)
+        for msg_data in rules_messages:
+            try:
+                channel = member.guild.get_channel(msg_data['channel_id'])
+                if not channel:
+                    continue
+                message = await channel.fetch_message(msg_data['message_id'])
+
+                for reaction in message.reactions:
+                    try:
+                        await reaction.remove(user_ref)
+                        removed += 1
+                    except (discord.Forbidden, discord.HTTPException, discord.NotFound):
+                        continue
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                continue
+
+        if removed:
+            print(f"[RULES AGREEMENT] Removed {removed} tracked reactions for departed user {member.display_name}")
+    except Exception as e:
+        print(f"[RULES AGREEMENT] Error cleaning reactions for departed user: {e}")
+
+
 # ============================================================================
 # CHANNEL RESTRICTION AUTOMATION
 # ============================================================================
@@ -970,6 +1012,11 @@ async def on_member_update_handler(before: discord.Member, after: discord.Member
     elif not before.premium_since and after.premium_since:
         # Member started boosting
         await handle_booster_started(after)
+
+
+async def on_member_remove_handler(member: discord.Member):
+    """Handle member leave events for rules-agreement reaction cleanup."""
+    await handle_rules_reaction_cleanup_on_leave(member)
 
 
 # ============================================================================
