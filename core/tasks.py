@@ -123,6 +123,57 @@ async def handle_verified_role_logic(before: discord.Member, after: discord.Memb
         print(f"[ROLE RULE] Error in handle_verified_role_logic: {e}")
 
 
+async def handle_rules_reaction_cleanup_on_verify(before: discord.Member, after: discord.Member):
+    """Remove tracked rules-message reactions when a member becomes verified."""
+    try:
+        if after.bot:
+            return
+
+        enabled = db.get_guild_setting(
+            after.guild.id,
+            'rules_reaction_cleanup_on_verify_enabled',
+            'false'
+        ).lower() == 'true'
+        if not enabled:
+            return
+
+        verified_role_name = db.get_guild_setting(after.guild.id, "verified_role_name", "verified")
+        verified_role = discord.utils.get(after.guild.roles, name=verified_role_name)
+        if not verified_role:
+            return
+
+        before_role_ids = {role.id for role in before.roles}
+        after_role_ids = {role.id for role in after.roles}
+        if verified_role.id not in (after_role_ids - before_role_ids):
+            return
+
+        rules_messages = db.get_rules_agreement_messages(after.guild.id)
+        if not rules_messages:
+            return
+
+        removed = 0
+        for msg_data in rules_messages:
+            try:
+                channel = after.guild.get_channel(msg_data['channel_id'])
+                if not channel:
+                    continue
+                message = await channel.fetch_message(msg_data['message_id'])
+
+                for reaction in message.reactions:
+                    try:
+                        await reaction.remove(after)
+                        removed += 1
+                    except (discord.Forbidden, discord.HTTPException, discord.NotFound):
+                        continue
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                continue
+
+        if removed:
+            print(f"[RULES AGREEMENT] Removed {removed} tracked reactions for newly verified user {after.display_name}")
+    except Exception as e:
+        print(f"[RULES AGREEMENT] Error cleaning reactions for verified user: {e}")
+
+
 # ============================================================================
 # CHANNEL RESTRICTION AUTOMATION
 # ============================================================================
@@ -889,6 +940,9 @@ async def on_member_update_handler(before: discord.Member, after: discord.Member
     """
     # Always handle verified role logic
     await handle_verified_role_logic(before, after)
+
+    # Optionally remove rules-agreement reactions after verification
+    await handle_rules_reaction_cleanup_on_verify(before, after)
     
     # Handle global mute role application/removal
     await handle_global_mute_role(before, after)

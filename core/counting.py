@@ -105,16 +105,40 @@ def _normalize_digits(expr: str) -> str:
     }
     chinese_digits = set(extra_map.keys()) | {"百", "千", "万"}
     roman_chars = set("IVXLCDMivxlcdm")
+    hebrew_values = {
+        "א": 1, "ב": 2, "ג": 3, "ד": 4, "ה": 5, "ו": 6, "ז": 7, "ח": 8, "ט": 9,
+        "י": 10, "כ": 20, "ך": 20, "ל": 30, "מ": 40, "ם": 40, "נ": 50, "ן": 50,
+        "ס": 60, "ע": 70, "פ": 80, "ף": 80, "צ": 90, "ץ": 90,
+        "ק": 100, "ר": 200, "ש": 300, "ת": 400,
+    }
+    hebrew_marks = {"׳", "״", "'", '"'}
+    hebrew_chars = set(hebrew_values.keys()) | hebrew_marks
 
     def _is_number_like(ch: str) -> bool:
         if not ch:
             return False
-        return ch.isdigit() or ch in chinese_digits or ch in roman_chars or ch == ')'
+        return ch.isdigit() or ch in chinese_digits or ch in roman_chars or ch in hebrew_chars or ch == ')'
 
     def _is_factor_start(ch: str) -> bool:
         if not ch:
             return False
-        return ch.isdigit() or ch in chinese_digits or ch in roman_chars or ch == '('
+        return ch.isdigit() or ch in chinese_digits or ch in roman_chars or ch in hebrew_chars or ch == '('
+
+    def _convert_hebrew_number(seq: str) -> str:
+        """Convert a Hebrew numeral sequence (gematria letters) to an integer string."""
+        cleaned = "".join(ch for ch in seq if ch not in hebrew_marks)
+        if not cleaned:
+            return seq
+
+        total = 0
+        for ch in cleaned:
+            val = hebrew_values.get(ch)
+            if val is None:
+                return seq
+            total += val
+        if total <= 0:
+            return seq
+        return str(total)
 
     def _roman_to_int(seq: str) -> str:
         """Convert a Roman numeral string to int; return original string on failure."""
@@ -188,17 +212,21 @@ def _normalize_digits(expr: str) -> str:
 
     def _flush_buffers():
         """Helper to flush both buffers to normalized list."""
-        nonlocal buffer, roman_buffer
+        nonlocal buffer, roman_buffer, hebrew_buffer
         if buffer:
             normalized.append(_convert_cjk_number(buffer))
             buffer = ""
         if roman_buffer:
             normalized.append(_roman_to_int(roman_buffer))
             roman_buffer = ""
+        if hebrew_buffer:
+            normalized.append(_convert_hebrew_number(hebrew_buffer))
+            hebrew_buffer = ""
 
     normalized = []
     buffer = ""
     roman_buffer = ""
+    hebrew_buffer = ""
     for idx, ch in enumerate(expr):
         prev_ch = expr[idx - 1] if idx > 0 else ''
         next_ch = expr[idx + 1] if idx + 1 < len(expr) else ''
@@ -214,7 +242,21 @@ def _normalize_digits(expr: str) -> str:
             except Exception:
                 normalized.append(ch)
         elif ch in chinese_digits:
+            if roman_buffer:
+                normalized.append(_roman_to_int(roman_buffer))
+                roman_buffer = ""
+            if hebrew_buffer:
+                normalized.append(_convert_hebrew_number(hebrew_buffer))
+                hebrew_buffer = ""
             buffer += ch
+        elif ch in hebrew_chars:
+            if buffer:
+                normalized.append(_convert_cjk_number(buffer))
+                buffer = ""
+            if roman_buffer:
+                normalized.append(_roman_to_int(roman_buffer))
+                roman_buffer = ""
+            hebrew_buffer += ch
         elif ch in roman_chars:
             if _is_non_roman_alpha(prev_ch) or _is_non_roman_alpha(next_ch):
                 _flush_buffers()
@@ -223,6 +265,9 @@ def _normalize_digits(expr: str) -> str:
             if buffer:
                 normalized.append(_convert_cjk_number(buffer))
                 buffer = ""
+            if hebrew_buffer:
+                normalized.append(_convert_hebrew_number(hebrew_buffer))
+                hebrew_buffer = ""
             roman_buffer += ch
         else:
             _flush_buffers()

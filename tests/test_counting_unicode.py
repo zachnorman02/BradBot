@@ -28,6 +28,9 @@ from core.counting import _normalize_digits, _evaluate_expression, _is_expressio
         ("4x4", 16),
         ("4X4", 16),
         ("4×4", 16),
+        ("טז", 16),
+        ("י״ב", 12),
+        ("קכ״ג", 123),
     ],
 )
 def test_unicode_digits_normalize_and_eval(expr, expected):

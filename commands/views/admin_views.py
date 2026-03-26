@@ -33,6 +33,7 @@ class AdminSettingsView(ui.View):
             "member_send",
             "auto_kick",
             "auto_ban",
+            "rules_reaction_cleanup",
             "refresh"
         ]
         buttons = [child for child in self.children if isinstance(child, discord.ui.Button)]
@@ -50,6 +51,11 @@ class AdminSettingsView(ui.View):
         member_send_pings = db.get_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true').lower() == 'true'
         auto_kick_single = db.get_guild_setting(self.guild_id, 'auto_kick_single_server', 'false').lower() == 'true'
         auto_ban_single = db.get_guild_setting(self.guild_id, 'auto_ban_single_server', 'false').lower() == 'true'
+        rules_cleanup_on_verify = db.get_guild_setting(
+            self.guild_id,
+            'rules_reaction_cleanup_on_verify_enabled',
+            'false'
+        ).lower() == 'true'
         
         embed = discord.Embed(
             title="⚙️ Server Settings",
@@ -97,6 +103,11 @@ class AdminSettingsView(ui.View):
             value=f"{'🟢 Enabled' if auto_ban_single else '🔴 Disabled'}",
             inline=True
         )
+        embed.add_field(
+            name="🧹 Rules Reaction Cleanup",
+            value=f"{'🟢 Enabled' if rules_cleanup_on_verify else '🔴 Disabled'}",
+            inline=True
+        )
         
         embed.set_footer(text="Click buttons to toggle settings")
         return embed
@@ -111,6 +122,11 @@ class AdminSettingsView(ui.View):
         member_send_pings = db.get_guild_setting(self.guild_id, 'member_send_pings_enabled', 'true').lower() == 'true'
         auto_kick_single = db.get_guild_setting(self.guild_id, 'auto_kick_single_server', 'false').lower() == 'true'
         auto_ban_single = db.get_guild_setting(self.guild_id, 'auto_ban_single_server', 'false').lower() == 'true'
+        rules_cleanup_on_verify = db.get_guild_setting(
+            self.guild_id,
+            'rules_reaction_cleanup_on_verify_enabled',
+            'false'
+        ).lower() == 'true'
         
         # Update button children
         self.children[0].style = discord.ButtonStyle.green if link_replacement else discord.ButtonStyle.gray
@@ -136,6 +152,9 @@ class AdminSettingsView(ui.View):
         
         self.children[7].style = discord.ButtonStyle.green if auto_ban_single else discord.ButtonStyle.gray
         self.children[7].label = "🔨 Auto-Ban Singles " + ("✓" if auto_ban_single else "✗")
+
+        self.children[8].style = discord.ButtonStyle.green if rules_cleanup_on_verify else discord.ButtonStyle.gray
+        self.children[8].label = "🧹 Rules Cleanup " + ("✓" if rules_cleanup_on_verify else "✗")
 
     @ui.button(label="🔗 Link Replacement", style=discord.ButtonStyle.gray, row=0)
     async def toggle_link_replacement(self, interaction: discord.Interaction, button: ui.Button):
@@ -225,7 +244,18 @@ class AdminSettingsView(ui.View):
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-    @ui.button(label="🔄 Refresh Panel", style=discord.ButtonStyle.blurple, row=2)
+    @ui.button(label="🧹 Rules Reaction Cleanup", style=discord.ButtonStyle.gray, row=3)
+    async def toggle_rules_reaction_cleanup(self, interaction: discord.Interaction, button: ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
+            return
+        current = db.get_guild_setting(self.guild_id, 'rules_reaction_cleanup_on_verify_enabled', 'false').lower() == 'true'
+        new_value = not current
+        db.set_guild_setting(self.guild_id, 'rules_reaction_cleanup_on_verify_enabled', 'true' if new_value else 'false')
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @ui.button(label="🔄 Refresh Panel", style=discord.ButtonStyle.blurple, row=3)
     async def refresh_panel(self, interaction: discord.Interaction, button: ui.Button):
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ You need administrator permissions to use this!", ephemeral=True)
