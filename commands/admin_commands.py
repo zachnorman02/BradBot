@@ -1407,6 +1407,10 @@ class AdminToolsGroup(app_commands.Group):
         app_commands.Choice(name="unmark - Remove user eligibility", value="unmark"),
         app_commands.Choice(name="check - Check user eligibility", value="check"),
         app_commands.Choice(name="assign - Assign role if eligible", value="assign"),
+        app_commands.Choice(name="override-enable - Bypass blocking/deferral for a user", value="override_enable"),
+        app_commands.Choice(name="override-disable - Remove override for a user", value="override_disable"),
+        app_commands.Choice(name="override-check - Check override status", value="override_check"),
+        app_commands.Choice(name="override-list - List active overrides", value="override_list"),
         app_commands.Choice(name="list-eligible - Show eligible users", value="list_eligible"),
         app_commands.Choice(name="check-all - Run all conditional role checks", value="check_all")
     ])
@@ -1430,7 +1434,15 @@ class AdminToolsGroup(app_commands.Group):
         action_value = action.value
         
         # Actions that require a user parameter
-        user_required_actions = ["mark", "unmark", "check", "assign"]
+        user_required_actions = [
+            "mark",
+            "unmark",
+            "check",
+            "assign",
+            "override_enable",
+            "override_disable",
+            "override_check"
+        ]
         if action_value in user_required_actions and not user:
             await interaction.followup.send(f"❌ Please specify a user for the {action_value} action.", ephemeral=True)
             return
@@ -1581,6 +1593,52 @@ class AdminToolsGroup(app_commands.Group):
                 
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
+
+            elif action_value == "override_list":
+                overrides = db.get_conditional_role_overrides(
+                    interaction.guild.id,
+                    role.id if role else None
+                )
+
+                if not overrides:
+                    if role:
+                        await interaction.followup.send(
+                            f"📋 No active overrides found for {role.mention}.",
+                            ephemeral=True
+                        )
+                    else:
+                        await interaction.followup.send("📋 No active conditional-role overrides found.", ephemeral=True)
+                    return
+
+                title = "🛡️ Active Conditional-Role Overrides"
+                if role:
+                    title = f"🛡️ Active Overrides for {role.name}"
+
+                embed = discord.Embed(
+                    title=title,
+                    description=f"Found {len(overrides)} override(s)",
+                    color=discord.Color.blue()
+                )
+
+                for entry in overrides[:25]:
+                    member = interaction.guild.get_member(entry['user_id'])
+                    role_obj = interaction.guild.get_role(entry['role_id'])
+
+                    user_text = member.mention if member else f"<@{entry['user_id']}>"
+                    role_text = role_obj.mention if role_obj else f"<@&{entry['role_id']}>"
+                    when_text = entry['updated_at'].strftime('%Y-%m-%d %H:%M UTC') if entry.get('updated_at') else "Unknown"
+
+                    embed.add_field(
+                        name=f"User: {user_text}",
+                        value=f"Role: {role_text}\nUpdated: {when_text}",
+                        inline=False
+                    )
+
+                if len(overrides) > 25:
+                    embed.set_footer(text=f"Showing 25 of {len(overrides)} overrides")
+
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
             
             # check-all action - run all conditional role checks
             elif action_value == "check_all":
@@ -1611,6 +1669,11 @@ class AdminToolsGroup(app_commands.Group):
                             has_conditional_role = conditional_role_id in member_role_ids
                             has_blocking_role = any(br_id in member_role_ids for br_id in blocking_role_ids)
                             has_deferral_role = any(dr_id in member_role_ids for dr_id in deferral_role_ids)
+                            has_override = db.has_conditional_role_override(
+                                interaction.guild.id,
+                                member.id,
+                                conditional_role_id
+                            )
                             
                             # Check eligibility
                             eligibility = db.get_conditional_role_eligibility(
@@ -1622,6 +1685,19 @@ class AdminToolsGroup(app_commands.Group):
                             
                             conditional_role = interaction.guild.get_role(conditional_role_id)
                             role_name = conditional_role.name if conditional_role else f"Role {conditional_role_id}"
+
+                            # Logic -1: Explicit override always wins and force-grants if missing
+                            if has_override:
+                                if not has_conditional_role:
+                                    action_desc = f"Grant {role_name} to {member.mention} (override enabled)"
+                                    results['granted'].append(action_desc)
+                                    if not dry_run and conditional_role:
+                                        try:
+                                            await member.add_roles(conditional_role, reason="Conditional role override enabled")
+                                            db.unmark_conditional_role_eligible(interaction.guild.id, member.id, conditional_role_id)
+                                        except Exception as e:
+                                            results['errors'].append(f"Failed to grant {role_name} to {member.mention}: {e}")
+                                continue
                             
                             # Logic 0: User has conditional role but also has blocking roles - REMOVE IT
                             if has_conditional_role and has_blocking_role:
@@ -1742,11 +1818,64 @@ class AdminToolsGroup(app_commands.Group):
             
             elif action_value == "check":
                 is_eligible = db.is_conditional_role_eligible(interaction.guild.id, user.id, role.id)
+                has_override = db.has_conditional_role_override(interaction.guild.id, user.id, role.id)
                 
                 if is_eligible:
-                    await interaction.followup.send(f"✅ {user.mention} is eligible for {role.mention}.", ephemeral=True)
+                    status = f"✅ {user.mention} is eligible for {role.mention}."
                 else:
-                    await interaction.followup.send(f"❌ {user.mention} is NOT eligible for {role.mention}.", ephemeral=True)
+                    status = f"❌ {user.mention} is NOT eligible for {role.mention}."
+
+                if has_override:
+                    status += "\n🛡️ Override is enabled (blocking/deferral checks are bypassed)."
+
+                await interaction.followup.send(status, ephemeral=True)
+                return
+
+            elif action_value == "override_enable":
+                db.set_conditional_role_override(interaction.guild.id, user.id, role.id, True)
+
+                assigned_now = False
+                if role not in user.roles:
+                    try:
+                        await user.add_roles(role, reason=f"Conditional role override enabled by {interaction.user.display_name}")
+                        assigned_now = True
+                    except discord.Forbidden:
+                        await interaction.followup.send(
+                            f"🛡️ Override enabled for {user.mention} on {role.mention}, but I couldn't assign the role due to permissions.",
+                            ephemeral=True
+                        )
+                        return
+                    except Exception as e:
+                        await interaction.followup.send(
+                            f"🛡️ Override enabled for {user.mention} on {role.mention}, but role assignment failed: {str(e)[:200]}",
+                            ephemeral=True
+                        )
+                        return
+
+                db.unmark_conditional_role_eligible(interaction.guild.id, user.id, role.id)
+                result = f"🛡️ Override enabled for {user.mention} on {role.mention}."
+                if assigned_now:
+                    result += "\n✅ Role assigned immediately."
+                else:
+                    result += "\nℹ️ User already has the role."
+                await interaction.followup.send(result, ephemeral=True)
+                return
+
+            elif action_value == "override_disable":
+                db.set_conditional_role_override(interaction.guild.id, user.id, role.id, False)
+                await interaction.followup.send(
+                    f"✅ Override disabled for {user.mention} on {role.mention}. Future checks will enforce blocking/deferral rules again.",
+                    ephemeral=True
+                )
+                return
+
+            elif action_value == "override_check":
+                has_override = db.has_conditional_role_override(interaction.guild.id, user.id, role.id)
+                status = "enabled" if has_override else "disabled"
+                await interaction.followup.send(
+                    f"🛡️ Override for {user.mention} on {role.mention}: **{status}**",
+                    ephemeral=True
+                )
                 return
             
             elif action_value == "assign":
@@ -1759,6 +1888,26 @@ class AdminToolsGroup(app_commands.Group):
                         f"Use `/admin tools conditionalrole mark role:{role.mention} user:{user.mention}` first.",
                         ephemeral=True
                     )
+                    return
+
+                has_override = db.has_conditional_role_override(interaction.guild.id, user.id, role.id)
+
+                if has_override:
+                    try:
+                        await user.add_roles(role, reason=f"Conditional role override assignment by {interaction.user.display_name}")
+                        db.unmark_conditional_role_eligible(interaction.guild.id, user.id, role.id)
+                        await interaction.followup.send(
+                            f"🛡️ Override active: assigned {role.mention} to {user.mention} (blocking/deferral ignored).",
+                            ephemeral=True
+                        )
+                    except discord.Forbidden:
+                        await interaction.followup.send(
+                            f"❌ I don't have permission to assign roles.\n"
+                            f"Make sure my role is higher than {role.mention}.",
+                            ephemeral=True
+                        )
+                    except Exception as e:
+                        await interaction.followup.send(f"❌ Error assigning role: {str(e)[:200]}", ephemeral=True)
                     return
                 
                 # Check for blocking roles

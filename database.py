@@ -2175,6 +2175,64 @@ class Database:
                 for row in results
             ]
         return []
+
+    def _conditional_role_override_setting_name(self, role_id: int) -> str:
+        """Build the user setting key for conditional-role override flags."""
+        return f"conditional_role_override_{role_id}"
+
+    def set_conditional_role_override(self, guild_id: int, user_id: int, role_id: int, enabled: bool):
+        """Enable/disable conditional-role block/deferral override for a specific user/role."""
+        setting_name = self._conditional_role_override_setting_name(role_id)
+        self.set_user_setting(user_id, guild_id, setting_name, enabled)
+
+    def has_conditional_role_override(self, guild_id: int, user_id: int, role_id: int) -> bool:
+        """Return whether a user has an override for a configured conditional role."""
+        setting_name = self._conditional_role_override_setting_name(role_id)
+        return self.get_user_setting(user_id, guild_id, setting_name, default_value=False)
+
+    def get_conditional_role_overrides(self, guild_id: int, role_id: int | None = None) -> list[dict]:
+        """Get enabled conditional-role overrides for a guild.
+
+        If role_id is provided, results are filtered to that role.
+        """
+        query = """
+        SELECT entity_id, setting_name, updated_at
+        FROM main.user_settings
+        WHERE entity_type = 'user'
+          AND guild_id = %s
+          AND setting_name LIKE 'conditional_role_override_%'
+          AND LOWER(setting_value) = 'true'
+        ORDER BY updated_at DESC
+        """
+        rows = self.execute_query(query, (guild_id,))
+
+        prefix = "conditional_role_override_"
+        overrides = []
+        for row in rows:
+            user_id = row[0]
+            setting_name = row[1] or ""
+            updated_at = row[2]
+
+            if not setting_name.startswith(prefix):
+                continue
+
+            role_part = setting_name[len(prefix):]
+            if not role_part.isdigit():
+                continue
+
+            parsed_role_id = int(role_part)
+            if role_id is not None and parsed_role_id != role_id:
+                continue
+
+            overrides.append(
+                {
+                    'user_id': user_id,
+                    'role_id': parsed_role_id,
+                    'updated_at': updated_at,
+                }
+            )
+
+        return overrides
     
     def set_rules_agreement_messages(self, guild_id: int, message_data: list):
         """

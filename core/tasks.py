@@ -775,6 +775,10 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
                 for check_config in all_configs:
                     conditional_role_id = check_config['role_id']
                     deferral_role_ids = check_config.get('deferral_role_ids', [])
+
+                    # Explicit override bypasses deferral removals.
+                    if db.has_conditional_role_override(after.guild.id, after.id, conditional_role_id):
+                        continue
                     
                     # If the added role is a deferral role for this conditional role
                     if added_role_id in deferral_role_ids and conditional_role_id in after_role_ids:
@@ -804,6 +808,14 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
             blocking_role_ids = config.get('blocking_role_ids', [])
             deferral_role_ids = config.get('deferral_role_ids', [])
             user_role_ids = {r.id for r in after.roles}
+
+            # Explicit override bypasses blocking/deferral checks for this user/role.
+            if db.has_conditional_role_override(after.guild.id, after.id, added_role_id):
+                db.unmark_conditional_role_eligible(after.guild.id, after.id, added_role_id)
+                added_role = after.guild.get_role(added_role_id)
+                role_name = added_role.name if added_role else str(added_role_id)
+                print(f"[CONDITIONAL ROLE] Override active for {after.display_name}; keeping role {role_name}")
+                continue
 
             # Blocked users should not receive the conditional role
             has_blocking_role = any(br_id in user_role_ids for br_id in blocking_role_ids)
@@ -866,6 +878,21 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
             for config in all_configs:
                 conditional_role_id = config['role_id']
                 deferral_role_ids = config.get('deferral_role_ids', [])
+
+                has_override = db.has_conditional_role_override(after.guild.id, after.id, conditional_role_id)
+
+                if has_override:
+                    # Ensure override users keep the configured role even if they are deferred/blocked.
+                    if conditional_role_id not in after_role_ids:
+                        conditional_role = after.guild.get_role(conditional_role_id)
+                        if conditional_role:
+                            try:
+                                await after.add_roles(conditional_role, reason="Conditional role override enabled")
+                                db.unmark_conditional_role_eligible(after.guild.id, after.id, conditional_role_id)
+                                print(f"[CONDITIONAL ROLE] Override grant for {after.display_name} ({conditional_role.name})")
+                            except Exception as e:
+                                print(f"[CONDITIONAL ROLE] Error granting override role: {e}")
+                    continue
                 
                 # If the conditional role itself was removed manually, treat it as intentional and
                 # clear eligibility so it doesn't pop back on immediately.
@@ -918,6 +945,10 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
             conditional_role_id = config['role_id']
             deferral_role_ids = config.get('deferral_role_ids', [])
             blocking_role_ids = config.get('blocking_role_ids', [])
+
+            # Explicit override bypasses enforcement removals.
+            if db.has_conditional_role_override(after.guild.id, after.id, conditional_role_id):
+                continue
             
             # Check if user currently has this conditional role
             if conditional_role_id not in after_role_ids:
