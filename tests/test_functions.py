@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the functions we want to test
 from utils.helpers import is_url_suppressed, fix_amp_links
-from utils.websites import TikTokLink
+from utils.websites import websites
 
 def test_code_block_detection():
     """Test the code block URL detection function"""
@@ -121,76 +121,88 @@ async def test_amp_links():
     return failed == 0
 
 async def test_tiktok_replacements():
-    """Test that TikTok /discover and /shop URLs are cleaned (query params removed) instead of replaced"""
+    """Test TikTok replacement behavior for video/short vs profile/discover/shop."""
     print("\n🧪 Testing TikTok link replacements...")
     
     test_cases = [
         {
             "name": "Regular TikTok video",
             "url": "https://www.tiktok.com/@user/video/123456789",
-            "should_change": True,
+            "should_replace": True,
             "expected_domain": "a.tnktok.com"
         },
         {
-            "name": "TikTok short link",
+            "name": "TikTok vm short link",
             "url": "https://vm.tiktok.com/abc123/",
-            "should_change": True,
+            "should_replace": True,
             "expected_domain": "a.tnktok.com"
         },
         {
-            "name": "/discover path - should clean params only",
+            "name": "TikTok Z short link",
+            "url": "https://tiktok.com/ZNRQtcK2e",
+            "should_replace": True,
+            "expected_domain": "a.tnktok.com"
+        },
+        {
+            "name": "TikTok profile - should NOT replace",
+            "url": "https://www.tiktok.com/@somecreator?lang=en",
+            "should_replace": False
+        },
+        {
+            "name": "/discover path - should NOT replace",
             "url": "https://www.tiktok.com/discover/trending?ref=home",
-            "should_change": True,
-            "expected": "https://www.tiktok.com/discover/trending"
+            "should_replace": False
         },
         {
-            "name": "/discover with query - should clean params only",
+            "name": "/discover with query - should NOT replace",
             "url": "https://www.tiktok.com/discover?ref=trending",
-            "should_change": True,
-            "expected": "https://www.tiktok.com/discover"
+            "should_replace": False
         },
         {
-            "name": "/shop path - should clean params only",
+            "name": "/shop path - should NOT replace",
             "url": "https://www.tiktok.com/shop/product/123?enter_from=discover_kw",
-            "should_change": True,
-            "expected": "https://www.tiktok.com/shop/product/123"
+            "should_replace": False
         },
         {
-            "name": "/shop with query - should clean params only",
+            "name": "/shop with query - should NOT replace",
             "url": "https://www.tiktok.com/shop?category=electronics&sort=trending",
-            "should_change": True,
-            "expected": "https://www.tiktok.com/shop"
+            "should_replace": False
         },
     ]
     
     passed = 0
     failed = 0
+
+    async def render_via_pipeline(url: str):
+        for website_class in websites:
+            website = website_class.if_valid(url)
+            if website:
+                return await website.render()
+        return None
     
     for test in test_cases:
-        link = TikTokLink(test["url"])
-        result = await link.render()
-        
-        if test.get("expected"):
-            # Specific expected URL
-            if result == test["expected"]:
+        result = await render_via_pipeline(test["url"])
+
+        if test["should_replace"]:
+            if result and result != test["url"] and test["expected_domain"] in result:
                 print(f"✅ {test['name']}: PASSED")
                 print(f"   {test['url']} → {result}")
                 passed += 1
             else:
                 print(f"❌ {test['name']}: FAILED")
                 print(f"   URL: {test['url']}")
-                print(f"   Expected: {test['expected']}")
+                print(f"   Expected domain: {test['expected_domain']}")
                 print(f"   Got: {result}")
                 failed += 1
         else:
-            # Just check if domain changed
-            if test["should_change"] and result and test["expected_domain"] in result:
+            if result == test["url"]:
                 print(f"✅ {test['name']}: PASSED")
-                print(f"   {result}")
+                print(f"   unchanged: {result}")
                 passed += 1
             else:
                 print(f"❌ {test['name']}: FAILED")
                 print(f"   URL: {test['url']}")
+                print(f"   Expected unchanged URL")
                 print(f"   Got: {result}")
                 failed += 1
     

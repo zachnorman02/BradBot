@@ -141,6 +141,10 @@ class TikTokProfileLink(SimpleWebsiteLink):
                     return True
         return False
 
+    async def render(self) -> Optional[str]:
+        """Keep profile URLs unchanged."""
+        return self.url if self.is_valid() else None
+
 class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
@@ -173,7 +177,8 @@ class TikTokLink(SimpleWebsiteLink):
     routes = [
         r"https?://(?:www\.|a\.|d\.|vm\.|vt\.)?(tiktok\.com)/@([\w-]+)/(video|photo)/([\w-]+)",
         r"https?://(?:www\.|a\.|d\.|vm\.|vt\.)?(tiktok\.com)/(t|embed)/([\w-]+)",
-        r"https?://(?:www\.|a\.|d\.|vm\.|vt\.)?(tiktok\.com)/([\w-]+)"
+        r"https?://(?:vm\.|vt\.)tiktok\.com/([\w-]+)(?:/)?(?:\?.*)?$",
+        r"https?://(?:www\.)?(tiktok\.com)/([Zz][\w-]+)(?:/)?(?:\?.*)?$"
     ]
     replacement = "a.tnktok.com"
 
@@ -185,6 +190,10 @@ class TikTokDiscoverShopLink(SimpleWebsiteLink):
         r"https?://(?:www\.)?tiktok\.com/(discover|shop)(?:/|$|\?)"
     ]
     replacement = "tiktok.com"
+
+    async def render(self) -> Optional[str]:
+        """Keep /discover and /shop URLs unchanged."""
+        return self.url if self.is_valid() else None
 
 
 class RedditLink(SimpleWebsiteLink):
