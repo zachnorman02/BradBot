@@ -176,6 +176,19 @@ class TikTokLink(SimpleWebsiteLink):
         r"https?://(?:www\.|a\.|d\.|vm\.|vt\.)?(tiktok\.com)/([\w-]+)"
     ]
     replacement = "a.tnktok.com"
+    
+    async def render(self) -> Optional[str]:
+        """Return the fixed URL, handling /discover and /shop specially."""
+        if not self.is_valid():
+            return None
+        
+        # Check if this is a /discover or /shop URL
+        if re.search(r'/(discover|shop)(?:/|$|\?)', self.url, re.IGNORECASE):
+            # For /discover and /shop, just clean tracking params without domain replacement
+            return self._clean_tracking_params(self.url)
+        
+        # For regular TikTok videos, use parent class behavior (replace domain)
+        return await super().render()
 
 
 class RedditLink(SimpleWebsiteLink):
