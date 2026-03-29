@@ -11,10 +11,20 @@ from utils.websites import websites, get_site_name
 # List of sites that support EmbedEZ (Instagram handled separately)
 EMBEDEZ_SITES = {'snapchat', 'ifunny', 'weibo', 'rule34'}
 
+TRAILING_URL_PUNCTUATION = '.,!?;:'
+
 def _strip_trailing_slash(url: str) -> str:
     if url.endswith('/') and not re.match(r'^https?://$', url):
         return url.rstrip('/')
     return url
+
+
+def _split_url_trailing_punctuation(url: str) -> tuple[str, str]:
+    """Split sentence punctuation from the end of a URL candidate."""
+    normalized = url.rstrip(TRAILING_URL_PUNCTUATION)
+    if not normalized:
+        return url, ''
+    return normalized, url[len(normalized):]
 
 
 async def handle_reply_notification(message: discord.Message, bot: discord.Client):
@@ -145,10 +155,19 @@ async def process_message_links(message: discord.Message) -> dict | None:
     
     # Find URLs in message
     url_pattern = re.compile(r'https?://[^\s<>()]+')
-    urls = url_pattern.findall(message.content)
-    
-    # Filter out URLs that are suppressed (in backticks or angle brackets)
-    urls = [url for url in urls if not is_url_suppressed(message.content, url)]
+    raw_urls = url_pattern.findall(message.content)
+
+    # Filter suppressed URLs and normalize trailing punctuation for matching.
+    # Keep the original URL so punctuation is preserved when replacing in content.
+    urls_to_process: list[tuple[str, str, str]] = []
+    for raw_url in raw_urls:
+        if is_url_suppressed(message.content, raw_url):
+            continue
+        normalized_url, trailing_punctuation = _split_url_trailing_punctuation(raw_url)
+        if normalized_url:
+            urls_to_process.append((raw_url, normalized_url, trailing_punctuation))
+
+    urls = [raw_url for raw_url, _, _ in urls_to_process]
     
     if not urls:
         return None
@@ -160,9 +179,9 @@ async def process_message_links(message: discord.Message) -> dict | None:
     instagram_embed_url = None
     
     # Process all URLs for fixes
-    for url in urls:
+    for raw_url, normalized_url, trailing_punctuation in urls_to_process:
         for website_class in websites:
-            website = website_class.if_valid(url)
+            website = website_class.if_valid(normalized_url)
             if website:
                 # Check if this is Instagram and get embed URL
                 if website.__class__.__name__ == 'InstagramLink' and hasattr(website, 'get_embed_url'):
@@ -170,8 +189,8 @@ async def process_message_links(message: discord.Message) -> dict | None:
                 
                 fixed_url = await website.render()
                 fixed_url = _strip_trailing_slash(fixed_url) if fixed_url else fixed_url
-                if fixed_url and fixed_url != url:
-                    fixed_urls[url] = fixed_url
+                if fixed_url and fixed_url != normalized_url:
+                    fixed_urls[raw_url] = f"{fixed_url}{trailing_punctuation}"
                 break
     
     # Apply website fixes
