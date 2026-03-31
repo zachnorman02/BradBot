@@ -178,10 +178,10 @@ class VoiceGroup(app_commands.Group):
             await interaction.followup.send(f"✅ Joined {channel.mention}", ephemeral=True)
         except Exception as e:
             err_str = str(e)
-            # Common error when PyNaCl is missing
-            if "PyNaCl" in err_str or "pynacl" in err_str or "PyNaCl library" in err_str:
+            # Common error when voice encryption libraries are missing
+            if any(token in err_str for token in ["PyNaCl", "pynacl", "PyNaCl library", "davey", "davey library"]):
                 await interaction.followup.send(
-                    "❌ PyNaCl is required for voice functionality. Install it with `pip install pynacl` and restart the bot.",
+                    "❌ Missing voice dependency (PyNaCl/Davey). Install dependencies with `pip install -r requirements.txt` and restart the bot.",
                     ephemeral=True
                 )
             else:

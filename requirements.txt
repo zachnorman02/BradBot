@@ -6,6 +6,7 @@ boto3
 wordcloud
 matplotlib
 pynacl
+davey
 pillow
 python-dateutil
 gTTS
