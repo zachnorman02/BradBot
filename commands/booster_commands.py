@@ -22,7 +22,9 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, 
     # Preferred anchor: right above the built-in Server Booster role.
     booster_role = guild.premium_subscriber_role
     if booster_role and booster_role.position is not None:
-        target = booster_role.position + 1
+        # Use booster's current position so this role is inserted above it,
+        # even when booster is directly under the bot's top role.
+        target = booster_role.position
         target_source = "server_booster_role"
 
     # If booster role is unavailable, keep a sensible fallback above the member's current roles.
