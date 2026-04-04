@@ -425,6 +425,8 @@ async def _save_booster_role(member: discord.Member, role: discord.Role):
 async def _restore_or_create_booster_role(member: discord.Member) -> bool:
     """Restore a saved booster role or create a new one"""
     try:
+        from commands.booster_commands import _ensure_role_position
+
         db_role_data = db.get_booster_role(member.id, member.guild.id)
         
         if db_role_data:
@@ -434,6 +436,7 @@ async def _restore_or_create_booster_role(member: discord.Member) -> bool:
                 existing_role = member.guild.get_role(db_role_data['role_id'])
             
             if existing_role:
+                await _ensure_role_position(existing_role, member.guild.me, member)
                 # Role still exists! Just assign it back
                 await member.add_roles(existing_role, reason="Re-assigning existing booster role")
                 print(f"✅ Re-assigned existing booster role '{existing_role.name}' to {member.display_name}")
@@ -464,6 +467,8 @@ async def _restore_or_create_booster_role(member: discord.Member) -> bool:
                         await restored_role.edit(display_icon=db_role_data['icon_data'])
                     except Exception as e:
                         print(f"Could not restore role icon for {member.display_name}: {e}")
+
+                await _ensure_role_position(restored_role, member.guild.me, member)
                 
                 # Assign to user
                 await member.add_roles(restored_role, reason="Auto-restoring booster role")
@@ -481,7 +486,6 @@ async def _restore_or_create_booster_role(member: discord.Member) -> bool:
             )
             
             # Position it using the same logic as commands
-            from commands.booster_commands import _ensure_role_position
             await _ensure_role_position(new_role, member.guild.me, member)
             
             # Assign to user

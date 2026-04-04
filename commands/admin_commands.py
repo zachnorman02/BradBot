@@ -3465,8 +3465,22 @@ class AdminGroup(app_commands.Group):
             # Apply positioning logic
             await _ensure_role_position(test_role, interaction.guild.me, target_user)
             
-            # Get final position
-            final_position = test_role.position
+            # Get final position from API to avoid stale cache after bulk role-position edits
+            fetched_roles = await interaction.guild.fetch_roles()
+            refreshed_test_role = discord.utils.get(fetched_roles, id=test_role.id)
+            refreshed_booster_role = discord.utils.get(
+                fetched_roles,
+                id=interaction.guild.premium_subscriber_role.id
+            ) if interaction.guild.premium_subscriber_role else None
+            final_position = refreshed_test_role.position if refreshed_test_role else test_role.position
+            booster_position = refreshed_booster_role.position if refreshed_booster_role else None
+            bot_top_position = interaction.guild.me.top_role.position if interaction.guild.me and interaction.guild.me.top_role else None
+            expected_target = booster_position
+            skipped_for_hierarchy = (
+                expected_target is not None
+                and bot_top_position is not None
+                and expected_target >= bot_top_position
+            )
             
             # Get user's highest role for comparison
             user_roles = [r for r in target_user.roles if not r.is_default() and r.id != test_role.id]
@@ -3486,8 +3500,15 @@ class AdminGroup(app_commands.Group):
                 f"• Initial: `{initial_position}` (bottom)",
                 f"• Final: `{final_position}`",
                 f"• Moved: `{final_position - initial_position}` positions",
+                f"• Expected target (server booster): `{expected_target if expected_target is not None else 'N/A'}`",
                 f"",
             ]
+
+            if skipped_for_hierarchy:
+                response.append(
+                    f"⚠️ Move likely skipped: server booster target `{expected_target}` is at/above bot top role `{bot_top_position}`."
+                )
+                response.append("")
             
             if highest_user_role:
                 response.append(f"**User's Highest Role:** {highest_user_role.mention} (position `{highest_user_role.position}`)")
