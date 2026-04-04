@@ -49,6 +49,19 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, 
         guild.id,
     )
 
+    # Log a compact top-of-list snapshot to debug ordering issues in production.
+    ordered_roles = sorted(
+        (r for r in guild.roles if not r.is_default()),
+        key=lambda r: r.position,
+        reverse=True,
+    )
+    top_snapshot = [f"{r.position}:{r.id}:{r.name}" for r in ordered_roles]
+    logger.info(
+        "Booster role ordering snapshot (top 100): guild_id=%s roles=%s",
+        guild.id,
+        " | ".join(top_snapshot),
+    )
+
     # If target is not manageable by the bot, do not force a fallback placement.
     if target is not None and bot_top is not None:
         if target >= bot_top:
