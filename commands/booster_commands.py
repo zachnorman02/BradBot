@@ -14,40 +14,32 @@ from utils.logger import logger
 
 
 async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, member: Optional[discord.Member] = None) -> None:
-    """Place personal booster roles just under the counting penalty role if present, else above user's highest role, while staying under the bot."""
+    """Place personal booster roles directly above the server booster role while staying under the bot."""
     guild = role.guild
     target = None
 
-    try:
-        # Prefer just below the counting penalty role if configured
-        config = db.get_counting_config(guild.id)
-        if config and config.get("idiot_role_id"):
-            idiot_role = guild.get_role(config["idiot_role_id"])
-            if idiot_role and idiot_role.position is not None:
-                target = max(1, idiot_role.position - 1)
-    except Exception as e:
-        logger.warning(f"Could not read counting config: {e}")
+    # Preferred anchor: right above the built-in Server Booster role.
+    booster_role = guild.premium_subscriber_role
+    if booster_role and booster_role.position is not None:
+        target = booster_role.position + 1
 
+    # If booster role is unavailable, keep a sensible fallback above the member's current roles.
     if target is None and member:
-        # Place above the user's highest role (excluding the personal booster role itself)
         user_roles = [r for r in member.roles if not r.is_default() and r.id != role.id]
         if user_roles:
             highest_user_role = max(user_roles, key=lambda r: r.position)
             target = highest_user_role.position + 1
-    
-    if target is None:
-        # Fallback to above the server's booster role
-        booster_role = guild.premium_subscriber_role
-        if booster_role and booster_role.position is not None:
-            target = booster_role.position + 1
 
-    # Never place above the bot's highest role (or equal), or Discord will reject edits.
+    # Read bot top role for validation only.
     bot_top = bot_member.top_role.position if bot_member and bot_member.top_role else None
-    if bot_top is not None:
-        if target is None:
-            target = max(1, bot_top - 1)
-        else:
-            target = min(target, max(1, bot_top - 1))
+
+    # If target is not manageable by the bot, do not force a fallback placement.
+    if target is not None and bot_top is not None:
+        if target >= bot_top:
+            logger.warning(
+                f"Skipping position update for {role.name}: target {target} is not below bot top role {bot_top}."
+            )
+            return
 
     # If we couldn't compute a target, bail quietly.
     if target is None:
