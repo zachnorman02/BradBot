@@ -111,16 +111,15 @@ async def handle_message_mirror(message: discord.Message):
 
 async def handle_message_edit(before: Optional[discord.Message], after: discord.Message):
     """Handle editing of a mirrored message."""
-    print(f"[DEBUG] on_message_edit fired: before_id={getattr(before, 'id', None)}, after_id={getattr(after, 'id', None)}, author={getattr(after, 'author', None)}, channel={getattr(after, 'channel', None)}")
     # Ignore bot messages
     if after.author.bot:
-        print(f"[DEBUG] Skipping bot message edit: {after.id}")
         return
     
     # Only process guild messages
     if not after.guild:
-        print(f"[DEBUG] Skipping non-guild message edit: {after.id}")
         return
+
+    print(f"[DEBUG] on_message_edit fired: before_id={getattr(before, 'id', None)}, after_id={getattr(after, 'id', None)}, author={getattr(after, 'author', None)}, channel={getattr(after, 'channel', None)}")
     
     # Check if this message has been mirrored
     mirrored = db.get_mirrored_messages(after.id)

@@ -314,6 +314,26 @@ async def on_ready():
 async def on_message(message):
     """Process messages for link replacement, reply notifications, and mirroring"""
     if message.author.bot:
+        # Global audit: log every DM sent by this bot, regardless of source module.
+        if message.guild is None and bot.user and message.author.id == bot.user.id:
+            embed_summaries = [
+                {
+                    "title": e.title,
+                    "description": e.description,
+                    "footer": e.footer.text if e.footer else None,
+                }
+                for e in message.embeds
+            ]
+            attachment_urls = [a.url for a in message.attachments]
+            logger.info(
+                "Bot DM sent: message_id=%s channel_id=%s recipient=%s content=%r embeds=%s attachments=%s",
+                message.id,
+                message.channel.id,
+                str(message.channel),
+                message.content,
+                embed_summaries,
+                attachment_urls,
+            )
         return
     await bot.process_commands(message)
 
