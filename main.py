@@ -316,23 +316,56 @@ async def on_message(message):
     if message.author.bot:
         # Global audit: log every DM sent by this bot, regardless of source module.
         if message.guild is None and bot.user and message.author.id == bot.user.id:
+            dm_channel = message.channel
+            recipient = getattr(dm_channel, "recipient", None)
+            recipient_label = None
+            recipient_id = None
+
+            if recipient:
+                recipient_id = recipient.id
+                recipient_label = f"{recipient} ({recipient.id})"
+            else:
+                # Fall back to recipients list for group DMs; this helps when recipient cache is cold.
+                recipients = getattr(dm_channel, "recipients", None)
+                if recipients:
+                    recipient_label = ", ".join(f"{u} ({u.id})" for u in recipients)
+                else:
+                    recipient_label = str(dm_channel)
+
             embed_summaries = [
                 {
                     "title": e.title,
                     "description": e.description,
+                    "field_count": len(e.fields),
+                    "author": e.author.name if e.author else None,
                     "footer": e.footer.text if e.footer else None,
                 }
                 for e in message.embeds
             ]
             attachment_urls = [a.url for a in message.attachments]
+            component_types = [c.type.name for row in message.components for c in row.children]
+            interaction_name = None
+            interaction_user_id = None
+            if message.interaction_metadata:
+                interaction_name = message.interaction_metadata.name
+                interaction_user_id = message.interaction_metadata.user.id if message.interaction_metadata.user else None
             logger.info(
-                "Bot DM sent: message_id=%s channel_id=%s recipient=%s content=%r embeds=%s attachments=%s",
+                "Bot DM sent: message_id=%s channel_id=%s recipient=%s recipient_id=%s "
+                "type=%s flags=%s content=%r embeds=%s attachments=%s components=%s "
+                "interaction_name=%s interaction_user_id=%s reference_id=%s",
                 message.id,
                 message.channel.id,
-                str(message.channel),
+                recipient_label,
+                recipient_id,
+                message.type.name,
+                int(message.flags.value),
                 message.content,
                 embed_summaries,
                 attachment_urls,
+                component_types,
+                interaction_name,
+                interaction_user_id,
+                message.reference.message_id if message.reference else None,
             )
         return
     await bot.process_commands(message)
