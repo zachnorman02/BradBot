@@ -543,7 +543,7 @@ class BoosterRoleGroup(app_commands.Group):
                         return
                     image_bytes = await resp.read()
             
-            await highest_role.edit(icon=image_bytes)
+            await highest_role.edit(display_icon=image_bytes)
             
             # Save to database
             await save_role_to_db(interaction.user.id, interaction.guild.id, highest_role)

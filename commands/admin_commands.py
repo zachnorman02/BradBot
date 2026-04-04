@@ -2716,7 +2716,7 @@ class AdminMaintenanceGroup(app_commands.Group):
                         return
                     image_bytes = await resp.read()
             
-            await personal_role.edit(icon=image_bytes, reason=f"Admin edit by {interaction.user}")
+            await personal_role.edit(display_icon=image_bytes, reason=f"Admin edit by {interaction.user}")
             
             # Save to database
             await save_role_to_db(user.id, interaction.guild.id, personal_role)
