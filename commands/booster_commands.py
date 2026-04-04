@@ -17,11 +17,13 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, 
     """Place personal booster roles directly above the server booster role while staying under the bot."""
     guild = role.guild
     target = None
+    target_source = None
 
     # Preferred anchor: right above the built-in Server Booster role.
     booster_role = guild.premium_subscriber_role
     if booster_role and booster_role.position is not None:
         target = booster_role.position + 1
+        target_source = "server_booster_role"
 
     # If booster role is unavailable, keep a sensible fallback above the member's current roles.
     if target is None and member:
@@ -29,9 +31,21 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, 
         if user_roles:
             highest_user_role = max(user_roles, key=lambda r: r.position)
             target = highest_user_role.position + 1
+            target_source = f"member_highest_role:{highest_user_role.id}"
 
     # Read bot top role for validation only.
     bot_top = bot_member.top_role.position if bot_member and bot_member.top_role else None
+
+    logger.info(
+        "Booster role positioning: role_id=%s current=%s target=%s source=%s booster_pos=%s bot_top=%s guild_id=%s",
+        role.id,
+        role.position,
+        target,
+        target_source,
+        booster_role.position if booster_role else None,
+        bot_top,
+        guild.id,
+    )
 
     # If target is not manageable by the bot, do not force a fallback placement.
     if target is not None and bot_top is not None:
@@ -43,11 +57,18 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, 
 
     # If we couldn't compute a target, bail quietly.
     if target is None:
+        logger.warning(
+            "Skipping position update for role_id=%s: no target computed (booster role missing and no member fallback).",
+            role.id,
+        )
         return
 
     try:
         if role.position != target:
-            await role.edit(position=target, reason="Place booster role above user roles")
+            logger.info("Attempting role move: role_id=%s from=%s to=%s", role.id, role.position, target)
+            await role.edit(position=target, reason="Place booster role above server booster role")
+        else:
+            logger.info("No role move needed: role_id=%s already at target=%s", role.id, target)
     except Exception as e:
         logger.warning(f"Could not adjust position for {role.name}: {e}")
 
