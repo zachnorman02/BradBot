@@ -314,8 +314,9 @@ async def on_ready():
 async def on_message(message):
     """Process messages for link replacement, reply notifications, and mirroring"""
     if message.author.bot:
-        # Global audit: log every DM sent by this bot, regardless of source module.
-        if message.guild is None and bot.user and message.author.id == bot.user.id:
+        # Global audit: log bot-authored messages with channel-aware context.
+        if bot.user and message.author.id == bot.user.id:
+            is_dm_channel = isinstance(message.channel, (discord.DMChannel, discord.GroupChannel))
             dm_channel = message.channel
             recipient = getattr(dm_channel, "recipient", None)
             recipient_label = None
@@ -349,24 +350,44 @@ async def on_message(message):
             if message.interaction_metadata:
                 interaction_name = message.interaction_metadata.name
                 interaction_user_id = message.interaction_metadata.user.id if message.interaction_metadata.user else None
-            logger.info(
-                "Bot DM sent: message_id=%s channel_id=%s recipient=%s recipient_id=%s "
-                "type=%s flags=%s content=%r embeds=%s attachments=%s components=%s "
-                "interaction_name=%s interaction_user_id=%s reference_id=%s",
-                message.id,
-                message.channel.id,
-                recipient_label,
-                recipient_id,
-                message.type.name,
-                int(message.flags.value),
-                message.content,
-                embed_summaries,
-                attachment_urls,
-                component_types,
-                interaction_name,
-                interaction_user_id,
-                message.reference.message_id if message.reference else None,
-            )
+            if is_dm_channel:
+                logger.info(
+                    "Bot DM sent: message_id=%s channel_id=%s recipient=%s recipient_id=%s "
+                    "type=%s flags=%s content=%r embeds=%s attachments=%s components=%s "
+                    "interaction_name=%s interaction_user_id=%s reference_id=%s",
+                    message.id,
+                    message.channel.id,
+                    recipient_label,
+                    recipient_id,
+                    message.type.name,
+                    int(message.flags.value),
+                    message.content,
+                    embed_summaries,
+                    attachment_urls,
+                    component_types,
+                    interaction_name,
+                    interaction_user_id,
+                    message.reference.message_id if message.reference else None,
+                )
+            else:
+                logger.info(
+                    "Bot guild message: message_id=%s guild_id=%s channel_id=%s channel_type=%s "
+                    "type=%s flags=%s content=%r embeds=%s attachments=%s components=%s "
+                    "interaction_name=%s interaction_user_id=%s reference_id=%s",
+                    message.id,
+                    message.guild.id if message.guild else None,
+                    message.channel.id,
+                    type(message.channel).__name__,
+                    message.type.name,
+                    int(message.flags.value),
+                    message.content,
+                    embed_summaries,
+                    attachment_urls,
+                    component_types,
+                    interaction_name,
+                    interaction_user_id,
+                    message.reference.message_id if message.reference else None,
+                )
         return
     await bot.process_commands(message)
 
