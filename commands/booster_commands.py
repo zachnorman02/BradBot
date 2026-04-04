@@ -55,12 +55,6 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, 
         key=lambda r: r.position,
         reverse=True,
     )
-    top_snapshot = [f"{r.position}:{r.id}:{r.name}" for r in ordered_roles]
-    logger.info(
-        "Booster role ordering snapshot (top 100): guild_id=%s roles=%s",
-        guild.id,
-        " | ".join(top_snapshot),
-    )
 
     # If target is not manageable by the bot, do not force a fallback placement.
     if target is not None and bot_top is not None:
@@ -81,7 +75,20 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, 
     try:
         if role.position != target:
             logger.info("Attempting role move: role_id=%s from=%s to=%s", role.id, role.position, target)
-            await role.edit(position=target, reason="Place booster role above server booster role")
+            await guild.edit_role_positions(
+                positions={role: target},
+                reason="Place booster role above server booster role",
+            )
+
+            # Verify resulting position from API to avoid stale-cache confusion.
+            fetched_roles = await guild.fetch_roles()
+            moved_role = discord.utils.get(fetched_roles, id=role.id)
+            logger.info(
+                "Post-move verification: role_id=%s expected=%s actual=%s",
+                role.id,
+                target,
+                moved_role.position if moved_role else None,
+            )
         else:
             logger.info("No role move needed: role_id=%s already at target=%s", role.id, target)
     except Exception as e:

@@ -377,6 +377,84 @@ class AdminToolsGroup(app_commands.Group):
                 ephemeral=True
             )
 
+    @app_commands.command(name="shiftrole", description="Move a role up or down by one position")
+    @app_commands.describe(
+        role="The role to move",
+        direction="Move the role one step up or down"
+    )
+    @app_commands.choices(direction=[
+        app_commands.Choice(name="Up", value="up"),
+        app_commands.Choice(name="Down", value="down"),
+    ])
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def shift_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        direction: app_commands.Choice[str]
+    ):
+        """Move a role by exactly one position in the role hierarchy."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            guild = interaction.guild
+            bot_member = guild.me
+
+            if role.is_default():
+                await interaction.followup.send("❌ You can't move @everyone.", ephemeral=True)
+                return
+
+            if role.managed:
+                await interaction.followup.send("❌ That role is managed by an integration/bot and cannot be moved.", ephemeral=True)
+                return
+
+            if not bot_member.guild_permissions.manage_roles:
+                await interaction.followup.send("❌ I need the Manage Roles permission to do that.", ephemeral=True)
+                return
+
+            if bot_member.top_role <= role:
+                await interaction.followup.send("❌ I can't manage that role because it is above my highest role.", ephemeral=True)
+                return
+
+            if interaction.user.top_role <= role and not interaction.user.guild_permissions.administrator:
+                await interaction.followup.send("❌ You can't manage a role higher than or equal to your top role.", ephemeral=True)
+                return
+
+            current_pos = role.position
+            if direction.value == "up":
+                target_pos = current_pos + 1
+                max_pos = bot_member.top_role.position - 1
+                if target_pos > max_pos:
+                    await interaction.followup.send(
+                        f"❌ Can't move {role.mention} higher because it would be at/above my top role.",
+                        ephemeral=True
+                    )
+                    return
+            else:
+                target_pos = current_pos - 1
+                if target_pos < 1:
+                    await interaction.followup.send(
+                        f"❌ Can't move {role.mention} lower; it's already at the bottom.",
+                        ephemeral=True
+                    )
+                    return
+
+            await guild.edit_role_positions(
+                positions={role: target_pos},
+                reason=f"Role shifted {direction.value} by {interaction.user}",
+            )
+
+            await interaction.followup.send(
+                f"✅ Shifted {role.mention} **{direction.value}** from `{current_pos}` to `{target_pos}`.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to shift role: {e}", ephemeral=True)
+
     @app_commands.command(name="autorole", description="Configure automatic role assignment rules")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(

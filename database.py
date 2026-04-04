@@ -85,7 +85,6 @@ class Database:
     
     def get_connection(self):
         """Get a connection from the pool, handling IAM token expiration"""
-        print(f"DEBUG IDENTITY: {boto3.client('sts').get_caller_identity()['Arn']}")
         if not self.connection_pool:
             self.init_pool()
         
