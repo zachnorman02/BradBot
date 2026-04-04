@@ -3475,7 +3475,9 @@ class AdminGroup(app_commands.Group):
             final_position = refreshed_test_role.position if refreshed_test_role else test_role.position
             booster_position = refreshed_booster_role.position if refreshed_booster_role else None
             bot_top_position = interaction.guild.me.top_role.position if interaction.guild.me and interaction.guild.me.top_role else None
-            expected_target = booster_position
+            expected_target = booster_position + 1 if booster_position is not None else None
+            if expected_target is not None and bot_top_position is not None and expected_target >= bot_top_position:
+                expected_target = bot_top_position - 1
             skipped_for_hierarchy = (
                 expected_target is not None
                 and bot_top_position is not None

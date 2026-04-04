@@ -7,6 +7,7 @@ import asyncio
 from database import db
 from collections import defaultdict
 from .counting import clear_counting_penalty_if_expired
+from commands.booster_commands import _ensure_role_position
 
 
 # ============================================================================
@@ -425,8 +426,6 @@ async def _save_booster_role(member: discord.Member, role: discord.Role):
 async def _restore_or_create_booster_role(member: discord.Member) -> bool:
     """Restore a saved booster role or create a new one"""
     try:
-        from commands.booster_commands import _ensure_role_position
-
         db_role_data = db.get_booster_role(member.id, member.guild.id)
         
         if db_role_data:

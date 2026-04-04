@@ -22,9 +22,9 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, 
     # Preferred anchor: right above the built-in Server Booster role.
     booster_role = guild.premium_subscriber_role
     if booster_role and booster_role.position is not None:
-        # Use booster's current position so this role is inserted above it,
-        # even when booster is directly under the bot's top role.
-        target = booster_role.position
+        # Discord role movement semantics can place at-or-below the anchor when using
+        # the same numeric position, so prefer +1 for a true "above booster" outcome.
+        target = booster_role.position + 1
         target_source = "server_booster_role"
 
     # If booster role is unavailable, keep a sensible fallback above the member's current roles.
@@ -56,13 +56,23 @@ async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, 
         reverse=True,
     )
 
-    # If target is not manageable by the bot, do not force a fallback placement.
+    # Keep target manageable while preserving intent as much as possible.
     if target is not None and bot_top is not None:
         if target >= bot_top:
-            logger.warning(
-                f"Skipping position update for {role.name}: target {target} is not below bot top role {bot_top}."
+            adjusted_target = bot_top - 1
+            if adjusted_target < 1:
+                logger.warning(
+                    f"Skipping position update for {role.name}: no valid target under bot top role {bot_top}."
+                )
+                return
+            logger.info(
+                "Adjusting booster role target for hierarchy: role_id=%s requested=%s adjusted=%s bot_top=%s",
+                role.id,
+                target,
+                adjusted_target,
+                bot_top,
             )
-            return
+            target = adjusted_target
 
     # If we couldn't compute a target, bail quietly.
     if target is None:
