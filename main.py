@@ -437,6 +437,12 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
     the cached previous state.
     """
     try:
+        # If Discord provides a cached pre-edit message, on_message_edit will
+        # also fire. Skip raw handling to avoid duplicate logging/processing.
+        if getattr(payload, "cached_message", None) is not None:
+            logger.debug(f"Skipping raw edit for cached message_id={payload.message_id}")
+            return
+
         logger.debug(f"on_raw_message_edit fired: message_id={payload.message_id} channel_id={payload.channel_id} guild_id={payload.guild_id}")
         # Try to resolve channel and fetch the message
         channel = None
