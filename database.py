@@ -2232,6 +2232,85 @@ class Database:
             )
 
         return overrides
+
+    # ========================================================================
+    # PER-USER ROLE DENIES
+    # ========================================================================
+
+    def add_role_deny(self, guild_id: int, user_id: int, role_id: int, created_by_user_id: int | None = None, notes: str | None = None):
+        """Deny a specific role for a specific user in a guild."""
+        query = """
+        INSERT INTO main.role_denies (guild_id, user_id, role_id, created_by_user_id, notes, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (guild_id, user_id, role_id)
+        DO UPDATE SET
+            created_by_user_id = EXCLUDED.created_by_user_id,
+            notes = EXCLUDED.notes,
+            updated_at = CURRENT_TIMESTAMP
+        """
+        self.execute_query(query, (guild_id, user_id, role_id, created_by_user_id, notes), fetch=False)
+
+    def remove_role_deny(self, guild_id: int, user_id: int, role_id: int):
+        """Remove a role deny for a user."""
+        query = """
+        DELETE FROM main.role_denies
+        WHERE guild_id = %s AND user_id = %s AND role_id = %s
+        """
+        self.execute_query(query, (guild_id, user_id, role_id), fetch=False)
+
+    def is_role_denied(self, guild_id: int, user_id: int, role_id: int) -> bool:
+        """Check whether a role is denied for a user."""
+        query = """
+        SELECT 1
+        FROM main.role_denies
+        WHERE guild_id = %s AND user_id = %s AND role_id = %s
+        """
+        result = self.execute_query(query, (guild_id, user_id, role_id))
+        return bool(result)
+
+    def get_denied_role_ids_for_user(self, guild_id: int, user_id: int) -> list[int]:
+        """Get all role IDs denied for a user in a guild."""
+        query = """
+        SELECT role_id
+        FROM main.role_denies
+        WHERE guild_id = %s AND user_id = %s
+        """
+        rows = self.execute_query(query, (guild_id, user_id))
+        return [int(row[0]) for row in rows] if rows else []
+
+    def get_role_denies(self, guild_id: int, user_id: int | None = None, role_id: int | None = None) -> list[dict]:
+        """List role deny entries for a guild with optional user/role filters."""
+        query = """
+        SELECT user_id, role_id, created_by_user_id, notes, created_at, updated_at
+        FROM main.role_denies
+        WHERE guild_id = %s
+        """
+        params: list = [guild_id]
+
+        if user_id is not None:
+            query += " AND user_id = %s"
+            params.append(user_id)
+        if role_id is not None:
+            query += " AND role_id = %s"
+            params.append(role_id)
+
+        query += " ORDER BY updated_at DESC"
+        rows = self.execute_query(query, tuple(params))
+
+        if not rows:
+            return []
+
+        return [
+            {
+                'user_id': int(row[0]),
+                'role_id': int(row[1]),
+                'created_by_user_id': int(row[2]) if row[2] is not None else None,
+                'notes': row[3],
+                'created_at': row[4],
+                'updated_at': row[5],
+            }
+            for row in rows
+        ]
     
     def set_rules_agreement_messages(self, guild_id: int, message_data: list):
         """

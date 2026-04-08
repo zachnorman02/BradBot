@@ -2444,6 +2444,12 @@ class AdminMaintenanceGroup(app_commands.Group):
                 if role in user.roles:
                     await interaction.followup.send(f"ℹ️ {user.mention} already has {role.mention}.", ephemeral=True)
                     return
+                if db.is_role_denied(interaction.guild.id, user.id, role.id):
+                    await interaction.followup.send(
+                        f"❌ Cannot add {role.mention} to {user.mention}: role is denied for this user.",
+                        ephemeral=True
+                    )
+                    return
                 await user.add_roles(role, reason=f"Set by {interaction.user}")
                 await interaction.followup.send(f"✅ Added {role.mention} to {user.mention}.", ephemeral=True)
             else:
@@ -2454,6 +2460,129 @@ class AdminMaintenanceGroup(app_commands.Group):
                 await interaction.followup.send(f"✅ Removed {role.mention} from {user.mention}.", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to update role: {e}", ephemeral=True)
+
+    @app_commands.command(name="roledeny_user", description="Manage per-user denies for a specific role")
+    @app_commands.describe(
+        action="What action to perform",
+        user="User to target",
+        role="Role to deny/allow/check/list",
+        notes="Optional reason when adding a deny"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="add - Deny role for user", value="add"),
+        app_commands.Choice(name="remove - Remove deny", value="remove"),
+        app_commands.Choice(name="check - Check if denied", value="check"),
+        app_commands.Choice(name="list - List deny entries", value="list"),
+    ])
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def roledeny_user(
+        self,
+        interaction: discord.Interaction,
+        action: app_commands.Choice[str],
+        user: discord.Member = None,
+        role: discord.Role = None,
+        notes: str = None,
+    ):
+        """Manage persistent role deny entries for specific users."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+
+            action_value = action.value
+
+            if action_value in ("add", "remove", "check") and (not user or not role):
+                await interaction.followup.send("❌ Please provide both `user` and `role` for this action.", ephemeral=True)
+                return
+
+            if action_value == "add":
+                if db.is_role_denied(interaction.guild.id, user.id, role.id):
+                    await interaction.followup.send(
+                        f"ℹ️ {user.mention} is already denied from receiving {role.mention}.",
+                        ephemeral=True,
+                    )
+                    return
+
+                db.add_role_deny(interaction.guild.id, user.id, role.id, interaction.user.id, notes)
+
+                response = f"✅ Added deny: {user.mention} cannot receive {role.mention}."
+                if notes:
+                    response += f"\n📝 Notes: {notes}"
+                await interaction.followup.send(response, ephemeral=True)
+                return
+
+            if action_value == "remove":
+                if not db.is_role_denied(interaction.guild.id, user.id, role.id):
+                    await interaction.followup.send(
+                        f"ℹ️ No deny entry exists for {user.mention} and {role.mention}.",
+                        ephemeral=True,
+                    )
+                    return
+
+                db.remove_role_deny(interaction.guild.id, user.id, role.id)
+                await interaction.followup.send(
+                    f"✅ Removed deny: {user.mention} can receive {role.mention} again.",
+                    ephemeral=True,
+                )
+                return
+
+            if action_value == "check":
+                denied = db.is_role_denied(interaction.guild.id, user.id, role.id)
+                await interaction.followup.send(
+                    (
+                        f"🚫 {user.mention} is denied from {role.mention}."
+                        if denied else
+                        f"✅ {user.mention} is not denied from {role.mention}."
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+            entries = db.get_role_denies(
+                interaction.guild.id,
+                user_id=user.id if user else None,
+                role_id=role.id if role else None,
+            )
+
+            if not entries:
+                await interaction.followup.send("📋 No role deny entries found for this filter.", ephemeral=True)
+                return
+
+            embed = discord.Embed(
+                title="🚫 Role Deny Entries",
+                description=f"Found {len(entries)} entr{'y' if len(entries) == 1 else 'ies'}",
+                color=discord.Color.orange(),
+            )
+
+            for entry in entries[:20]:
+                member = interaction.guild.get_member(entry['user_id'])
+                role_obj = interaction.guild.get_role(entry['role_id'])
+                actor = interaction.guild.get_member(entry['created_by_user_id']) if entry['created_by_user_id'] else None
+
+                user_text = member.mention if member else f"<@{entry['user_id']}>"
+                role_text = role_obj.mention if role_obj else f"<@&{entry['role_id']}>"
+                actor_text = actor.mention if actor else (f"<@{entry['created_by_user_id']}>" if entry['created_by_user_id'] else "Unknown")
+                updated_at = entry['updated_at'].strftime('%Y-%m-%d %H:%M UTC') if entry.get('updated_at') else "Unknown"
+                notes_text = entry['notes'][:120] if entry.get('notes') else "None"
+
+                embed.add_field(
+                    name=f"{user_text} -> {role_text}",
+                    value=f"By: {actor_text}\nUpdated: {updated_at}\nNotes: {notes_text}",
+                    inline=False,
+                )
+
+            if len(entries) > 20:
+                embed.set_footer(text=f"Showing first 20 of {len(entries)} entries")
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error in roledeny_user command: {e}")
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @app_commands.command(name="temporole", description="Add a role to a member for a limited duration (auto-removes after)")
     @app_commands.describe(
@@ -2505,6 +2634,12 @@ class AdminMaintenanceGroup(app_commands.Group):
 
             added_now = False
             if role not in user.roles:
+                if db.is_role_denied(interaction.guild.id, user.id, role.id):
+                    await interaction.followup.send(
+                        f"❌ Cannot set temporary role: {role.mention} is denied for {user.mention}.",
+                        ephemeral=True
+                    )
+                    return
                 await user.add_roles(role, reason=f"Temporary role until {duration} (set by {interaction.user})")
                 added_now = True
 

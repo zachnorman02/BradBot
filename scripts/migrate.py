@@ -1083,6 +1083,38 @@ class Migration027(Migration):
         print("   ✅ Created rules_agreement table")
 
 
+class Migration028(Migration):
+    """Create role_denies table for per-user role assignment blocks."""
+
+    def __init__(self):
+        super().__init__("028", "Create role_denies table for per-user role denies")
+
+    def up(self):
+        print("   📋 Creating role_denies table...")
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.role_denies (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                role_id BIGINT NOT NULL,
+                created_by_user_id BIGINT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, user_id, role_id)
+            )
+        """, fetch=False)
+        print("   ✅ Created role_denies table")
+
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_role_denies_guild_user
+                ON main.role_denies(guild_id, user_id)
+            """, fetch=False)
+            print("   ✅ Created index on role_denies(guild_id, user_id)")
+        except Exception as e:
+            print(f"   ⚠️  Index creation queued: {e}")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -1110,6 +1142,7 @@ MIGRATIONS = [
     Migration025(),  # Create message_mirrors and mirrored_messages tables
     Migration026(),  # Add mode column to channel_restrictions
     Migration027(),  # Add rules_agreement table
+    Migration028(),  # Add role_denies table
 ]
 
 def get_applied_migrations():

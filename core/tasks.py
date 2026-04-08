@@ -1004,6 +1004,30 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
         print(f"[CONDITIONAL ROLE] Error in handle_conditional_role_assignment: {e}")
 
 
+async def handle_role_deny_enforcement(after: discord.Member):
+    """Remove any roles currently denied for this user in this guild."""
+    try:
+        if after.bot:
+            return
+
+        denied_role_ids = set(db.get_denied_role_ids_for_user(after.guild.id, after.id))
+        if not denied_role_ids:
+            return
+
+        denied_roles_present = [r for r in after.roles if r.id in denied_role_ids]
+        if not denied_roles_present:
+            return
+
+        try:
+            await after.remove_roles(*denied_roles_present, reason="Per-user role deny enforcement")
+            removed_names = ", ".join(role.name for role in denied_roles_present)
+            print(f"[ROLE DENY] Removed denied role(s) from {after.display_name}: {removed_names}")
+        except Exception as e:
+            print(f"[ROLE DENY] Failed removing denied roles for {after.display_name}: {e}")
+    except Exception as e:
+        print(f"[ROLE DENY] Error in deny enforcement: {e}")
+
+
 async def on_member_update_handler(before: discord.Member, after: discord.Member):
     """
     Handle member updates:
@@ -1025,6 +1049,9 @@ async def on_member_update_handler(before: discord.Member, after: discord.Member
     
     # Handle conditional role manual assignments
     await handle_conditional_role_assignment(before, after)
+
+    # Enforce explicit per-user denied roles
+    await handle_role_deny_enforcement(after)
     
     # Handle channel restrictions
     await handle_channel_restrictions(before, after)
