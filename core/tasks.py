@@ -8,6 +8,7 @@ from database import db
 from collections import defaultdict
 from .counting import clear_counting_penalty_if_expired
 from commands.booster_commands import _ensure_role_position
+from utils.logger import logger
 
 
 # ============================================================================
@@ -1020,6 +1021,7 @@ async def handle_role_deny_enforcement(before: discord.Member, after: discord.Me
 
         attempted_denied_adds = denied_role_ids.intersection(added_role_ids)
         if attempted_denied_adds:
+            actor_user_id = await _resolve_role_update_actor_id(after)
             attempted_names = []
             for role_id in attempted_denied_adds:
                 role_obj = after.guild.get_role(role_id)
@@ -1030,7 +1032,7 @@ async def handle_role_deny_enforcement(before: discord.Member, after: discord.Me
                         after.id,
                         role_id,
                         source="member_update",
-                        actor_user_id=None,
+                        actor_user_id=actor_user_id,
                         notes="Denied role was added to member and immediately removed by enforcement",
                     )
                 except Exception as e:
@@ -1041,7 +1043,7 @@ async def handle_role_deny_enforcement(before: discord.Member, after: discord.Me
                     after,
                     role_obj,
                     source="member_update",
-                    actor_user_id=None,
+                    actor_user_id=actor_user_id,
                     notes="Denied role was auto-removed by enforcement.",
                 )
             print(
@@ -1061,6 +1063,31 @@ async def handle_role_deny_enforcement(before: discord.Member, after: discord.Me
             print(f"[ROLE DENY] Failed removing denied roles for {after.display_name}: {e}")
     except Exception as e:
         print(f"[ROLE DENY] Error in deny enforcement: {e}")
+
+
+async def _resolve_role_update_actor_id(member: discord.Member, lookback_seconds: int = 30) -> int | None:
+    """Best-effort resolver for who changed a member's roles via audit logs."""
+    try:
+        guild = member.guild
+        me = guild.me
+        if not me or not me.guild_permissions.view_audit_log:
+            return None
+
+        now = discord.utils.utcnow()
+        async for entry in guild.audit_logs(action=discord.AuditLogAction.member_role_update, limit=8):
+            target = entry.target
+            if not isinstance(target, discord.Member):
+                continue
+            if target.id != member.id:
+                continue
+            age_seconds = (now - entry.created_at).total_seconds()
+            if age_seconds > lookback_seconds:
+                continue
+            return entry.user.id if entry.user else None
+    except Exception as e:
+        logger.debug(f"[ROLE DENY] Could not resolve actor from audit log: {e}")
+
+    return None
 
 
 async def post_role_deny_log(
@@ -1084,7 +1111,26 @@ async def post_role_deny_log(
 
         channel = guild.get_channel(channel_id)
         if not channel:
+            try:
+                channel = await guild.fetch_channel(channel_id)
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException) as e:
+                logger.warning(f"[ROLE DENY] Could not fetch configured log channel {channel_id} in guild {guild.id}: {e}")
+                return
+
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            logger.warning(
+                f"[ROLE DENY] Configured log channel {channel_id} in guild {guild.id} is not a text channel/thread"
+            )
             return
+
+        me = guild.me
+        if me and isinstance(channel, discord.TextChannel):
+            perms = channel.permissions_for(me)
+            if not perms.send_messages:
+                logger.warning(
+                    f"[ROLE DENY] Missing Send Messages permission for log channel {channel_id} in guild {guild.id}"
+                )
+                return
 
         role_text = role.mention if role else "Unknown role"
         actor_text = f"<@{actor_user_id}>" if actor_user_id else "Unknown/automatic"
@@ -1100,7 +1146,7 @@ async def post_role_deny_log(
 
         await channel.send(message)
     except Exception as e:
-        print(f"[ROLE DENY] Failed to post deny log message: {e}")
+        logger.error(f"[ROLE DENY] Failed to post deny log message: {e}")
 
 
 async def on_member_update_handler(before: discord.Member, after: discord.Member):
