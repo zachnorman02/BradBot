@@ -11,6 +11,9 @@ from commands.booster_commands import _ensure_role_position
 from utils.logger import logger
 
 
+_ROLE_UPDATE_ACTOR_CACHE: dict[tuple[int, int], tuple[dt.datetime, int | None]] = {}
+
+
 # ============================================================================
 # VERIFIED ROLE AUTOMATION
 # ============================================================================
@@ -268,14 +271,15 @@ async def handle_channel_restrictions(before: discord.Member, after: discord.Mem
                     break
 
             try:
+                ow = channel.overwrites_for(after)
                 if should_block:
-                    await channel.set_permissions(
-                        after,
-                        view_channel=False,
-                        reason="Channel restriction enforcement"
-                    )
+                    if ow.view_channel is not False:
+                        await channel.set_permissions(
+                            after,
+                            view_channel=False,
+                            reason="Channel restriction enforcement"
+                        )
                 else:
-                    ow = channel.overwrites_for(after)
                     if ow.view_channel is False:
                         await channel.set_permissions(after, overwrite=None, reason="Channel restriction cleared")
             except Exception as e:
@@ -1073,7 +1077,14 @@ async def _resolve_role_update_actor_id(member: discord.Member, lookback_seconds
         if not me or not me.guild_permissions.view_audit_log:
             return None
 
+        cache_key = (guild.id, member.id)
         now = discord.utils.utcnow()
+        cached = _ROLE_UPDATE_ACTOR_CACHE.get(cache_key)
+        if cached:
+            cached_at, cached_actor_id = cached
+            if (now - cached_at).total_seconds() <= 10:
+                return cached_actor_id
+
         async for entry in guild.audit_logs(action=discord.AuditLogAction.member_role_update, limit=8):
             target = entry.target
             if not isinstance(target, discord.Member):
@@ -1083,7 +1094,11 @@ async def _resolve_role_update_actor_id(member: discord.Member, lookback_seconds
             age_seconds = (now - entry.created_at).total_seconds()
             if age_seconds > lookback_seconds:
                 continue
-            return entry.user.id if entry.user else None
+            actor_id = entry.user.id if entry.user else None
+            _ROLE_UPDATE_ACTOR_CACHE[cache_key] = (now, actor_id)
+            return actor_id
+
+        _ROLE_UPDATE_ACTOR_CACHE[cache_key] = (now, None)
     except Exception as e:
         logger.debug(f"[ROLE DENY] Could not resolve actor from audit log: {e}")
 
