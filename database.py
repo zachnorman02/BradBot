@@ -2311,6 +2311,32 @@ class Database:
             }
             for row in rows
         ]
+
+    def _next_role_deny_attempt_id(self) -> int:
+        """Get the next ID for role deny attempt logs."""
+        return self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.role_deny_attempt_logs")[0][0]
+
+    def log_role_deny_attempt(
+        self,
+        guild_id: int,
+        user_id: int,
+        role_id: int,
+        source: str,
+        actor_user_id: int | None = None,
+        notes: str | None = None,
+    ):
+        """Persist a denied role assignment attempt."""
+        next_id = self._next_role_deny_attempt_id()
+        query = """
+        INSERT INTO main.role_deny_attempt_logs
+        (id, guild_id, user_id, role_id, source, actor_user_id, notes, attempted_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        """
+        self.execute_query(
+            query,
+            (next_id, guild_id, user_id, role_id, source, actor_user_id, notes),
+            fetch=False,
+        )
     
     def set_rules_agreement_messages(self, guild_id: int, message_data: list):
         """

@@ -141,6 +141,27 @@ class AdminToolsGroup(app_commands.Group):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return await _enforce_default_permissions(interaction)
+
+    async def _record_role_deny_attempt(
+        self,
+        guild: discord.Guild,
+        user: discord.Member,
+        role: discord.Role,
+        source: str,
+        actor_user_id: int | None = None,
+        notes: str | None = None,
+    ):
+        """Persist and optionally post a role-deny attempt event."""
+        try:
+            db.log_role_deny_attempt(guild.id, user.id, role.id, source, actor_user_id, notes)
+        except Exception as e:
+            logger.error(f"[ROLE DENY] Failed to write deny attempt log: {e}")
+
+        try:
+            from core.tasks import post_role_deny_log
+            await post_role_deny_log(guild, user, role, source, actor_user_id, notes)
+        except Exception as e:
+            logger.error(f"[ROLE DENY] Failed to post deny attempt channel log: {e}")
     
     def _should_defer_assignment(self, member: discord.Member, config: dict) -> bool:
         """Check if role assignment should be deferred based on config.
@@ -2445,6 +2466,17 @@ class AdminMaintenanceGroup(app_commands.Group):
                     await interaction.followup.send(f"ℹ️ {user.mention} already has {role.mention}.", ephemeral=True)
                     return
                 if db.is_role_denied(interaction.guild.id, user.id, role.id):
+                    logger.warning(
+                        f"[ROLE DENY] Blocked /setrole add by {interaction.user.id} for user {user.id} role {role.id} guild {interaction.guild.id}"
+                    )
+                    await self._record_role_deny_attempt(
+                        interaction.guild,
+                        user,
+                        role,
+                        source="setrole",
+                        actor_user_id=interaction.user.id,
+                        notes="Blocked by role deny policy during /setrole add",
+                    )
                     await interaction.followup.send(
                         f"❌ Cannot add {role.mention} to {user.mention}: role is denied for this user.",
                         ephemeral=True
@@ -2466,13 +2498,16 @@ class AdminMaintenanceGroup(app_commands.Group):
         action="What action to perform",
         user="User to target",
         role="Role to deny/allow/check/list",
-        notes="Optional reason when adding a deny"
+        notes="Optional reason when adding a deny",
+        channel="Channel for role-deny attempt logs (used with set-log-channel)"
     )
     @app_commands.choices(action=[
         app_commands.Choice(name="add - Deny role for user", value="add"),
         app_commands.Choice(name="remove - Remove deny", value="remove"),
         app_commands.Choice(name="check - Check if denied", value="check"),
         app_commands.Choice(name="list - List deny entries", value="list"),
+        app_commands.Choice(name="set-log-channel - Send deny attempts to a channel", value="set_log_channel"),
+        app_commands.Choice(name="clear-log-channel - Disable channel logging", value="clear_log_channel"),
     ])
     @app_commands.checks.has_permissions(manage_roles=True)
     async def roledeny_user(
@@ -2482,6 +2517,7 @@ class AdminMaintenanceGroup(app_commands.Group):
         user: discord.Member = None,
         role: discord.Role = None,
         notes: str = None,
+        channel: discord.TextChannel = None,
     ):
         """Manage persistent role deny entries for specific users."""
         if not interaction.guild:
@@ -2498,6 +2534,22 @@ class AdminMaintenanceGroup(app_commands.Group):
 
             if action_value in ("add", "remove", "check") and (not user or not role):
                 await interaction.followup.send("❌ Please provide both `user` and `role` for this action.", ephemeral=True)
+                return
+
+            if action_value == "set_log_channel":
+                if not channel:
+                    await interaction.followup.send("❌ Please provide a channel for `set-log-channel`.", ephemeral=True)
+                    return
+                db.set_guild_setting(interaction.guild.id, "role_deny_log_channel_id", str(channel.id))
+                await interaction.followup.send(
+                    f"✅ Role deny attempt logs will be posted in {channel.mention}.",
+                    ephemeral=True,
+                )
+                return
+
+            if action_value == "clear_log_channel":
+                db.set_guild_setting(interaction.guild.id, "role_deny_log_channel_id", "")
+                await interaction.followup.send("✅ Role deny channel logging disabled.", ephemeral=True)
                 return
 
             if action_value == "add":
@@ -2635,6 +2687,17 @@ class AdminMaintenanceGroup(app_commands.Group):
             added_now = False
             if role not in user.roles:
                 if db.is_role_denied(interaction.guild.id, user.id, role.id):
+                    logger.warning(
+                        f"[ROLE DENY] Blocked /temporole by {interaction.user.id} for user {user.id} role {role.id} guild {interaction.guild.id}"
+                    )
+                    await self._record_role_deny_attempt(
+                        interaction.guild,
+                        user,
+                        role,
+                        source="temporole",
+                        actor_user_id=interaction.user.id,
+                        notes="Blocked by role deny policy during /temporole",
+                    )
                     await interaction.followup.send(
                         f"❌ Cannot set temporary role: {role.mention} is denied for {user.mention}.",
                         ephemeral=True

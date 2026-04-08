@@ -1115,6 +1115,38 @@ class Migration028(Migration):
             print(f"   ⚠️  Index creation queued: {e}")
 
 
+class Migration029(Migration):
+    """Create role_deny_attempt_logs table for auditing denied role opt-in attempts."""
+
+    def __init__(self):
+        super().__init__("029", "Create role_deny_attempt_logs table")
+
+    def up(self):
+        print("   📋 Creating role_deny_attempt_logs table...")
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.role_deny_attempt_logs (
+                id BIGINT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                role_id BIGINT NOT NULL,
+                source VARCHAR(64) NOT NULL,
+                actor_user_id BIGINT,
+                notes TEXT,
+                attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        print("   ✅ Created role_deny_attempt_logs table")
+
+        try:
+            db.execute_query("""
+                CREATE INDEX ASYNC IF NOT EXISTS idx_role_deny_attempts_guild_time
+                ON main.role_deny_attempt_logs(guild_id, attempted_at)
+            """, fetch=False)
+            print("   ✅ Created index on role_deny_attempt_logs(guild_id, attempted_at)")
+        except Exception as e:
+            print(f"   ⚠️  Index creation queued: {e}")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -1143,6 +1175,7 @@ MIGRATIONS = [
     Migration026(),  # Add mode column to channel_restrictions
     Migration027(),  # Add rules_agreement table
     Migration028(),  # Add role_denies table
+    Migration029(),  # Add role_deny_attempt_logs table
 ]
 
 def get_applied_migrations():

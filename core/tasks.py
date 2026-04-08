@@ -1004,15 +1004,50 @@ async def handle_conditional_role_assignment(before: discord.Member, after: disc
         print(f"[CONDITIONAL ROLE] Error in handle_conditional_role_assignment: {e}")
 
 
-async def handle_role_deny_enforcement(after: discord.Member):
-    """Remove any roles currently denied for this user in this guild."""
+async def handle_role_deny_enforcement(before: discord.Member, after: discord.Member):
+    """Remove denied roles and log attempted opt-ins when denied roles are added."""
     try:
         if after.bot:
             return
 
+        before_role_ids = {role.id for role in before.roles}
+        after_role_ids = {role.id for role in after.roles}
+        added_role_ids = after_role_ids - before_role_ids
+
         denied_role_ids = set(db.get_denied_role_ids_for_user(after.guild.id, after.id))
         if not denied_role_ids:
             return
+
+        attempted_denied_adds = denied_role_ids.intersection(added_role_ids)
+        if attempted_denied_adds:
+            attempted_names = []
+            for role_id in attempted_denied_adds:
+                role_obj = after.guild.get_role(role_id)
+                attempted_names.append(role_obj.name if role_obj else str(role_id))
+                try:
+                    db.log_role_deny_attempt(
+                        after.guild.id,
+                        after.id,
+                        role_id,
+                        source="member_update",
+                        actor_user_id=None,
+                        notes="Denied role was added to member and immediately removed by enforcement",
+                    )
+                except Exception as e:
+                    print(f"[ROLE DENY] Failed writing deny attempt DB log: {e}")
+
+                await post_role_deny_log(
+                    after.guild,
+                    after,
+                    role_obj,
+                    source="member_update",
+                    actor_user_id=None,
+                    notes="Denied role was auto-removed by enforcement.",
+                )
+            print(
+                f"[ROLE DENY] Attempted opt-in blocked for {after.display_name} ({after.id}) "
+                f"in guild {after.guild.id}: {', '.join(sorted(attempted_names))}"
+            )
 
         denied_roles_present = [r for r in after.roles if r.id in denied_role_ids]
         if not denied_roles_present:
@@ -1026,6 +1061,46 @@ async def handle_role_deny_enforcement(after: discord.Member):
             print(f"[ROLE DENY] Failed removing denied roles for {after.display_name}: {e}")
     except Exception as e:
         print(f"[ROLE DENY] Error in deny enforcement: {e}")
+
+
+async def post_role_deny_log(
+    guild: discord.Guild,
+    member: discord.Member,
+    role: discord.Role | None,
+    source: str,
+    actor_user_id: int | None = None,
+    notes: str | None = None,
+):
+    """Optionally post role-deny attempts to a configured guild channel."""
+    try:
+        channel_id_raw = db.get_guild_setting(guild.id, "role_deny_log_channel_id", "")
+        if not channel_id_raw:
+            return
+
+        try:
+            channel_id = int(channel_id_raw)
+        except (TypeError, ValueError):
+            return
+
+        channel = guild.get_channel(channel_id)
+        if not channel:
+            return
+
+        role_text = role.mention if role else "Unknown role"
+        actor_text = f"<@{actor_user_id}>" if actor_user_id else "Unknown/automatic"
+        message = (
+            "🚫 **Role deny triggered**\n"
+            f"• User: {member.mention} (`{member.id}`)\n"
+            f"• Role: {role_text}\n"
+            f"• Source: `{source}`\n"
+            f"• Actor: {actor_text}"
+        )
+        if notes:
+            message += f"\n• Notes: {notes}"
+
+        await channel.send(message)
+    except Exception as e:
+        print(f"[ROLE DENY] Failed to post deny log message: {e}")
 
 
 async def on_member_update_handler(before: discord.Member, after: discord.Member):
@@ -1051,7 +1126,7 @@ async def on_member_update_handler(before: discord.Member, after: discord.Member
     await handle_conditional_role_assignment(before, after)
 
     # Enforce explicit per-user denied roles
-    await handle_role_deny_enforcement(after)
+    await handle_role_deny_enforcement(before, after)
     
     # Handle channel restrictions
     await handle_channel_restrictions(before, after)
