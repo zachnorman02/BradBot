@@ -866,6 +866,128 @@ class AdminToolsGroup(app_commands.Group):
             logger.error(f"Error in channelrestriction command: {e}")
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="channeldeny_user", description="Deny a specific user from a specific channel")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        channel="Channel to deny access to",
+        user="User to deny",
+        deny_view="Also deny viewing the channel (recommended)"
+    )
+    async def channeldeny_user(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.abc.GuildChannel,
+        user: discord.Member,
+        deny_view: bool = True,
+    ):
+        """Apply a user-specific deny overwrite for a channel."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            me = interaction.guild.me
+            if not me or not channel.permissions_for(me).manage_channels:
+                await interaction.followup.send(
+                    "❌ I need `Manage Channels` permission in that channel to edit overwrites.",
+                    ephemeral=True
+                )
+                return
+
+            overwrite = channel.overwrites_for(user)
+            if deny_view:
+                overwrite.view_channel = False
+            overwrite.send_messages = False
+            overwrite.send_messages_in_threads = False
+            overwrite.add_reactions = False
+            overwrite.speak = False
+            overwrite.connect = False
+            overwrite.stream = False
+            overwrite.use_application_commands = False
+            overwrite.create_public_threads = False
+            overwrite.create_private_threads = False
+
+            await channel.set_permissions(
+                user,
+                overwrite=overwrite,
+                reason=f"Channel deny set by {interaction.user}"
+            )
+
+            await interaction.followup.send(
+                (
+                    f"✅ Deny overwrite applied for {user.mention} in {channel.mention}.\n"
+                    f"• View denied: {'Yes' if deny_view else 'No'}\n"
+                    "• Send/reactions/voice/connect/app commands denied"
+                ),
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error(f"Error in channeldeny_user command: {e}")
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="channelallow_user", description="Remove channel-specific deny restrictions for a user")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        channel="Channel to clear restrictions in",
+        user="User to allow"
+    )
+    async def channelallow_user(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.abc.GuildChannel,
+        user: discord.Member,
+    ):
+        """Clear channel deny fields for a user while preserving unrelated overwrites."""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            me = interaction.guild.me
+            if not me or not channel.permissions_for(me).manage_channels:
+                await interaction.followup.send(
+                    "❌ I need `Manage Channels` permission in that channel to edit overwrites.",
+                    ephemeral=True
+                )
+                return
+
+            overwrite = channel.overwrites_for(user)
+            overwrite.view_channel = None
+            overwrite.send_messages = None
+            overwrite.send_messages_in_threads = None
+            overwrite.add_reactions = None
+            overwrite.speak = None
+            overwrite.connect = None
+            overwrite.stream = None
+            overwrite.use_application_commands = None
+            overwrite.create_public_threads = None
+            overwrite.create_private_threads = None
+
+            if overwrite.is_empty():
+                await channel.set_permissions(
+                    user,
+                    overwrite=None,
+                    reason=f"Channel deny cleared by {interaction.user}"
+                )
+            else:
+                await channel.set_permissions(
+                    user,
+                    overwrite=overwrite,
+                    reason=f"Channel deny cleared by {interaction.user}"
+                )
+
+            await interaction.followup.send(
+                f"✅ Cleared deny overwrite fields for {user.mention} in {channel.mention}.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error(f"Error in channelallow_user command: {e}")
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="globalmute_role", description="Create or configure a role that mutes users in all channels")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(

@@ -12,6 +12,11 @@ async def log_message_edit_event(before: discord.Message | None, after: discord.
     if not guild:
         return
 
+    author = getattr(after or before, "author", None)
+    # Ignore bot-originated edits to reduce audit noise from automated updates.
+    if getattr(author, "bot", False):
+        return
+
     if not db.connection_pool:
         db.init_pool()
 
@@ -19,11 +24,16 @@ async def log_message_edit_event(before: discord.Message | None, after: discord.
     channel_id = getattr(after or before, "channel", None)
     channel_id = channel_id.id if channel_id else None
     message_id = getattr(after or before, "id", None)
-    author = getattr(after or before, "author", None)
     user_id = author.id if author else None
 
     old_content = getattr(before, "content", None) if before else None
     new_content = getattr(after, "content", None) if after else None
+
+    # Skip non-meaningful events (e.g. embed-only updates or unchanged text).
+    if old_content == new_content:
+        return
+    if old_content in (None, "") and new_content in (None, ""):
+        return
 
     try:
         db.log_message_edit(guild_id, channel_id, message_id, user_id, old_content, new_content)

@@ -443,6 +443,13 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
             logger.debug(f"Skipping raw edit for cached message_id={payload.message_id}")
             return
 
+        # MESSAGE_UPDATE can fire for non-content changes (embeds, flags, etc).
+        # Only process raw fallback when content is actually part of the update.
+        payload_data = getattr(payload, "data", {}) or {}
+        if "content" not in payload_data:
+            logger.debug(f"Skipping raw edit without content change for message_id={payload.message_id}")
+            return
+
         logger.debug(f"on_raw_message_edit fired: message_id={payload.message_id} channel_id={payload.channel_id} guild_id={payload.guild_id}")
         # Try to resolve channel and fetch the message
         channel = None
