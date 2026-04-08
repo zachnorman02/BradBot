@@ -2237,18 +2237,31 @@ class Database:
     # PER-USER ROLE DENIES
     # ========================================================================
 
-    def add_role_deny(self, guild_id: int, user_id: int, role_id: int, created_by_user_id: int | None = None, notes: str | None = None):
+    def add_role_deny(
+        self,
+        guild_id: int,
+        user_id: int,
+        role_id: int,
+        created_by_user_id: int | None = None,
+        notes: str | None = None,
+        log_channel_id: int | None = None,
+    ):
         """Deny a specific role for a specific user in a guild."""
         query = """
-        INSERT INTO main.role_denies (guild_id, user_id, role_id, created_by_user_id, notes, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO main.role_denies (guild_id, user_id, role_id, created_by_user_id, notes, log_channel_id, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (guild_id, user_id, role_id)
         DO UPDATE SET
             created_by_user_id = EXCLUDED.created_by_user_id,
             notes = EXCLUDED.notes,
+            log_channel_id = COALESCE(EXCLUDED.log_channel_id, main.role_denies.log_channel_id),
             updated_at = CURRENT_TIMESTAMP
         """
-        self.execute_query(query, (guild_id, user_id, role_id, created_by_user_id, notes), fetch=False)
+        self.execute_query(
+            query,
+            (guild_id, user_id, role_id, created_by_user_id, notes, log_channel_id),
+            fetch=False,
+        )
 
     def remove_role_deny(self, guild_id: int, user_id: int, role_id: int):
         """Remove a role deny for a user."""
@@ -2278,10 +2291,43 @@ class Database:
         rows = self.execute_query(query, (guild_id, user_id))
         return [int(row[0]) for row in rows] if rows else []
 
+    def get_role_deny_entry(self, guild_id: int, user_id: int, role_id: int) -> dict | None:
+        """Get a single role deny entry including channel logging target."""
+        query = """
+        SELECT user_id, role_id, created_by_user_id, notes, log_channel_id, created_at, updated_at
+        FROM main.role_denies
+        WHERE guild_id = %s AND user_id = %s AND role_id = %s
+        LIMIT 1
+        """
+        rows = self.execute_query(query, (guild_id, user_id, role_id))
+        if not rows:
+            return None
+
+        row = rows[0]
+        return {
+            'user_id': int(row[0]),
+            'role_id': int(row[1]),
+            'created_by_user_id': int(row[2]) if row[2] is not None else None,
+            'notes': row[3],
+            'log_channel_id': int(row[4]) if row[4] is not None else None,
+            'created_at': row[5],
+            'updated_at': row[6],
+        }
+
+    def set_role_deny_log_channel(self, guild_id: int, user_id: int, role_id: int, log_channel_id: int | None):
+        """Set or clear the log channel for a specific role deny entry."""
+        query = """
+        UPDATE main.role_denies
+        SET log_channel_id = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE guild_id = %s AND user_id = %s AND role_id = %s
+        """
+        self.execute_query(query, (log_channel_id, guild_id, user_id, role_id), fetch=False)
+
     def get_role_denies(self, guild_id: int, user_id: int | None = None, role_id: int | None = None) -> list[dict]:
         """List role deny entries for a guild with optional user/role filters."""
         query = """
-        SELECT user_id, role_id, created_by_user_id, notes, created_at, updated_at
+        SELECT user_id, role_id, created_by_user_id, notes, log_channel_id, created_at, updated_at
         FROM main.role_denies
         WHERE guild_id = %s
         """
@@ -2306,8 +2352,9 @@ class Database:
                 'role_id': int(row[1]),
                 'created_by_user_id': int(row[2]) if row[2] is not None else None,
                 'notes': row[3],
-                'created_at': row[4],
-                'updated_at': row[5],
+                'log_channel_id': int(row[4]) if row[4] is not None else None,
+                'created_at': row[5],
+                'updated_at': row[6],
             }
             for row in rows
         ]

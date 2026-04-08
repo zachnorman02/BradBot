@@ -147,6 +147,7 @@ class ModToolsGroup(app_commands.Group):
         app_commands.Choice(name="check - Check if denied", value="check"),
         app_commands.Choice(name="list - List deny entries", value="list"),
         app_commands.Choice(name="set-log-channel - Send deny attempts to a channel", value="set_log_channel"),
+        app_commands.Choice(name="test-log-channel - Send test message now", value="test_log_channel"),
         app_commands.Choice(name="clear-log-channel - Disable channel logging", value="clear_log_channel"),
     ])
     @app_commands.checks.has_permissions(manage_roles=True)
@@ -171,7 +172,7 @@ class ModToolsGroup(app_commands.Group):
 
             action_value = action.value
 
-            if action_value in ("add", "remove", "check") and (not user or not role):
+            if action_value in ("add", "remove", "check", "set_log_channel", "clear_log_channel", "test_log_channel") and (not user or not role):
                 await interaction.followup.send("❌ Please provide both `user` and `role` for this action.", ephemeral=True)
                 return
 
@@ -179,16 +180,99 @@ class ModToolsGroup(app_commands.Group):
                 if not channel:
                     await interaction.followup.send("❌ Please provide a channel for `set-log-channel`.", ephemeral=True)
                     return
-                db.set_guild_setting(interaction.guild.id, "role_deny_log_channel_id", str(channel.id))
+
+                me = interaction.guild.me
+                if me:
+                    perms = channel.permissions_for(me)
+                    if not perms.send_messages:
+                        await interaction.followup.send(
+                            f"❌ I cannot send messages in {channel.mention}. Please grant Send Messages and try again.",
+                            ephemeral=True,
+                        )
+                        return
+
+                deny_entry = db.get_role_deny_entry(interaction.guild.id, user.id, role.id)
+                if not deny_entry:
+                    await interaction.followup.send(
+                        "❌ No deny entry exists for that user+role. Add the deny first, then set the log channel.",
+                        ephemeral=True,
+                    )
+                    return
+
+                db.set_role_deny_log_channel(interaction.guild.id, user.id, role.id, channel.id)
+
+                posted_test = False
+                try:
+                    await channel.send(
+                        "✅ Role deny logging is configured for this channel. "
+                        "This is a test message from set-log-channel."
+                    )
+                    posted_test = True
+                except Exception as e:
+                    logger.warning(f"Error posting set_log_channel test message: {e}")
+
                 await interaction.followup.send(
-                    f"✅ Role deny attempt logs will be posted in {channel.mention}.",
+                    (
+                        f"✅ Role deny attempt logs for {user.mention} + {role.mention} will be posted in {channel.mention}."
+                        if posted_test else
+                        f"⚠️ Saved {channel.mention} as the log channel for {user.mention} + {role.mention}, but test message failed to send. "
+                        "Check channel permissions and system logs."
+                    ),
                     ephemeral=True,
                 )
                 return
 
+            if action_value == "test_log_channel":
+                deny_entry = db.get_role_deny_entry(interaction.guild.id, user.id, role.id)
+                if not deny_entry:
+                    await interaction.followup.send("❌ No deny entry exists for that user+role.", ephemeral=True)
+                    return
+
+                target_channel_id = deny_entry.get("log_channel_id")
+                if not target_channel_id:
+                    await interaction.followup.send("❌ No log channel is configured for that deny entry. Use set-log-channel first.", ephemeral=True)
+                    return
+
+                target_channel = interaction.guild.get_channel(target_channel_id)
+                if not target_channel:
+                    try:
+                        target_channel = await interaction.guild.fetch_channel(target_channel_id)
+                    except Exception as e:
+                        await interaction.followup.send(
+                            f"❌ Could not access configured log channel ({target_channel_id}): {e}",
+                            ephemeral=True,
+                        )
+                        return
+
+                try:
+                    await target_channel.send(
+                        "🧪 Role deny log test event\n"
+                        f"• Triggered by: {interaction.user.mention} (`{interaction.user.id}`)\n"
+                        f"• Guild: {interaction.guild.name} (`{interaction.guild.id}`)\n"
+                        f"• Deny target: {user.mention} + {role.mention}"
+                    )
+                    await interaction.followup.send(
+                        f"✅ Test message posted in {target_channel.mention}.",
+                        ephemeral=True,
+                    )
+                except Exception as e:
+                    await interaction.followup.send(
+                        f"❌ Failed to post test message in configured channel: {e}",
+                        ephemeral=True,
+                    )
+                return
+
             if action_value == "clear_log_channel":
-                db.set_guild_setting(interaction.guild.id, "role_deny_log_channel_id", "")
-                await interaction.followup.send("✅ Role deny channel logging disabled.", ephemeral=True)
+                deny_entry = db.get_role_deny_entry(interaction.guild.id, user.id, role.id)
+                if not deny_entry:
+                    await interaction.followup.send("❌ No deny entry exists for that user+role.", ephemeral=True)
+                    return
+
+                db.set_role_deny_log_channel(interaction.guild.id, user.id, role.id, None)
+                await interaction.followup.send(
+                    f"✅ Cleared role deny log channel for {user.mention} + {role.mention}.",
+                    ephemeral=True,
+                )
                 return
 
             if action_value == "add":
@@ -260,10 +344,11 @@ class ModToolsGroup(app_commands.Group):
                 actor_text = actor.mention if actor else (f"<@{entry['created_by_user_id']}>" if entry['created_by_user_id'] else "Unknown")
                 updated_at = entry['updated_at'].strftime('%Y-%m-%d %H:%M UTC') if entry.get('updated_at') else "Unknown"
                 notes_text = entry['notes'][:120] if entry.get('notes') else "None"
+                channel_text = f"<#{entry['log_channel_id']}>" if entry.get('log_channel_id') else "Not set"
 
                 embed.add_field(
                     name=f"{user_text} -> {role_text}",
-                    value=f"By: {actor_text}\nUpdated: {updated_at}\nNotes: {notes_text}",
+                    value=f"By: {actor_text}\nUpdated: {updated_at}\nLog Channel: {channel_text}\nNotes: {notes_text}",
                     inline=False,
                 )
 

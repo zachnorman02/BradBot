@@ -1147,6 +1147,21 @@ class Migration029(Migration):
             print(f"   ⚠️  Index creation queued: {e}")
 
 
+class Migration030(Migration):
+    """Add log_channel_id column to role_denies for per-deny channel logging."""
+
+    def __init__(self):
+        super().__init__("030", "Add log_channel_id to role_denies")
+
+    def up(self):
+        print("   📋 Adding log_channel_id to role_denies...")
+        db.execute_query("""
+            ALTER TABLE main.role_denies
+            ADD COLUMN IF NOT EXISTS log_channel_id BIGINT
+        """, fetch=False)
+        print("   ✅ Added log_channel_id column to role_denies")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -1176,6 +1191,7 @@ MIGRATIONS = [
     Migration027(),  # Add rules_agreement table
     Migration028(),  # Add role_denies table
     Migration029(),  # Add role_deny_attempt_logs table
+    Migration030(),  # Add per-deny log channel target
 ]
 
 def get_applied_migrations():

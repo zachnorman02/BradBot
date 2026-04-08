@@ -1113,15 +1113,23 @@ async def post_role_deny_log(
     actor_user_id: int | None = None,
     notes: str | None = None,
 ):
-    """Optionally post role-deny attempts to a configured guild channel."""
+    """Optionally post role-deny attempts to the deny entry's configured channel."""
     try:
-        channel_id_raw = db.get_guild_setting(guild.id, "role_deny_log_channel_id", "")
-        if not channel_id_raw:
+        if role is None:
+            logger.info(f"[ROLE DENY] Skip channel log: role is unknown for guild {guild.id} member {member.id}")
             return
 
-        try:
-            channel_id = int(channel_id_raw)
-        except (TypeError, ValueError):
+        deny_entry = db.get_role_deny_entry(guild.id, member.id, role.id)
+        if not deny_entry:
+            logger.info(f"[ROLE DENY] Skip channel log: no deny entry found for guild {guild.id} member {member.id} role {role.id}")
+            return
+
+        channel_id = deny_entry.get("log_channel_id")
+        if not channel_id:
+            logger.info(
+                f"[ROLE DENY] Skip channel log: no log_channel_id set for deny entry "
+                f"guild {guild.id} member {member.id} role {role.id}"
+            )
             return
 
         channel = guild.get_channel(channel_id)
@@ -1160,6 +1168,7 @@ async def post_role_deny_log(
             message += f"\n• Notes: {notes}"
 
         await channel.send(message)
+        logger.info(f"[ROLE DENY] Posted deny log message in channel {channel_id} for user {member.id} role {role.id if role else 'unknown'}")
     except Exception as e:
         logger.error(f"[ROLE DENY] Failed to post deny log message: {e}")
 
