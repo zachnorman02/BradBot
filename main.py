@@ -350,8 +350,16 @@ async def on_message(message):
             interaction_name = None
             interaction_user_id = None
             if message.interaction_metadata:
-                interaction_name = message.interaction_metadata.name
-                interaction_user_id = message.interaction_metadata.user.id if message.interaction_metadata.user else None
+                metadata = message.interaction_metadata
+                interaction_name = getattr(metadata, "name", None)
+                if interaction_name is None:
+                    command_obj = getattr(metadata, "command", None)
+                    interaction_name = getattr(command_obj, "name", None)
+
+                interaction_user = getattr(metadata, "user", None)
+                if interaction_user is None and getattr(message, "interaction", None):
+                    interaction_user = getattr(message.interaction, "user", None)
+                interaction_user_id = interaction_user.id if interaction_user else None
             if is_dm_channel:
                 logger.info(
                     "Bot DM sent: message_id=%s channel_id=%s recipient=%s recipient_id=%s "
