@@ -38,6 +38,7 @@ from commands import (
     EmojiGroup,
     IssuesGroup,
     LinkGroup,
+    ModToolsGroup,
     PollGroup,
     SettingsGroup,
     StarboardGroup,
@@ -101,6 +102,7 @@ bot.tree.add_command(ConversionGroup())
 bot.tree.add_command(EmojiGroup(bot))
 bot.tree.add_command(IssuesGroup())
 bot.tree.add_command(LinkGroup())
+bot.tree.add_command(ModToolsGroup())
 bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
 bot.tree.add_command(SettingsGroup())
 bot.tree.add_command(StarboardGroup())

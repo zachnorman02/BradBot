@@ -15,6 +15,7 @@ from .convert_commands import ConversionGroup
 from .link_commands import LinkGroup
 from .starboard_commands import StarboardGroup
 from .birthday_commands import BirthdayGroup
+from .mod_tools_commands import ModToolsGroup
 
 __all__ = [
     'EmojiGroup',
@@ -29,6 +30,7 @@ __all__ = [
     'LinkGroup',
     'StarboardGroup',
     'BirthdayGroup',
+    'ModToolsGroup',
     'VoiceGroup',
     'AlarmGroup',
     'timestamp_command',
