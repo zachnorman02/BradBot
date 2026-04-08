@@ -25,9 +25,25 @@ if [ ! -d ".git" ]; then
     exit 1
 fi
 
-# Pull latest changes (GitHub Actions will handle this)
+# Pull latest changes
 echo "📦 Pulling latest changes..."
-git pull origin main || echo "⚠️  Git pull failed - continuing with local files"
+CURRENT_REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+if [ -z "$CURRENT_REMOTE_URL" ]; then
+    echo "❌ Git remote 'origin' is not configured."
+    echo "Set it to your repository, for example:"
+    echo "   git remote add origin git@github.com:zachnorman02/BradBot.git"
+    exit 1
+fi
+
+echo "🔗 origin -> $CURRENT_REMOTE_URL"
+if ! git pull --ff-only origin main; then
+    echo ""
+    echo "❌ git pull failed. Deployment has been stopped to avoid running stale code."
+    echo "If your repo is private, ensure this host can authenticate to GitHub."
+    echo "Recommended setup: SSH deploy key with origin using git@github.com:owner/repo.git"
+    echo "Current origin: $CURRENT_REMOTE_URL"
+    exit 1
+fi
 
 # Initialize and update submodules
 echo "📦 Updating git submodules..."

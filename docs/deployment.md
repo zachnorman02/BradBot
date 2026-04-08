@@ -10,6 +10,24 @@ BradBot typically runs on an EC2 instance under `systemd`. This page captures th
 4. **Secrets Manager:** store sensitive values—`DISCORD_TOKEN`, `GITHUB_TOKEN`, etc.—in AWS Secrets Manager secret `BradBot/creds` as JSON. BradBot automatically loads `.env` first, then overlays secrets from this secret (override via `SECRETS_MANAGER_ID`).
 5. Attach or update the EC2 IAM role to grant `secretsmanager:GetSecretValue` on `BradBot/creds`.
 
+## 1.1 Private Repository Access (Git Pull)
+
+If the GitHub repository is private, the deployment host must authenticate for `git pull`.
+
+Recommended approach (read-only deploy key):
+
+1. Generate a key on the deployment host:
+	- `ssh-keygen -t ed25519 -C "bradbot-deploy" -f ~/.ssh/bradbot_deploy -N ""`
+2. Add `~/.ssh/bradbot_deploy.pub` as a Deploy Key in GitHub repo settings.
+3. Configure SSH client:
+	- Add an entry in `~/.ssh/config` for `github.com` with `IdentityFile ~/.ssh/bradbot_deploy` and `IdentitiesOnly yes`.
+4. Ensure `origin` uses SSH URL:
+	- `git remote set-url origin git@github.com:zachnorman02/BradBot.git`
+5. Validate access:
+	- `ssh -T git@github.com`
+
+Without this, deployment may fail at `git pull` after the repo is made private.
+
 ## 2. systemd Service
 
 `/etc/systemd/system/bradbot.service` example:
