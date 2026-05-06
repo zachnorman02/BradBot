@@ -18,6 +18,9 @@ from commands.views import (
 from database import db
 from utils.logger import logger
 
+# Keep admin slash commands visible in Discord and enforce access in interaction checks.
+app_commands.default_permissions = lambda *args, **kwargs: (lambda func: func)
+
 
 async def _enforce_default_permissions(interaction: discord.Interaction) -> bool:
     command = interaction.command
@@ -33,6 +36,11 @@ async def _enforce_default_permissions(interaction: discord.Interaction) -> bool
                 ephemeral=True
             )
         return False
+    try:
+        if await interaction.client.is_owner(interaction.user):
+            return True
+    except Exception:
+        pass
     if interaction.user.guild_permissions.is_superset(required):
         return True
     if not interaction.response.is_done():
@@ -2906,7 +2914,6 @@ class AdminGroup(app_commands.Group):
         super().__init__(
             name="admin",
             description="Admin server management commands",
-            default_permissions=discord.Permissions(administrator=True)
         )
         
         # Add subgroups
