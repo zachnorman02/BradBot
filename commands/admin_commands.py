@@ -476,67 +476,6 @@ class AdminToolsGroup(app_commands.Group):
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to shift role: {e}", ephemeral=True)
 
-    @app_commands.command(name="role_admin", description="Grant or remove Administrator permission for a role")
-    @app_commands.describe(
-        role="The role to update",
-        enabled="Set to true to grant Administrator, false to remove it"
-    )
-    @app_commands.default_permissions(administrator=True)
-    async def role_admin(
-        self,
-        interaction: discord.Interaction,
-        role: discord.Role,
-        enabled: bool = True,
-    ):
-        """Toggle the Administrator permission for a role."""
-        if not interaction.guild:
-            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        try:
-            guild = interaction.guild
-            bot_member = guild.me
-
-            if role.is_default():
-                await interaction.followup.send("❌ You can't change @everyone with this command.", ephemeral=True)
-                return
-
-            if role.managed:
-                await interaction.followup.send("❌ That role is managed by an integration/bot and cannot be edited.", ephemeral=True)
-                return
-
-            if not bot_member.guild_permissions.manage_roles:
-                await interaction.followup.send("❌ I need the Manage Roles permission to do that.", ephemeral=True)
-                return
-
-            if bot_member.top_role <= role:
-                await interaction.followup.send("❌ I can't edit that role because it is above my highest role.", ephemeral=True)
-                return
-
-            if interaction.user.top_role <= role and not interaction.user.guild_permissions.administrator:
-                await interaction.followup.send("❌ You can't manage a role higher than or equal to your top role.", ephemeral=True)
-                return
-
-            permissions = discord.Permissions(role.permissions.value)
-            permissions.administrator = enabled
-
-            await role.edit(
-                permissions=permissions,
-                reason=f"Role administrator permission {'enabled' if enabled else 'disabled'} by {interaction.user}",
-            )
-
-            status = "granted Administrator" if enabled else "removed Administrator"
-            await interaction.followup.send(
-                f"✅ {status} for {role.mention}.",
-                ephemeral=True,
-            )
-        except discord.Forbidden:
-            await interaction.followup.send("❌ I don't have permission to edit that role.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Failed to update role permissions: {e}", ephemeral=True)
-
     @app_commands.command(name="autorole", description="Configure automatic role assignment rules")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
