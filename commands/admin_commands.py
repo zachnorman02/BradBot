@@ -799,23 +799,34 @@ class AdminToolsGroup(app_commands.Group):
                 return
             
             elif action.value == "apply-all":
-                # Apply all channel restrictions to current members
-                await interaction.followup.send("🔄 Applying channel restrictions to all members...", ephemeral=True)
-                
+                # Apply all channel restrictions to current members (or only the provided channel)
+                if channel:
+                    await interaction.followup.send(f"🔄 Applying channel restrictions to {channel.mention}...", ephemeral=True)
+                else:
+                    await interaction.followup.send("🔄 Applying channel restrictions to all members...", ephemeral=True)
+
                 restrictions = db.get_channel_restrictions(interaction.guild.id)
                 if not restrictions:
                     await interaction.followup.send("❌ No channel restrictions configured.", ephemeral=True)
                     return
                 
                 results = {'blocked': 0, 'unblocked': 0, 'errors': []}
+                changes_applied = 0
                 
+                # If a specific channel was provided, limit to that channel's restrictions
+                if channel:
+                    restrictions = [r for r in restrictions if r['channel_id'] == channel.id]
+                    if not restrictions:
+                        await interaction.followup.send(f"❌ No restrictions configured for {channel.mention}.", ephemeral=True)
+                        return
+
                 # Group restrictions by channel for efficiency
                 from collections import defaultdict
                 by_channel = defaultdict(list)
                 for r in restrictions:
                     by_channel[r['channel_id']].append({'role_id': r['blocking_role_id'], 'mode': r.get('mode', 'block')})
-                
-                # Process each channel
+
+                # Process each channel (possibly only one)
                 for channel_id, channel_restrictions in by_channel.items():
                     channel_obj = interaction.guild.get_channel(channel_id)
                     if not channel_obj:
@@ -842,13 +853,16 @@ class AdminToolsGroup(app_commands.Group):
                         
                         try:
                             if should_block:
-                                # Block access
-                                await channel_obj.set_permissions(
-                                    member,
-                                    view_channel=False,
-                                    reason="Channel restriction enforcement"
-                                )
-                                results['blocked'] += 1
+                                overwrite = channel_obj.overwrites_for(member)
+                                if overwrite.view_channel is not False:
+                                    # Block access only when the overwrite actually needs to change.
+                                    await channel_obj.set_permissions(
+                                        member,
+                                        view_channel=False,
+                                        reason="Channel restriction enforcement"
+                                    )
+                                    results['blocked'] += 1
+                                    changes_applied += 1
                             else:
                                 # Check if they have an overwrite and remove it
                                 overwrite = channel_obj.overwrites_for(member)
@@ -859,6 +873,10 @@ class AdminToolsGroup(app_commands.Group):
                                         reason="Removing channel restriction"
                                     )
                                     results['unblocked'] += 1
+                                    changes_applied += 1
+
+                            if changes_applied and changes_applied % 10 == 0:
+                                await asyncio.sleep(0.25)
                         except Exception as e:
                             results['errors'].append(f"{member.display_name}: {str(e)[:50]}")
                 

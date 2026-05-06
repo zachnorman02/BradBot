@@ -254,6 +254,8 @@ async def handle_channel_restrictions(before: discord.Member, after: discord.Mem
         for r in restrictions:
             by_channel[r['channel_id']].append(r)
 
+        changes_applied = 0
+
         for channel_id, rules in by_channel.items():
             channel = after.guild.get_channel(channel_id)
             if not channel:
@@ -279,9 +281,14 @@ async def handle_channel_restrictions(before: discord.Member, after: discord.Mem
                             view_channel=False,
                             reason="Channel restriction enforcement"
                         )
+                        changes_applied += 1
                 else:
                     if ow.view_channel is False:
                         await channel.set_permissions(after, overwrite=None, reason="Channel restriction cleared")
+                        changes_applied += 1
+
+                if changes_applied and changes_applied % 10 == 0:
+                    await asyncio.sleep(0.25)
             except Exception as e:
                 print(f"[CHANNEL RESTRICTION] Error updating {channel} for {after.display_name}: {e}")
     
