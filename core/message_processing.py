@@ -12,6 +12,10 @@ from utils.websites import websites, get_site_name
 EMBEDEZ_SITES = {'snapchat', 'ifunny', 'weibo', 'rule34'}
 
 TRAILING_URL_PUNCTUATION = '.,!?;:'
+REDDIT_PROFILE_URL_RE = re.compile(
+    r"^https?://(?:www\.)?reddit\.com/(?:u|user)/[\w-]+/?(?:\?.*)?$",
+    re.IGNORECASE,
+)
 
 def _strip_trailing_slash(url: str) -> str:
     if url.endswith('/') and not re.match(r'^https?://$', url):
@@ -25,6 +29,11 @@ def _split_url_trailing_punctuation(url: str) -> tuple[str, str]:
     if not normalized:
         return url, ''
     return normalized, url[len(normalized):]
+
+
+def _should_skip_link_replacement(url: str) -> bool:
+    """Skip URLs that should remain untouched by link replacement."""
+    return bool(REDDIT_PROFILE_URL_RE.match(url))
 
 
 async def handle_reply_notification(message: discord.Message, bot: discord.Client):
@@ -164,6 +173,8 @@ async def process_message_links(message: discord.Message) -> dict | None:
         if is_url_suppressed(message.content, raw_url):
             continue
         normalized_url, trailing_punctuation = _split_url_trailing_punctuation(raw_url)
+        if normalized_url and _should_skip_link_replacement(normalized_url):
+            continue
         if normalized_url:
             urls_to_process.append((raw_url, normalized_url, trailing_punctuation))
 

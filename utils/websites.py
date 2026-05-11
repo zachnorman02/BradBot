@@ -180,7 +180,7 @@ class TikTokLink(SimpleWebsiteLink):
         r"https?://(?:vm\.|vt\.)tiktok\.com/([\w-]+)(?:/)?(?:\?.*)?$",
         r"https?://(?:www\.)?(tiktok\.com)/([Zz][\w-]+)(?:/)?(?:\?.*)?$"
     ]
-    replacement = "a.tfxktok.com"
+    replacement = "tfxktok.com"
 
 
 class TikTokDiscoverShopLink(SimpleWebsiteLink):

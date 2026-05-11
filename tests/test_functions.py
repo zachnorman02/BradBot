@@ -129,19 +129,19 @@ async def test_tiktok_replacements():
             "name": "Regular TikTok video",
             "url": "https://www.tiktok.com/@user/video/123456789",
             "should_replace": True,
-            "expected_domain": "a.tfxktok.com"
+            "expected_domain": "tfxktok.com"
         },
         {
             "name": "TikTok vm short link",
             "url": "https://vm.tiktok.com/abc123/",
             "should_replace": True,
-            "expected_domain": "a.tfxktok.com"
+            "expected_domain": "tfxktok.com"
         },
         {
             "name": "TikTok Z short link",
             "url": "https://tiktok.com/ZNRQtcK2e",
             "should_replace": True,
-            "expected_domain": "a.tfxktok.com"
+            "expected_domain": "tfxktok.com"
         },
         {
             "name": "TikTok profile - should NOT replace",

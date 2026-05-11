@@ -27,9 +27,9 @@ def test_tiktok_trailing_period_is_replaced():
     assert result is not None
     assert result["content_changed"] is True
     assert result["fixed_urls"] == {
-        "https://tiktok.com/ZNRQtb3Xh.": "https://a.tfxktok.com/ZNRQtb3Xh."
+        "https://tiktok.com/ZNRQtb3Xh.": "https://tfxktok.com/ZNRQtb3Xh."
     }
-    assert "https://a.tfxktok.com/ZNRQtb3Xh." in result["new_content"]
+    assert "https://tfxktok.com/ZNRQtb3Xh." in result["new_content"]
 
 
 def test_non_tiktok_trailing_punctuation_is_also_replaced():
@@ -45,5 +45,11 @@ def test_non_tiktok_trailing_punctuation_is_also_replaced():
 
 def test_angle_bracket_suppressed_url_is_not_processed():
     result = _run_process("<https://tiktok.com/ZNRQtb3Xh>.")
+
+    assert result is None
+
+
+def test_reddit_user_profile_url_is_not_processed():
+    result = _run_process("check this https://reddit.com/u/spez")
 
     assert result is None
