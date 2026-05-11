@@ -27,9 +27,9 @@ def test_tiktok_trailing_period_is_replaced():
     assert result is not None
     assert result["content_changed"] is True
     assert result["fixed_urls"] == {
-        "https://tiktok.com/ZNRQtb3Xh.": "https://a.tnktok.com/ZNRQtb3Xh."
+        "https://tiktok.com/ZNRQtb3Xh.": "https://a.tfxktok.com/ZNRQtb3Xh."
     }
-    assert "https://a.tnktok.com/ZNRQtb3Xh." in result["new_content"]
+    assert "https://a.tfxktok.com/ZNRQtb3Xh." in result["new_content"]
 
 
 def test_non_tiktok_trailing_punctuation_is_also_replaced():
