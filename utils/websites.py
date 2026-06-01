@@ -206,20 +206,19 @@ class RedditLink(SimpleWebsiteLink):
     replacement = "vxreddit.com"
     
     async def render(self) -> Optional[str]:
-        """Process Reddit URL - only replace domain for post links, not subreddit links."""
+        """Process Reddit URL - only replace domain for post links, not /r/ URLs."""
         if not self.is_valid():
             return None
         
-        # Check if this is a subreddit link (reddit.com/r/subreddit_name)
-        # We want to keep reddit.com for these, just remove tracking params
-        subreddit_match = re.match(
-            r'https?://(?:www\.)?(reddit\.com)/r/([\w-]+)/?(?:\?.*)?$',
+        # Keep any /r/... Reddit URL on reddit.com, including subreddit comment threads.
+        subreddit_path_match = re.match(
+            r'https?://(?:www\.)?(reddit\.com)/r/([\w-]+)(?:/|$|\?)',
             self.url,
             re.IGNORECASE
         )
-        
-        if subreddit_match:
-            # It's a subreddit link - keep reddit.com domain, just clean params
+
+        if subreddit_path_match:
+            # Keep reddit.com domain, just clean params
             return self._clean_tracking_params(self.url)
         
         # For post links, use the parent class behavior (replace with vxreddit.com)

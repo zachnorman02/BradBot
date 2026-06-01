@@ -53,3 +53,11 @@ def test_reddit_user_profile_url_is_not_processed():
     result = _run_process("check this https://reddit.com/u/spez")
 
     assert result is None
+
+
+def test_reddit_subreddit_comments_url_is_not_rewritten_to_vxreddit():
+    result = _run_process("check this https://www.reddit.com/r/python/comments/abc123/example_post/")
+
+    assert result is not None
+    assert "vxreddit.com" not in result["new_content"]
+    assert "reddit.com/r/python/comments/abc123/example_post" in result["new_content"]
