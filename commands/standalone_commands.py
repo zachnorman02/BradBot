@@ -26,7 +26,12 @@ async def echo_command(
         await send_error(interaction, f"You are banned from using echo in this server.{reason_note}")
         return
 
-    allowed = discord.AllowedMentions.all() if allow_mentions else discord.AllowedMentions.none()
+    can_mass_ping = interaction.user.guild_permissions.mention_everyone
+    allowed = (
+        discord.AllowedMentions(everyone=can_mass_ping, roles=True, users=True)
+        if allow_mentions
+        else discord.AllowedMentions.none()
+    )
     await interaction.response.defer(ephemeral=True)
     try:
         sent_message = await interaction.channel.send(
