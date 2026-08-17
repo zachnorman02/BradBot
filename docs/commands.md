@@ -33,7 +33,7 @@ Four subgroups plus a top-level `mute`:
 
 ## Booster (`/booster …`)
 
-- **role** subgroup: `restore` (recreate your role if it's missing/broken and reapply saved icon/colors), `customize` (opens a Modal for name, primary/secondary color, an Off/On Holographic dropdown, and icon — see `docs/user-guide.md` for details).
+- **role** subgroup: `restore` (recreate your role if it's missing/broken and reapply saved icon/colors), `customize` (opens a Modal for name, a merged Colors field, an Off/On Holographic dropdown, icon upload, and an Off/On Clear Icon dropdown — see `docs/user-guide.md` for details).
 - Bot owner can use both even without an active boost, to test behavior.
 
 ## Emoji (`/emoji …`)

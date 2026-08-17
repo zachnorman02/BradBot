@@ -61,7 +61,7 @@ class BoosterRoleGroup(app_commands.Group):
 
     @app_commands.command(name="customize", description="Customize your booster role's name, color, and icon")
     async def customize(self, interaction: discord.Interaction):
-        """Opens a single form covering name, color(s), and icon."""
+        """Opens a single form covering name, color(s), holographic, and icon (including clearing it)."""
         if not await _can_use_booster_commands(interaction):
             await send_error(interaction, "This command is only available to server boosters!")
             return
