@@ -10,31 +10,56 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
+    - name: Resolve branch to deploy
+      id: branch
+      run: |
+        # Manual runs deploy whatever branch was picked in the "Use workflow
+        # from" dropdown on the Run workflow screen. Push/PR-triggered runs
+        # always deploy main, same as before this branch existed.
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          BRANCH="${{ github.ref_name }}"
+        else
+          BRANCH="main"
+        fi
+        # Deploy runs this through a remote shell over SSH, so only allow a
+        # safe charset -- git branch names can otherwise contain shell
+        # metacharacters ($, `, ;, etc.) that aren't rejected by git itself.
+        if [[ ! "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+          echo "::error::Invalid branch name: $BRANCH"
+          exit 1
+        fi
+        echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+
     - name: Checkout code
       uses: actions/checkout@v4
       with:
+        ref: ${{ steps.branch.outputs.name }}
         submodules: recursive
-        
+
     - name: Setup SSH
       uses: webfactory/ssh-agent@v0.7.0
       with:
         ssh-private-key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-        
+
     - name: Deploy to Lightsail
+      env:
+        DEPLOY_BRANCH: ${{ steps.branch.outputs.name }}
       run: |
-        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
-          # Clone repo if it doesn't exist, otherwise pull updates
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.LIGHTSAIL_HOST }} "BRANCH='$DEPLOY_BRANCH' bash -s" << 'EOF'
+          echo "Deploying branch: $BRANCH"
+          # Clone repo if it doesn't exist, otherwise switch to and update the target branch
           if [ ! -d "/home/ubuntu/bradbot" ]; then
             echo "Cloning repository..." &&
             cd /home/ubuntu &&
-            git clone https://github.com/zachnorman02/BradBot.git bradbot &&
+            git clone -b "$BRANCH" https://github.com/zachnorman02/BradBot.git bradbot &&
             cd bradbot
           else
             echo "Updating repository..." &&
             cd /home/ubuntu/bradbot &&
-            git pull origin main
+            git fetch origin &&
+            git checkout -B "$BRANCH" "origin/$BRANCH"
           fi &&
           git submodule update --init --recursive &&
           # Ensure system packages are up-to-date and install required packages

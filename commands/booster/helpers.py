@@ -1,0 +1,244 @@
+"""Booster-role business logic shared between the /booster commands and the
+admin domain's booster-related user context menus."""
+from typing import Optional
+
+import discord
+
+from database import db
+from utils.logger import logger
+
+
+def get_personal_role(member: discord.Member) -> Optional[discord.Role]:
+    """Find a member's highest personal role (a non-@everyone role with
+    exactly one holder) -- the heuristic used to locate a member's booster
+    role. Consolidates the identical lookup that was previously duplicated
+    across load_booster_roles, edit_booster_role_color/name/icon."""
+    personal_roles = [
+        role for role in member.roles
+        if not role.is_default() and len(role.members) == 1
+    ]
+    if not personal_roles:
+        return None
+    return max(personal_roles, key=lambda r: r.position)
+
+
+async def _ensure_role_position(role: discord.Role, bot_member: discord.Member, member: Optional[discord.Member] = None) -> None:
+    """Keep a personal/booster role positioned just above the member's
+    highest other role, staying under the bot's own top role.
+
+    Idempotent by design: if the role is already above that anchor, nothing
+    is touched. This means manually dragging the role higher in Discord's
+    UI sticks -- a later bot-triggered edit (e.g. /booster customize) won't
+    silently revert it back down to a fixed anchor. It only moves the role
+    when it's genuinely below where it should be (freshly created, or the
+    member gained a new higher role since).
+    """
+    guild = role.guild
+    bot_top = bot_member.top_role.position if bot_member and bot_member.top_role else None
+
+    anchor_role = None
+    if member:
+        user_roles = [r for r in member.roles if not r.is_default() and r.id != role.id]
+        if user_roles:
+            anchor_role = max(user_roles, key=lambda r: r.position)
+
+    if anchor_role is None:
+        # No other roles to anchor on (e.g. member fetched without full role
+        # cache) -- fall back to the server's built-in Booster role if any.
+        booster_role = guild.premium_subscriber_role
+        if booster_role and booster_role.position is not None:
+            anchor_role = booster_role
+
+    if anchor_role is None:
+        logger.warning(
+            "Skipping position update for role_id=%s: no anchor role found (member has no other roles and no server booster role exists).",
+            role.id,
+        )
+        return
+
+    if role.position > anchor_role.position:
+        logger.info(
+            "Booster role positioning: role_id=%s already above anchor=%s (role_pos=%s anchor_pos=%s); leaving in place.",
+            role.id, anchor_role.id, role.position, anchor_role.position,
+        )
+        return
+
+    target = anchor_role.position + 1
+    if bot_top is not None and target >= bot_top:
+        adjusted_target = bot_top - 1
+        if adjusted_target < 1:
+            logger.warning(f"Skipping position update for {role.name}: no valid target under bot top role {bot_top}.")
+            return
+        logger.info(
+            "Adjusting booster role target for hierarchy: role_id=%s requested=%s adjusted=%s bot_top=%s",
+            role.id, target, adjusted_target, bot_top,
+        )
+        target = adjusted_target
+
+    try:
+        logger.info("Attempting role move: role_id=%s from=%s to=%s anchor=%s", role.id, role.position, target, anchor_role.id)
+        await guild.edit_role_positions(positions={role: target}, reason="Place booster role above member's highest role")
+
+        fetched_roles = await guild.fetch_roles()
+        moved_role = discord.utils.get(fetched_roles, id=role.id)
+        logger.info("Post-move verification: role_id=%s expected=%s actual=%s", role.id, target, moved_role.position if moved_role else None)
+    except Exception as e:
+        logger.warning(f"Could not adjust position for {role.name}: {e}")
+
+
+def _icon_bytes(icon_data):
+    """Normalize icon payload from DB (may be memoryview/bytes/None)."""
+    if icon_data is None:
+        return None
+    if isinstance(icon_data, memoryview):
+        return icon_data.tobytes()
+    if isinstance(icon_data, str) and icon_data.startswith("\\x"):
+        try:
+            return bytes.fromhex(icon_data[2:])
+        except Exception:
+            return None
+    if isinstance(icon_data, bytes):
+        return icon_data
+    return icon_data
+
+
+async def _apply_icon(role: discord.Role, icon_data, guild: discord.Guild) -> bool:
+    """Try to apply icon; return True if set, False if skipped/failed."""
+    payload = _icon_bytes(icon_data)
+    if not payload:
+        return False
+    if "ROLE_ICONS" not in guild.features:
+        logger.info(f"Guild missing ROLE_ICONS; skip icon for {role}")
+        return False
+    try:
+        await role.edit(display_icon=payload)
+        return True
+    except Exception as e:
+        logger.error(f"Could not apply icon for {role}: {e}")
+        return False
+
+
+async def get_or_create_booster_role(interaction: discord.Interaction, db_role_data: dict = None):
+    """Get existing booster role or create/restore from database."""
+    personal_role = get_personal_role(interaction.user)
+
+    if not personal_role and db_role_data:
+        try:
+            icon_payload = _icon_bytes(db_role_data.get('icon_data'))
+            primary_color = discord.Color(int(db_role_data['color_hex'].replace('#', ''), 16))
+            secondary_color = None
+            tertiary_color = None
+
+            if db_role_data.get('secondary_color_hex'):
+                secondary_color = discord.Color(int(db_role_data['secondary_color_hex'].replace('#', ''), 16))
+            if db_role_data.get('tertiary_color_hex'):
+                tertiary_color = discord.Color(int(db_role_data['tertiary_color_hex'].replace('#', ''), 16))
+
+            personal_role = await interaction.guild.create_role(
+                name=db_role_data['role_name'], color=primary_color, secondary_color=secondary_color,
+                tertiary_color=tertiary_color, reason="Restoring saved booster role",
+            )
+            await _ensure_role_position(personal_role, interaction.guild.me, interaction.user)
+            await _apply_icon(personal_role, icon_payload, interaction.guild)
+            await interaction.user.add_roles(personal_role, reason="Restoring saved booster role")
+            db.update_booster_role_id(interaction.user.id, interaction.guild.id, personal_role.id)
+        except Exception as e:
+            logger.error(f"Error restoring role from database: {e}")
+            return None
+
+    if not personal_role:
+        try:
+            personal_role = await interaction.guild.create_role(name=f"{interaction.user.display_name}'s Role", reason="Booster role customization")
+            await _ensure_role_position(personal_role, interaction.guild.me, interaction.user)
+            await interaction.user.add_roles(personal_role, reason="Booster role customization")
+        except Exception as e:
+            logger.error(f"Error creating new role: {e}")
+            return None
+    else:
+        await _ensure_role_position(personal_role, interaction.guild.me, interaction.user)
+        icon_payload = _icon_bytes(db_role_data.get("icon_data")) if db_role_data else None
+        if db_role_data:
+            await _apply_icon(personal_role, icon_payload, interaction.guild)
+
+    return personal_role
+
+
+async def restore_member_booster_role(
+    guild: discord.Guild,
+    member: discord.Member,
+    db_role_data: dict,
+    reason: str = "Restore booster role",
+    target_role: Optional[discord.Role] = None,
+):
+    """Restore or recreate a member's booster role using saved DB data. If target_role is provided, apply to that role."""
+    bot_member = guild.me
+    personal_role = target_role if target_role else get_personal_role(member)
+
+    try:
+        primary_color = discord.Color(int(db_role_data['color_hex'].replace('#', ''), 16))
+        secondary_color = discord.Color(int(db_role_data['secondary_color_hex'].replace('#', ''), 16)) if db_role_data.get('secondary_color_hex') else None
+        tertiary_color = discord.Color(int(db_role_data['tertiary_color_hex'].replace('#', ''), 16)) if db_role_data.get('tertiary_color_hex') else None
+    except Exception as e:
+        logger.warning(f"Invalid color data in DB for user {member.id}: {e}")
+        primary_color = discord.Color.default()
+        secondary_color = None
+        tertiary_color = None
+
+    if not personal_role:
+        try:
+            personal_role = await guild.create_role(
+                name=db_role_data.get('role_name') or f"{member.display_name}'s Role",
+                color=primary_color, secondary_color=secondary_color, tertiary_color=tertiary_color, reason=reason,
+            )
+            await _ensure_role_position(personal_role, bot_member, member)
+            await member.add_roles(personal_role, reason=reason)
+            db.update_booster_role_id(member.id, guild.id, personal_role.id)
+        except Exception as e:
+            logger.error(f"Failed to create role for {member}: {e}")
+            return None, False
+    else:
+        try:
+            await personal_role.edit(color=primary_color, secondary_color=secondary_color, tertiary_color=tertiary_color, reason=reason)
+        except Exception as e:
+            logger.error(f"Could not edit colors for {personal_role}: {e}")
+
+        await _ensure_role_position(personal_role, bot_member, member)
+        if personal_role not in member.roles:
+            try:
+                await member.add_roles(personal_role, reason=reason)
+            except Exception as e:
+                logger.error(f"Could not assign provided role to {member}: {e}")
+
+    icon_applied = await _apply_icon(personal_role, db_role_data.get("icon_data"), guild)
+    return personal_role, icon_applied
+
+
+async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role):
+    """Save role configuration to database. Auto-detects color_type."""
+    try:
+        color_hex = f"#{role.color.value:06x}"
+        secondary_color_hex = f"#{role.secondary_color.value:06x}" if role.secondary_color else None
+        tertiary_color_hex = f"#{role.tertiary_color.value:06x}" if role.tertiary_color else None
+        icon_hash = role.icon.key if role.icon else None
+        icon_data = None
+
+        if role.icon:
+            try:
+                icon_data = await role.icon.read()
+            except Exception:
+                pass
+
+        if tertiary_color_hex:
+            color_type = "holographic"
+        elif secondary_color_hex:
+            color_type = "gradient"
+        else:
+            color_type = "solid"
+
+        db.store_booster_role(
+            user_id=user_id, guild_id=guild_id, role_id=role.id, role_name=role.name,
+            color_hex=color_hex, color_type=color_type, icon_hash=icon_hash, icon_data=icon_data,
+            secondary_color_hex=secondary_color_hex, tertiary_color_hex=tertiary_color_hex,
+        )
+    except Exception as e:
+        logger.error(f"Error saving role to database: {e}")

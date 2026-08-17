@@ -1,89 +1,124 @@
 # Command Reference
 
-This page summarizes BradBot’s slash commands. For full details see `docs/commands.md`.
+This page summarizes BradBot's slash commands and right-click "Apps" context menus. For quick end-user/mod walkthroughs see `docs/user-guide.md` and `docs/mod-guide.md`.
 
 ## Admin (`/admin …`)
 
-- **menu / panel** – interactive settings (panel posts a persistent message).
-- **sync** – force slash-command sync (`scope: global|guild`). Text fallback: `:resync`.
-- **tools loadboosterroles / saveboosterrole** – manage saved booster roles.
-- **tools autorole** – configure trigger-role automations.
-- **tools channelrestriction / messagemirror / conditionalrole** – channel gates, message mirroring, conditional roles.
-- **tools counting_config / counting_set_number** – set/reset the counting channel, optional penalty role (24h), starting number (or keep current), or disable counting; adjust the next expected number.
-- **maintenance assignlvl0 / kickunverified** – clean up level roles and unverified members.
-- **sql / tasklogs / auditlog** – bot-owner diagnostics.
+Four subgroups, mostly admin/owner-only:
 
-## Issues (`/issues panel`)
+- **panels** — `settings_menu` / `settings_panel` (ephemeral vs. persistent server settings UI), `commands_menu` / `commands_panel` (ephemeral vs. persistent command-toggle UI).
+- **config** — `counting_config` (set/reset counting channel, optional 24h penalty role, starting number, or disable), `counting_set_number` (adjust the next expected number), `level_settings` (level-role naming, verified/unverified roles).
+- **tools** — `loadboosterroles` / `saveboosterrole` (manage saved booster-role data), `shiftrole` (nudge a role up/down one position), `kick_inactive_level` (kick members with a level role who've gone quiet), `mirror_add` / `mirror_remove` / `mirror_list` / `mirror_copy_existing` (message mirroring between channels), `assignlvl0`, `kickunverified`, `delete_role`.
+- **ops** — `sync` (force slash-command sync; text fallback `:resync`), `command_ban` / `command_unban` / `command_disable` / `command_enable` (per-user or per-server command gating), `sql` (bot owner only), `auditlog`, `tasklogs` (bot owner only).
 
-Posts a button that opens a modal with:
-- Title, description
-- Submission type dropdown:
-  - Bug → GitHub issue (`bug` label)
-  - Enhancement → GitHub issue (`enhancement` label)
-  - Question → GitHub Discussion (Q&A)
-  - General Discussion → GitHub Discussion (General)
+**Apps (right-click a message/user):**
 
-Discussion category IDs are auto-resolved (override via `GITHUB_DISCUSSION_CATEGORY_*`).
+- **Mirror This Message** — manually mirror one message.
+- **Ban Author From Command** — ban the author of a message from a specific command.
+- **Restore Booster Role** / **Edit Booster Role** — admin equivalents of `/booster restore` and `/booster customize` for another member.
+- **Test Booster Role** — diagnostic for role hierarchy/positioning (bot owner only).
 
-## Polls (`/poll …`)
+## Permissions (`/permissions …`)
 
-- **create** – build a text-response poll (requires *Create Polls* permission).
-- **results / stats / wordcloud** – view responses, statistics, and word clouds.
-- **toggle_show_responses / close / reopen / refresh / list** – manage presentation and lifecycle.
+Four subgroups plus a top-level `mute`:
 
-## Link Tools (`/link …`)
+- **channel** — `access` (allow/deny one user), `restriction_set` / `restriction_remove` / `restriction_list` / `restriction_apply` (standing role-based rules), `visibility` (see what a user or role can/can't see).
+- **role** — `set` (add/remove one role), `temp` (timed role grant, auto-removed), `schedule` / `schedule_list` / `schedule_delete` (queue a future role change).
+- **conditional** — `configure` / `remove_config` / `list` / `list_eligible` / `set_eligibility` / `check` / `set_override` / `list_overrides` / `assign` / `bulk_check` — role grants gated on eligibility, with blocking/deferral overrides.
+- **automation** — `configure` / `remove` / `list` / `check_all` — trigger-role automation rules.
+- **deny** — `add` / `remove` / `check` / `list` / `log_set` / `log_test` / `log_clear` — permanently block a user from ever receiving a specific role.
+- **mute** — create/configure a server-wide mute role.
 
-- **edit** – supply the bot message link, edit the full text inside a modal. The update is reprocessed through link replacement; `-# …` embed helper lines are preserved.
-- **delete** – delete your own replaced message (bot checks the mention matches you).
+**Apps:** **Check Channel Access** (right-click a user) — same as `/permissions channel visibility` for that user.
 
-## Voice (`/voice …`)
+## Booster (`/booster …`)
 
-- **join / leave** – manage the VC connection.
-- **tts** – queue Polly TTS with optional `voice`, `engine`, `language`, `announce_author`, `post_text`.
-- **show_tts_options / filter_voices / debug_tts** – browse voices or debug audio.
-
-## Conversion (`/convert …`)
-
-- **testosterone, temperature, length, weight, liquid, timezone, shoe** – utility conversions; shoe conversion handles men/women and multiple regions.
-
-## Utility (`/utility …`)
-
-- **remind** – natural-language reminders (DMs you).
-- **timer** – visible countdown timer.
-- **refresh_cookies** – refresh YouTube cookies used for media downloads.
-
-## Alarm (`/alarm …`)
-
-- **set** – fully-configurable alarm (text/TTS/tone, repeat, interval, timezone).
-- **list / cancel** – manage alarms created by the guild.
+- **role** subgroup: `restore` (recreate your role if it's missing/broken and reapply saved icon/colors), `customize` (opens a Modal for name, primary/secondary color, an Off/On Holographic dropdown, and icon — see `docs/user-guide.md` for details).
+- Bot owner can use both even without an active boost, to test behavior.
 
 ## Emoji (`/emoji …`)
 
-- **copy / from_attachment / reaction / upload** – ingest emoji/stickers from messages, attachments, or URLs.
-- **db save / load / list / saveServer / delete** – manage the saved emoji catalog.
-- **rename / remove** – edit or delete server emoji/stickers.
+- Top-level: `save`/`load`/`list`/`saveserver`/`delete` under **db** (saved emoji/sticker catalog), plus `upload` (from an image URL), `rename`, `remove`.
+
+**Apps:**
+
+- **Copy Emoji From Message** — grab an emoji used in a message.
+- **Copy Emoji From Reaction** — grab an emoji someone reacted with.
+- **Create Emoji From Attachment** — turn an attached image into a server emoji.
+- **Save Emojis To Database** — save all emoji in a message to the catalog.
+
+## Poll (`/poll …`)
+
+- `create` (requires *Create Polls* permission), `results`, `stats`, `wordcloud` — build and analyze text-response polls.
+- `toggle_show_responses`, `close`, `reopen`, `refresh`, `list` — manage presentation and lifecycle.
+
+## Alarm (`/alarm …`)
+
+- `set` (opens a form for time/message/repeat/TTS), `list`, `cancel`.
+
+## Birthday (`/birthday …`)
+
+- **channel**: `set` / `clear` — where announcements post.
+- Top-level: `set` (your own birthday), `clear`, `set_for` (set for another user), `month` (list birthdays in a month), `age` (list users by age), `list` (all birthdays).
+
+## Convert (`/convert …`)
+
+- `testosterone`, `temperature`, `length`, `weight`, `liquid`, `currency` (live exchange rates), `timezone`, `shoe` (handles men's/women's and multiple regions).
+
+## Verify (`/verify …`)
+
+Rules-agreement tracking:
+
+- `setup` (paste rules-message link(s) to track), `set_verified_role`, `check` (a user's agreement status), `status`, `remove_on_verify` / `remove_on_leave` (auto-cleanup toggles), `cleanup` (`dry_run` to preview), `clear` (wipe config).
+
+## Settings (`/settings menu`)
+
+- Opens a user-level settings UI. (No other top-level settings commands remain — booster/notification toggles live elsewhere or were retired.)
 
 ## Starboard (`/starboard …`)
 
-- **set/list/delete** – manage hall-of-fame boards per channel/emoji/threshold (with NSFW toggles).
-- **lock** – force a specific message into a board immediately.
-- **block/unblock** – exclude or re-allow individual messages even if they hit the threshold.
-- **top** – show the most-starred posts for a board.
+- `set` (channel + emoji + threshold, incl. NSFW toggle), `list`, `delete`, `top` (most-starred messages for a board).
 
-## Booster (`/booster role …`)
+**Apps:**
 
-- **color** – set solid/gradient/holographic colors with multiple hex inputs.
-- **label** – rename your booster role.
-- **icon** – set a role icon from URL (download/validation handled).
+- **Force to Starboard** — post immediately, ignoring the threshold.
+- **Block from Starboard** / **Unblock from Starboard** — permanently exclude/re-allow a message.
 
-## Settings (`/settings …`)
+## Utility (`/utility …`)
 
-- **menu** – user-level settings UI.
-- **sendpings / notify** – toggle whether your replies ping others or send you notifications.
+- `remind` (natural-language reminder, DMs you), `timer` (visible countdown), `refresh_cookies` (YouTube cookies for media downloads).
+
+## Voice (`/voice …`)
+
+- `join` / `leave` — manage the VC connection.
+- `tts` — queue Polly TTS with optional `voice`, `engine`, `language`, `announce_author`, `post_text`.
+- `show_tts_options` / `filter_voices` / `debug_tts` (admin) — browse voices or debug audio.
+
+## Issues (`/issues panel`)
+
+Posts a button that opens a modal with title, description, and a submission-type dropdown:
+
+- Bug → GitHub issue (`bug` label)
+- Enhancement → GitHub issue (`enhancement` label)
+- Question → GitHub Discussion (Q&A)
+- General Discussion → GitHub Discussion (General)
+
+Discussion category IDs are auto-resolved (override via `GITHUB_DISCUSSION_CATEGORY_*`).
+
+## Link Handling (Apps only, no slash commands)
+
+When BradBot replaces a posted link (Twitter/X, TikTok, Instagram, Reddit, etc.), use right-click on the bot's message:
+
+- **Edit Bot Message** — edit the replacement text in a Modal (re-run through link replacement; `-# …` embed helper lines preserved).
+- **Delete Bot Message** — delete it (only works if you're the original sender).
+
+## Reactions (Apps only)
+
+- **Check Reactions** (right-click a message) — see who reacted, optionally filtered to one user or emoji.
 
 ## Standalone Slash Commands
 
-- **/echo** – repeat a message (optional `allow_mentions`; when off, the output is sent silently and mentions are suppressed).
-- **/timestamp** – generate Discord timestamps from date/time input.
+- **/echo** — repeat a message (optional `allow_mentions`; when off, sent silently with mentions suppressed).
+- **/timestamp** — generate Discord timestamps from date/time input.
 
-Need more specifics? Check `docs/commands.md` in the repo or update this page with new features.
+Need more specifics? Read the relevant `commands/<domain>/` package in the repo, or update this page with new features.
