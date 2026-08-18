@@ -7,26 +7,68 @@ import discord
 from database import db
 from utils.logger import logger
 
+# Guild setting storing a comma-separated list of role IDs that should never
+# be treated as someone's personal/booster role, even if they otherwise match
+# the "exactly one member" heuristic below (e.g. an Admin role, a VIP award
+# role, or any other role that happens to have a single current holder).
+BOOSTER_EXCLUDED_ROLES_SETTING = "booster_excluded_role_ids"
+
+
+def get_excluded_role_ids(guild_id: int) -> set[int]:
+    raw = db.get_guild_setting(guild_id, BOOSTER_EXCLUDED_ROLES_SETTING, "")
+    return {int(part) for part in raw.split(",") if part.strip().isdigit()}
+
+
+def add_excluded_role(guild_id: int, role_id: int) -> None:
+    ids = get_excluded_role_ids(guild_id)
+    ids.add(role_id)
+    db.set_guild_setting(guild_id, BOOSTER_EXCLUDED_ROLES_SETTING, ",".join(str(i) for i in ids))
+
+
+def remove_excluded_role(guild_id: int, role_id: int) -> bool:
+    """Returns True if the role was actually on the list."""
+    ids = get_excluded_role_ids(guild_id)
+    if role_id not in ids:
+        return False
+    ids.discard(role_id)
+    db.set_guild_setting(guild_id, BOOSTER_EXCLUDED_ROLES_SETTING, ",".join(str(i) for i in ids))
+    return True
+
+
+def find_personal_roles(member: discord.Member, excluded_ids: Optional[set[int]] = None) -> list[discord.Role]:
+    """Return this member's one-holder roles, excluding @everyone and any
+    guild-excluded roles. The single "personal role" heuristic shared by
+    get_personal_role, core/tasks.py's booster lifecycle, and the admin
+    loadboosterroles scan -- previously duplicated three times with no
+    exclusion support in any of them.
+    """
+    if excluded_ids is None:
+        excluded_ids = get_excluded_role_ids(member.guild.id)
+    return [
+        role for role in member.roles
+        if not role.is_default() and role.id not in excluded_ids and len(role.members) == 1
+    ]
+
 
 def get_personal_role(member: discord.Member, db_role_data: Optional[dict] = None) -> Optional[discord.Role]:
     """Find a member's booster/personal role.
 
-    Prefers the DB's tracked role_id (if that role still exists and the
-    member still holds it) over the "highest-positioned single-member
-    role" heuristic below. The heuristic alone can grab the wrong role if
-    the member happens to hold more than one single-member role (e.g. a
-    leftover role from earlier testing), silently returning the wrong
-    role's colors/name/icon instead of the one actually tracked as theirs.
+    Prefers the DB's tracked role_id (if that role still exists, the member
+    still holds it, and it isn't guild-excluded) over the "highest-positioned
+    single-member role" heuristic below. The heuristic alone can grab the
+    wrong role if the member happens to hold more than one single-member
+    role (e.g. a leftover role from earlier testing), silently returning the
+    wrong role's colors/name/icon instead of the one actually tracked as
+    theirs.
     """
+    excluded_ids = get_excluded_role_ids(member.guild.id)
+
     if db_role_data and db_role_data.get('role_id'):
         tracked = member.guild.get_role(db_role_data['role_id'])
-        if tracked and tracked in member.roles:
+        if tracked and tracked.id not in excluded_ids and tracked in member.roles:
             return tracked
 
-    personal_roles = [
-        role for role in member.roles
-        if not role.is_default() and len(role.members) == 1
-    ]
+    personal_roles = find_personal_roles(member, excluded_ids)
     if not personal_roles:
         return None
     return max(personal_roles, key=lambda r: r.position)

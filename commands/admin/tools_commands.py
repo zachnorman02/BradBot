@@ -36,10 +36,12 @@ class AdminToolsGroup(GuildOnlyGroup):
             errors = 0
             report_lines = []
 
+            from commands.booster.helpers import find_personal_roles
+
             for member in guild.members:
                 if not member.premium_since:
                     continue
-                personal_roles = [r for r in member.roles if not r.is_default() and len(r.members) == 1]
+                personal_roles = find_personal_roles(member)
                 if not personal_roles:
                     continue
                 role = max(personal_roles, key=lambda r: r.position)

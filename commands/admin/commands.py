@@ -8,6 +8,7 @@ from commands.admin.tools_commands import AdminToolsGroup
 from commands.admin.panels_commands import AdminPanelsGroup
 from commands.admin.config_commands import AdminConfigGroup
 from commands.admin.ops_commands import AdminOpsGroup
+from commands.admin.booster_commands import AdminBoosterGroup
 
 
 class AdminGroup(app_commands.Group):
@@ -23,3 +24,4 @@ class AdminGroup(app_commands.Group):
         self.add_command(AdminPanelsGroup())
         self.add_command(AdminConfigGroup())
         self.add_command(AdminOpsGroup())
+        self.add_command(AdminBoosterGroup())

@@ -4,11 +4,12 @@ This page summarizes BradBot's slash commands and right-click "Apps" context men
 
 ## Admin (`/admin …`)
 
-Four subgroups, mostly admin/owner-only:
+Five subgroups, mostly admin/owner-only:
 
 - **panels** — `settings_menu` / `settings_panel` (ephemeral vs. persistent server settings UI), `commands_menu` / `commands_panel` (ephemeral vs. persistent command-toggle UI).
 - **config** — `counting_config` (set/reset counting channel, optional 24h penalty role, starting number, or disable), `counting_set_number` (adjust the next expected number), `level_settings` (level-role naming, verified/unverified roles).
 - **tools** — `loadboosterroles` / `saveboosterrole` (manage saved booster-role data), `shiftrole` (nudge a role up/down one position), `kick_inactive_level` (kick members with a level role who've gone quiet), `mirror_add` / `mirror_remove` / `mirror_list` / `mirror_copy_existing` (message mirroring between channels), `assignlvl0`, `kickunverified`, `delete_role`.
+- **booster** — `exclude` / `include` / `list` — stop a specific role from ever being auto-detected as someone's booster role (useful when a role like Admin happens to have only one holder and would otherwise match the "one member" heuristic).
 - **ops** — `sync` (force slash-command sync; text fallback `:resync`), `command_ban` / `command_unban` / `command_disable` / `command_enable` (per-user or per-server command gating), `sql` (bot owner only), `auditlog`, `tasklogs` (bot owner only).
 
 **Apps (right-click a message/user):**

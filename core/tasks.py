@@ -7,7 +7,7 @@ import asyncio
 from database import db
 from collections import defaultdict
 from .counting import clear_counting_penalty_if_expired
-from commands.booster.helpers import _ensure_role_position
+from commands.booster.helpers import _ensure_role_position, find_personal_roles as _find_personal_roles
 from utils.logger import logger
 
 
@@ -332,10 +332,8 @@ async def ensure_base_level_role(member: discord.Member):
 # ============================================================================
 # BOOSTER ROLE AUTOMATION
 # ============================================================================
-
-def _find_personal_roles(member: discord.Member):
-    """Return one-member roles for this member (excluding @everyone)."""
-    return [role for role in member.roles if not role.is_default() and len(role.members) == 1]
+# _find_personal_roles is imported from commands.booster.helpers (as
+# find_personal_roles) -- it used to be duplicated here.
 
 
 def _is_counting_penalty_role(guild_id: int, role_id: int) -> bool:
