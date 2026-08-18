@@ -41,15 +41,18 @@ async def _dispatch(interaction: discord.Interaction, message: discord.Message, 
 
 
 @app_commands.context_menu(name="Force to Starboard")
+@app_commands.default_permissions(manage_messages=True)
 async def force_to_starboard_ctx(interaction: discord.Interaction, message: discord.Message):
     await _dispatch(interaction, message, "force", "Message forced to starboard")
 
 
 @app_commands.context_menu(name="Block from Starboard")
+@app_commands.default_permissions(manage_messages=True)
 async def block_from_starboard_ctx(interaction: discord.Interaction, message: discord.Message):
     await _dispatch(interaction, message, "block", "Message blocked from starboard")
 
 
 @app_commands.context_menu(name="Unblock from Starboard")
+@app_commands.default_permissions(manage_messages=True)
 async def unblock_from_starboard_ctx(interaction: discord.Interaction, message: discord.Message):
     await _dispatch(interaction, message, "unblock", "Overrides cleared")

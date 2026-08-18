@@ -274,8 +274,16 @@ async def restore_member_booster_role(
     db_role_data: dict,
     reason: str = "Restore booster role",
     target_role: Optional[discord.Role] = None,
+    assign: bool = True,
 ):
-    """Restore or recreate a member's booster role using saved DB data. If target_role is provided, apply to that role."""
+    """Restore or recreate a member's booster role using saved DB data. If
+    target_role is provided, apply to that role.
+
+    If assign is False, the role is created/updated and positioned but not
+    added to the member -- for admin recovery of a non-boosting member's
+    accidentally-deleted role, where handing them the booster-perk role
+    while they aren't actually boosting wouldn't be appropriate.
+    """
     bot_member = guild.me
     personal_role = target_role if target_role else get_personal_role(member, db_role_data)
 
@@ -296,7 +304,8 @@ async def restore_member_booster_role(
                 color=primary_color, secondary_color=secondary_color, tertiary_color=tertiary_color, reason=reason,
             )
             await _ensure_role_position(personal_role, bot_member, member)
-            await member.add_roles(personal_role, reason=reason)
+            if assign:
+                await member.add_roles(personal_role, reason=reason)
             db.update_booster_role_id(member.id, guild.id, personal_role.id)
         except Exception as e:
             logger.error(f"Failed to create role for {member}: {e}")
@@ -308,7 +317,7 @@ async def restore_member_booster_role(
             logger.error(f"Could not edit colors for {personal_role}: {e}")
 
         await _ensure_role_position(personal_role, bot_member, member)
-        if personal_role not in member.roles:
+        if assign and personal_role not in member.roles:
             try:
                 await member.add_roles(personal_role, reason=reason)
             except Exception as e:

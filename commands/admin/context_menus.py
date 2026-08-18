@@ -58,8 +58,8 @@ async def ban_author_from_command_ctx(interaction: discord.Interaction, message:
 async def restore_booster_role_ctx(interaction: discord.Interaction, member: discord.Member):
     if not await require_guild(interaction):
         return
-    if not await has_permission_or_owner(interaction, administrator=True):
-        await send_error(interaction, "You need administrator permissions to use this.")
+    if not await has_permission_or_owner(interaction, manage_roles=True):
+        await send_error(interaction, "You need Manage Roles permission to use this.")
         return
 
     from commands.booster.helpers import restore_member_booster_role
@@ -73,19 +73,31 @@ async def restore_booster_role_ctx(interaction: discord.Interaction, member: dis
         if not saved:
             await send_error(interaction, f"No saved booster role found for {member.mention}.")
             return
-        if not await _member_is_booster_or_actor_is_owner(interaction, member):
-            await send_error(interaction, f"{member.mention} is not currently a server booster.")
-            return
+
+        # Admin permission alone is enough to recover an accidentally-deleted
+        # saved role. But if the member isn't actually boosting right now
+        # (and the actor isn't the bot owner testing), recreate/update the
+        # role without handing it to them -- assigning the booster-perk role
+        # to a non-booster wouldn't be appropriate.
+        is_booster = any(r.is_premium_subscriber() for r in member.roles)
+        assign = is_booster or await is_bot_owner(interaction)
 
         role_obj, icon_applied = await restore_member_booster_role(
-            interaction.guild, member, saved[0], reason="Admin restore booster role (context menu)", target_role=None
+            interaction.guild, member, saved[0], reason="Admin restore booster role (context menu)", target_role=None, assign=assign,
         )
         if not role_obj:
             await send_error(interaction, f"Failed to restore a booster role for {member.mention}.")
             return
 
         note = "" if icon_applied or not saved[0].get("icon_data") else " (icon failed to apply)"
-        await send_success(interaction, f"Restored {member.mention}'s booster role: {role_obj.mention}{note}")
+        if assign:
+            await send_success(interaction, f"Restored {member.mention}'s booster role: {role_obj.mention}{note}")
+        else:
+            await send_success(
+                interaction,
+                f"Recreated {member.mention}'s booster role: {role_obj.mention}{note}\n"
+                f"⚠️ Not assigned to {member.mention} -- they aren't currently boosting.",
+            )
     except Exception as e:
         await error_response(interaction, e, context="restore_booster_role_ctx")
 
@@ -94,8 +106,8 @@ async def restore_booster_role_ctx(interaction: discord.Interaction, member: dis
 async def edit_booster_role_ctx(interaction: discord.Interaction, member: discord.Member):
     if not await require_guild(interaction):
         return
-    if not await has_permission_or_owner(interaction, administrator=True):
-        await send_error(interaction, "You need administrator permissions to use this.")
+    if not await has_permission_or_owner(interaction, manage_roles=True):
+        await send_error(interaction, "You need Manage Roles permission to use this.")
         return
     if not await _member_is_booster_or_actor_is_owner(interaction, member):
         await send_error(interaction, "That user is not a server booster.")

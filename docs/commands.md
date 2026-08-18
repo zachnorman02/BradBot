@@ -16,7 +16,7 @@ Five subgroups, mostly admin/owner-only:
 
 - **Mirror This Message** — manually mirror one message.
 - **Ban Author From Command** — ban the author of a message from a specific command.
-- **Restore Booster Role** / **Edit Booster Role** — admin equivalents of `/booster restore` and `/booster customize` for another member.
+- **Restore Booster Role** / **Edit Booster Role** (both require Manage Roles) — admin equivalents of `/booster restore` and `/booster customize` for another member. Restore works even if they aren't currently boosting (e.g. recovering an accidentally-deleted role) — if they're not actually boosting (and you're not the bot owner testing), it recreates the role from saved data without assigning it to them, since handing out the booster-perk role to a non-booster wouldn't be appropriate.
 - **Test Booster Role** — diagnostic for role hierarchy/positioning (bot owner only).
 
 ## Permissions (`/permissions …`)
@@ -80,10 +80,12 @@ Rules-agreement tracking:
 
 - `set` (channel + emoji + threshold, incl. NSFW toggle), `list`, `delete`, `top` (most-starred messages for a board).
 
-**Apps:**
+**Apps (requires Manage Messages — hidden from the menu by default for anyone without it):**
 
 - **Force to Starboard** — post immediately, ignoring the threshold.
 - **Block from Starboard** / **Unblock from Starboard** — permanently exclude/re-allow a message.
+
+All three error immediately if the server has no starboard configured yet (`/starboard set` first).
 
 ## Utility (`/utility …`)
 
