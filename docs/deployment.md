@@ -69,7 +69,7 @@ journalctl -u bradbot -f
 2. Pick the branch from the **Use workflow from** dropdown.
 3. Run it. It checks out that branch on the Lightsail host and restarts `bradbot` against it — same service, same token, same DB, so this **is** prod, not a separate staging copy.
 
-**To switch back:** re-run the workflow with `branch` left as `main` (the default), or just push/merge to `main` — the normal push trigger redeploys it automatically. Either path is a `git checkout -B <branch> origin/<branch>` on the server, so switching back is a normal deploy, not a special rollback procedure.
+**To switch back:** re-run the workflow with `main` picked in the dropdown, or just push/merge to `main` — the normal push trigger redeploys it automatically. Either path is a `git checkout -B <branch> origin/<branch>` on the server, so switching back is a normal deploy, not a special rollback procedure.
 
 ## 3. Syncing Commands
 

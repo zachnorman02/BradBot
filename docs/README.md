@@ -7,8 +7,8 @@ Welcome! This wiki mirrors the most important information about running and exte
 - [Local Development](Local-Development) – set up Python, Postgres, and the `.env`.
 - [Deployment & Operations](Deployment) – systemd service, Secrets Manager, syncing commands.
 - [Command Reference](Commands) – every slash command group and Apps context menu with parameters + tips.
-- [User Guide](user-guide.md) – editing/deleting link messages, customizing your booster role.
-- [Mod Guide](mod-guide.md) – channel permissions, rule agreement, roles, starboard.
+- [User Guide](User-Guide) – editing/deleting link messages, customizing your booster role.
+- [Mod Guide](Mod-Guide) – channel permissions, rule agreement, roles, starboard.
 
 ## ✨ Highlights
 

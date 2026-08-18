@@ -14,7 +14,7 @@ class BanAuthorModal(discord.ui.Modal, title="Ban Author From Command"):
     command = discord.ui.Label(
         text="Command",
         description="Which command to ban this user from.",
-        component=discord.ui.Select(options=[
+        component=discord.ui.Select(required=True, options=[
             discord.SelectOption(label="Echo", value="echo"),
             discord.SelectOption(label="TTS", value="tts"),
         ]),
