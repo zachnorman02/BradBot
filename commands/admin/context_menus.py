@@ -101,7 +101,8 @@ async def edit_booster_role_ctx(interaction: discord.Interaction, member: discor
         await send_error(interaction, "That user is not a server booster.")
         return
 
-    role = get_personal_role(member)
+    db_role_data = db.get_booster_role(member.id, interaction.guild.id)
+    role = get_personal_role(member, db_role_data)
     if not role:
         await send_error(interaction, "Could not find that user's booster role. They may need to run `/booster customize` first.")
         return

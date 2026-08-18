@@ -8,11 +8,21 @@ from database import db
 from utils.logger import logger
 
 
-def get_personal_role(member: discord.Member) -> Optional[discord.Role]:
-    """Find a member's highest personal role (a non-@everyone role with
-    exactly one holder) -- the heuristic used to locate a member's booster
-    role. Consolidates the identical lookup that was previously duplicated
-    across load_booster_roles, edit_booster_role_color/name/icon."""
+def get_personal_role(member: discord.Member, db_role_data: Optional[dict] = None) -> Optional[discord.Role]:
+    """Find a member's booster/personal role.
+
+    Prefers the DB's tracked role_id (if that role still exists and the
+    member still holds it) over the "highest-positioned single-member
+    role" heuristic below. The heuristic alone can grab the wrong role if
+    the member happens to hold more than one single-member role (e.g. a
+    leftover role from earlier testing), silently returning the wrong
+    role's colors/name/icon instead of the one actually tracked as theirs.
+    """
+    if db_role_data and db_role_data.get('role_id'):
+        tracked = member.guild.get_role(db_role_data['role_id'])
+        if tracked and tracked in member.roles:
+            return tracked
+
     personal_roles = [
         role for role in member.roles
         if not role.is_default() and len(role.members) == 1
@@ -120,7 +130,7 @@ async def _apply_icon(role: discord.Role, icon_data, guild: discord.Guild) -> bo
 
 async def get_or_create_booster_role(interaction: discord.Interaction, db_role_data: dict = None):
     """Get existing booster role or create/restore from database."""
-    personal_role = get_personal_role(interaction.user)
+    personal_role = get_personal_role(interaction.user, db_role_data)
 
     if not personal_role and db_role_data:
         try:
@@ -172,7 +182,7 @@ async def restore_member_booster_role(
 ):
     """Restore or recreate a member's booster role using saved DB data. If target_role is provided, apply to that role."""
     bot_member = guild.me
-    personal_role = target_role if target_role else get_personal_role(member)
+    personal_role = target_role if target_role else get_personal_role(member, db_role_data)
 
     try:
         primary_color = discord.Color(int(db_role_data['color_hex'].replace('#', ''), 16))
