@@ -563,7 +563,17 @@ async def handle_booster_stopped(member: discord.Member):
 
 
 async def handle_booster_started(member: discord.Member):
-    """Handle when a member starts boosting - restore or create their role"""
+    """Handle when a member starts boosting - restore or create their role.
+
+    Skips entirely for guild-excluded users (see commands/booster/helpers.py
+    add_excluded_user) -- they can still get a role via /booster customize
+    or /booster restore if run manually, just not automatically on boost.
+    """
+    from commands.booster.helpers import get_excluded_user_ids
+
+    if member.id in get_excluded_user_ids(member.guild.id):
+        return
+
     await _restore_or_create_booster_role(member)
 
 

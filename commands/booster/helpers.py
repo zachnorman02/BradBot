@@ -19,10 +19,23 @@ def get_excluded_role_ids(guild_id: int) -> set[int]:
     return {int(part) for part in raw.split(",") if part.strip().isdigit()}
 
 
-def add_excluded_role(guild_id: int, role_id: int) -> None:
+def add_excluded_role(guild_id: int, role_id: int) -> int:
+    """Excludes role_id from booster-role detection going forward, and
+    purges any booster_roles DB row currently tracking it -- otherwise a
+    stale saved-role entry could later recreate a brand-new role from data
+    that belonged to a role we just said should never be treated as
+    anyone's booster role again. Returns the number of DB rows purged.
+    """
     ids = get_excluded_role_ids(guild_id)
     ids.add(role_id)
     db.set_guild_setting(guild_id, BOOSTER_EXCLUDED_ROLES_SETTING, ",".join(str(i) for i in ids))
+
+    purged = 0
+    for row in db.get_all_booster_roles(guild_id):
+        if row.get('role_id') == role_id:
+            db.delete_booster_role(row['user_id'], guild_id)
+            purged += 1
+    return purged
 
 
 def remove_excluded_role(guild_id: int, role_id: int) -> bool:
@@ -32,6 +45,46 @@ def remove_excluded_role(guild_id: int, role_id: int) -> bool:
         return False
     ids.discard(role_id)
     db.set_guild_setting(guild_id, BOOSTER_EXCLUDED_ROLES_SETTING, ",".join(str(i) for i in ids))
+    return True
+
+
+# Guild setting storing a comma-separated list of user IDs the bot should
+# never auto-create/restore a booster role for when they start boosting
+# (see core/tasks.py's handle_booster_started). Doesn't affect manually
+# running /booster customize or /booster restore -- only the automatic
+# on-boost creation.
+BOOSTER_EXCLUDED_USERS_SETTING = "booster_excluded_user_ids"
+
+
+def get_excluded_user_ids(guild_id: int) -> set[int]:
+    raw = db.get_guild_setting(guild_id, BOOSTER_EXCLUDED_USERS_SETTING, "")
+    return {int(part) for part in raw.split(",") if part.strip().isdigit()}
+
+
+def add_excluded_user(guild_id: int, user_id: int) -> int:
+    """Excludes user_id from automatic booster-role creation, and purges
+    any booster_roles DB row already saved for them (same reasoning as
+    add_excluded_role: a stale saved entry would otherwise get restored the
+    moment they run /booster customize or /booster restore manually).
+    Returns the number of DB rows purged (0 or 1).
+    """
+    ids = get_excluded_user_ids(guild_id)
+    ids.add(user_id)
+    db.set_guild_setting(guild_id, BOOSTER_EXCLUDED_USERS_SETTING, ",".join(str(i) for i in ids))
+
+    if db.get_booster_role(user_id, guild_id):
+        db.delete_booster_role(user_id, guild_id)
+        return 1
+    return 0
+
+
+def remove_excluded_user(guild_id: int, user_id: int) -> bool:
+    """Returns True if the user was actually on the list."""
+    ids = get_excluded_user_ids(guild_id)
+    if user_id not in ids:
+        return False
+    ids.discard(user_id)
+    db.set_guild_setting(guild_id, BOOSTER_EXCLUDED_USERS_SETTING, ",".join(str(i) for i in ids))
     return True
 
 
