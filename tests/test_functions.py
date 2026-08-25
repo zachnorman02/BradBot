@@ -75,7 +75,7 @@ def test_code_block_detection():
     print(f"\n📊 Results: {passed} passed, {failed} failed")
     return failed == 0
 
-async def test_amp_links():
+async def check_amp_links():
     """Test the AMP link fixing function"""
     print("\n🧪 Testing AMP link fixes...")
     
@@ -120,7 +120,7 @@ async def test_amp_links():
     print(f"\n📊 Results: {passed} passed, {failed} failed")
     return failed == 0
 
-async def test_tiktok_replacements():
+async def check_tiktok_replacements():
     """Test TikTok replacement behavior for video/short vs profile/discover/shop."""
     print("\n🧪 Testing TikTok link replacements...")
     
@@ -129,19 +129,19 @@ async def test_tiktok_replacements():
             "name": "Regular TikTok video",
             "url": "https://www.tiktok.com/@user/video/123456789",
             "should_replace": True,
-            "expected_domain": "tfxktok.com"
+            "expected_domain": "tnktok.com"
         },
         {
             "name": "TikTok vm short link",
             "url": "https://vm.tiktok.com/abc123/",
             "should_replace": True,
-            "expected_domain": "tfxktok.com"
+            "expected_domain": "tnktok.com"
         },
         {
             "name": "TikTok Z short link",
             "url": "https://tiktok.com/ZNRQtcK2e",
             "should_replace": True,
-            "expected_domain": "tfxktok.com"
+            "expected_domain": "tnktok.com"
         },
         {
             "name": "TikTok profile - should NOT replace",
@@ -209,7 +209,7 @@ async def test_tiktok_replacements():
     print(f"\n📊 Results: {passed} passed, {failed} failed")
     return failed == 0
 
-def test_manual_input():
+def interactive_test():
     """Interactive testing - enter your own content to test"""
     print("\n🎮 Interactive Testing")
     print("Enter message content to test code block detection (or 'quit' to exit):")
@@ -236,22 +236,22 @@ async def main():
     test1_passed = test_code_block_detection()
     
     # Test AMP link fixing
-    test2_passed = await test_amp_links()
-    
+    test2_passed = await check_amp_links()
+
     # Test TikTok replacements
-    test3_passed = await test_tiktok_replacements()
-    
+    test3_passed = await check_tiktok_replacements()
+
     # Overall result
     print("\n" + "=" * 50)
     if test1_passed and test2_passed and test3_passed:
         print("🎉 All tests PASSED!")
     else:
         print("⚠️  Some tests FAILED - check output above")
-    
+
     # Interactive testing
     print("\nWant to test with custom input? (y/n): ", end="")
     if input().lower().startswith('y'):
-        test_manual_input()
+        interactive_test()
 
 if __name__ == "__main__":
     import asyncio

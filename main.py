@@ -5,7 +5,6 @@ from typing import Literal
 
 # Third-party imports
 import discord
-from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -29,26 +28,10 @@ logger.info(f"[IMPORT] USE_IAM_AUTH={os.getenv('USE_IAM_AUTH')}")
 logger.info(f"[IMPORT] AWS_ACCESS_KEY_ID={'SET' if os.getenv('AWS_ACCESS_KEY_ID') else 'NOT SET'}")
 
 # Local imports - Command groups
-from commands import (
-    AdminGroup,
-    AlarmGroup,
-    BirthdayGroup,
-    BoosterGroup,
-    ConversionGroup,
-    EmojiGroup,
-    IssuesGroup,
-    LinkGroup,
-    ModToolsGroup,
-    PollGroup,
-    SettingsGroup,
-    StarboardGroup,
-    UtilityGroup,
-    VoiceGroup,
-    echo_command,
-    timestamp_command
-)
-from commands.reaction_commands import setup_reaction_commands
-from commands.views import AdminSettingsView, CommandToggleView, IssuePanelView, PollView
+from commands.registry import register_all
+from commands.admin import AdminSettingsView, CommandToggleView
+from commands.issues import IssuePanelView
+from commands.poll import PollView
 
 # Local imports - Core functionality
 from core import (
@@ -75,11 +58,13 @@ from core import (
     timer_check
 )
 from utils.ffmpeg_helper import ensure_ffmpeg, which_ffmpeg
-from utils.timestamp_helpers import TimestampStyle
 
-# Load environment variables
+# Load environment variables. load_secret_env() overwrites .env values with
+# whatever's in AWS Secrets Manager, so local runs can set SKIP_SECRETS_MANAGER=1
+# to keep .env authoritative instead.
 load_dotenv()
-load_secret_env()
+if not os.getenv("SKIP_SECRETS_MANAGER"):
+    load_secret_env()
 
 # Setup Discord intents
 intents = discord.Intents.default()
@@ -93,24 +78,9 @@ bot = commands.Bot(command_prefix=BOT_PREFIX, intents=intents)
 # COMMAND REGISTRATION
 # ============================================================================
 
-# Add command groups to the tree
-bot.tree.add_command(AdminGroup())
-bot.tree.add_command(AlarmGroup())
-bot.tree.add_command(BirthdayGroup())
-bot.tree.add_command(BoosterGroup())
-bot.tree.add_command(ConversionGroup())
-bot.tree.add_command(EmojiGroup(bot))
-bot.tree.add_command(IssuesGroup())
-bot.tree.add_command(LinkGroup())
-bot.tree.add_command(ModToolsGroup())
-bot.tree.add_command(PollGroup(name="poll", description="Create and manage text-response polls"))
-bot.tree.add_command(SettingsGroup())
-bot.tree.add_command(StarboardGroup())
-bot.tree.add_command(UtilityGroup(name="utility", description="Reminders and timers"))
-bot.tree.add_command(VoiceGroup())
-
-# Setup reaction and rules agreement commands
-setup_reaction_commands(bot.tree)
+# Every group, context menu, and standalone command is registered here in
+# one pass -- see commands/registry.py for the full list.
+register_all(bot.tree)
 
 
 # ============================================================================
@@ -191,7 +161,7 @@ async def on_ready():
 
         # Initialize alarms table and schedule persisted alarms
         try:
-            from commands.alarm_commands import schedule_all_existing_alarms
+            from commands.alarm import schedule_all_existing_alarms
             schedule_all_existing_alarms(bot)
             logger.info("Alarms initialized and scheduled")
         except Exception as e:
@@ -554,41 +524,6 @@ async def resync_commands(ctx, scope: Literal["global", "guild"] = "global"):
                 await ctx.send(f"✅ Globally synced {len(synced)} command(s).")
         except Exception as e:
             await ctx.send(f"❌ Failed to sync commands: {e}")
-
-
-# ============================================================================
-# STANDALONE SLASH COMMANDS  
-# ============================================================================
-@bot.tree.command(name="echo", description="Have the bot repeat a message in this channel")
-@app_commands.describe(
-    message="What should the bot say?",
-    allow_mentions="Allow mentions in the echoed message (default: disabled)"
-)
-async def echo(
-    interaction: discord.Interaction,
-    message: str,
-    allow_mentions: bool = False
-):
-    """Echo helper."""
-    await echo_command(interaction, message, allow_mentions)
-
-
-@bot.tree.command(name="timestamp", description="Generate a Discord timestamp")
-@app_commands.describe(
-    date="Date in YYYY-MM-DD format (optional, defaults to today)",
-    time="Time in 24hr (13:00) or 12hr (1 PM, 1:00 PM) format (optional, defaults to current time)",
-    style="Display style for the timestamp",
-    timezone_offset="Hours behind UTC for the input time (e.g. -6 for CST, -4 for EDT, 1 for CET)"
-)
-async def timestamp(
-    interaction: discord.Interaction,
-    date: str = None,
-    time: str = None,
-    style: TimestampStyle = None,
-    timezone_offset: int = 0
-):
-    """Creates a Discord timestamp that shows relative time and adapts to user's timezone."""
-    await timestamp_command(interaction, date, time, style, timezone_offset)
 
 
 # ============================================================================

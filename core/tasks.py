@@ -7,7 +7,7 @@ import asyncio
 from database import db
 from collections import defaultdict
 from .counting import clear_counting_penalty_if_expired
-from commands.booster_commands import _ensure_role_position
+from commands.booster.helpers import _ensure_role_position, find_personal_roles as _find_personal_roles
 from utils.logger import logger
 
 
@@ -332,10 +332,8 @@ async def ensure_base_level_role(member: discord.Member):
 # ============================================================================
 # BOOSTER ROLE AUTOMATION
 # ============================================================================
-
-def _find_personal_roles(member: discord.Member):
-    """Return one-member roles for this member (excluding @everyone)."""
-    return [role for role in member.roles if not role.is_default() and len(role.members) == 1]
+# _find_personal_roles is imported from commands.booster.helpers (as
+# find_personal_roles) -- it used to be duplicated here.
 
 
 def _is_counting_penalty_role(guild_id: int, role_id: int) -> bool:
@@ -537,23 +535,45 @@ async def _restore_or_create_booster_role(member: discord.Member) -> bool:
 
 
 async def handle_booster_stopped(member: discord.Member):
-    """Handle when a member stops boosting - save their role without deleting it."""
+    """Handle when a member stops boosting: save their role's current
+    appearance, then delete it. handle_booster_started will recreate it
+    from the saved data if/when they boost again.
+
+    Only acts on personal roles already tracked in the booster_roles table
+    (i.e. the bot created/saved them) -- a "personal role" (single-holder,
+    non-@everyone) that was never associated with boosting is left alone.
+    """
     try:
-        # Find custom roles (only one member, not @everyone)
         personal_roles = _find_personal_roles(member)
         personal_roles = [r for r in personal_roles if not _is_counting_penalty_role(member.guild.id, r.id)]
-        
-        if personal_roles:
-            for role in personal_roles:
-                # Save role configuration
-                if await _save_booster_role(member, role):
-                    print(f"💾 Saved booster role configuration for {member.display_name} (role retained)")
+
+        for role in personal_roles:
+            if not db.get_booster_role(member.id, member.guild.id):
+                continue
+
+            if await _save_booster_role(member, role):
+                print(f"💾 Saved booster role configuration for {member.display_name}")
+            try:
+                await role.delete(reason=f"Booster role removed: {member.display_name} is no longer boosting")
+                print(f"🗑️ Removed booster role '{role.name}' from {member.display_name} (no longer boosting)")
+            except Exception as e:
+                print(f"Error removing booster role for {member.display_name}: {e}")
     except Exception as e:
         print(f"Error processing booster status loss for {member.display_name}: {e}")
 
 
 async def handle_booster_started(member: discord.Member):
-    """Handle when a member starts boosting - restore or create their role"""
+    """Handle when a member starts boosting - restore or create their role.
+
+    Skips entirely for guild-excluded users (see commands/booster/helpers.py
+    add_excluded_user) -- they can still get a role via /booster customize
+    or /booster restore if run manually, just not automatically on boost.
+    """
+    from commands.booster.helpers import get_excluded_user_ids
+
+    if member.id in get_excluded_user_ids(member.guild.id):
+        return
+
     await _restore_or_create_booster_role(member)
 
 
@@ -562,25 +582,32 @@ async def handle_booster_started(member: discord.Member):
 # ============================================================================
 
 async def _check_booster_roles_for_guild(guild: discord.Guild):
-    """Check and save booster roles for non-boosters in a guild"""
+    """Safety net for members who lost booster status without the
+    on_member_update handler catching it (e.g. missed gateway event): save
+    and remove their tracked booster role, same as handle_booster_stopped."""
     for member in guild.members:
         # Skip bots
         if member.bot:
             continue
-        
+
         # Find custom roles (only one member, not @everyone)
         personal_roles = _find_personal_roles(member)
         personal_roles = [r for r in personal_roles if not _is_counting_penalty_role(guild.id, r.id)]
-        
+
         # Check if user has custom roles but is NOT a booster (lost booster status)
         if personal_roles and not member.premium_since:
-            # Only save if they have a booster role in the database (meaning they were previously a booster)
+            # Only act if they have a booster role in the database (meaning they were previously a booster)
             existing_role = db.get_booster_role(member.id, guild.id)
             if existing_role:
                 # Use the highest personal role by position
                 role = max(personal_roles, key=lambda r: r.position)
                 if await _save_booster_role(member, role):
                     print(f"💾 [Daily scan] Updated booster role configuration for {member.display_name}")
+                try:
+                    await role.delete(reason=f"[Daily scan] Booster role removed: {member.display_name} is no longer boosting")
+                    print(f"🗑️ [Daily scan] Removed booster role '{role.name}' from {member.display_name} (no longer boosting)")
+                except Exception as e:
+                    print(f"[Daily scan] Error removing booster role for {member.display_name}: {e}")
 
 
 async def _check_verified_roles_for_guild(guild: discord.Guild, verified_role, lvl0_role):
@@ -1303,7 +1330,7 @@ async def poll_auto_close_check(bot):
 async def poll_results_refresh(bot):
     """Periodically refresh poll embeds that display live responses."""
     await bot.wait_until_ready()
-    from commands.poll_commands import update_poll_embed  # Lazy import to avoid circular deps
+    from commands.poll.helpers import update_poll_embed  # Lazy import to avoid circular deps
 
     while not bot.is_closed():
         try:

@@ -61,22 +61,32 @@ sudo systemctl enable --now bradbot
 journalctl -u bradbot -f
 ```
 
+## 2.5 Deploying a Non-Main Branch to Prod
+
+`.github/workflows/deploy.yml` normally deploys `main` (auto-triggered on every push to `main`). To test a branch against the real prod bot before merging:
+
+1. GitHub → **Actions** tab → **Deploy to Lightsail** → **Run workflow**.
+2. Pick the branch from the **Use workflow from** dropdown.
+3. Run it. It checks out that branch on the Lightsail host and restarts `bradbot` against it — same service, same token, same DB, so this **is** prod, not a separate staging copy.
+
+**To switch back:** re-run the workflow with `main` picked in the dropdown, or just push/merge to `main` — the normal push trigger redeploys it automatically. Either path is a `git checkout -B <branch> origin/<branch>` on the server, so switching back is a normal deploy, not a special rollback procedure.
+
 ## 3. Syncing Commands
 
-When you change slash commands, run `/admin sync` (global or guild scope) or the text command `:resync [global|guild]`. Always watch logs for `Failed to upload commands` errors.
+When you change slash commands, run `/admin ops sync` (global or guild scope) or the text command `:resync [global|guild]`. Always watch logs for `Failed to upload commands` errors.
 
 ## 4. Updating Secrets
 
 1. Edit the JSON secret in Secrets Manager.
 2. Restart the service: `sudo systemctl restart bradbot`.
-3. (Optional) `/admin sync` if command signatures changed.
+3. (Optional) `/admin ops sync` if command signatures changed.
 
 ## 5. Troubleshooting
 
 | Problem | Action |
 | --- | --- |
 | Service won’t start | `journalctl -u bradbot -n 200` for stack traces; verify IAM permissions for Secrets Manager. |
-| Slash commands missing | `/admin sync` or `:resync`. Remember Discord caches global commands for up to an hour. |
+| Slash commands missing | `/admin ops sync` or `:resync`. Remember Discord caches global commands for up to an hour. |
 | “Unknown interaction” errors | Ensure interactions are deferred/responded to within 3 seconds; look for blockers in logs. |
 | Database auth failures | Confirm `DB_HOST`, `DB_USER`, and IAM auth vs password (`USE_IAM_AUTH`). |
 | Voice/TTS issues | Ensure `ffmpeg` is installed and the `BRADBOT_TTS_PROVIDER`/voice defaults are set. |
@@ -84,7 +94,7 @@ When you change slash commands, run `/admin sync` (global or guild scope) or the
 ## 6. Background Tasks
 
 - Poll auto-refresh/close, reminders, timers, conditional roles, booster checks are in `core/tasks.py`.
-- Use `/admin tasklogs` (bot owner only) to inspect the last N runs.
+- Use `/admin ops tasklogs` (bot owner only) to inspect the last N runs.
 
 ## 7. Useful Commands
 

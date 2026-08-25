@@ -33,6 +33,8 @@ DISCORD_TOKEN=your_dev_bot_token_here
 ```
 
 > **Note**: AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) are optional. Without them, TTS and S3 features won't work locally, but everything else will. GitHub token is also optional unless testing issue commands.
+>
+> **Careful with AWS credentials**: if you have AWS credentials configured on your machine (e.g. via `aws configure` or an existing `AWS_PROFILE`), BradBot will use them to pull the production secret (`BradBot/creds`) and overlay it onto your `.env` values — including `DISCORD_TOKEN`. That means your dev bot can silently connect as the *production* bot. Set `SKIP_SECRETS_MANAGER=1` in your `.env` (or the environment) to make local runs use only `.env`, no Secrets Manager lookup.
 
 ## 4. Start PostgreSQL
 
@@ -59,14 +61,14 @@ python scripts/migrate.py migrate
 python main.py
 ```
 
-Invite your dev bot to a test guild and run `/admin sync` (or `:resync`) after you change slash commands.
+Invite your dev bot to a test guild and run `/admin ops sync` (or `:resync`) after you change slash commands.
 
 ## 7. Troubleshooting
 
 | Issue | Fix |
 | --- | --- |
 | `psycopg2.OperationalError` | Ensure Postgres is running; verify host/port/user/password in `.env`. |
-| Slash command changes not showing | Run `/admin sync` or `:resync` in your dev guild. |
+| Slash command changes not showing | Run `/admin ops sync` or `:resync` in your dev guild. |
 | Missing env vars | Double-check `.env` lives next to `main.py`. |
 | Voice/TTS errors | Confirm `ffmpeg` is installed and on your `PATH`. Add AWS credentials to `.env` to test Polly TTS. |
 | GitHub commands not working | Add `GITHUB_TOKEN` to `.env` for issue/discussion commands. |
