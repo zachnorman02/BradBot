@@ -149,22 +149,22 @@ class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
     routes = [
-        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram\.com|kkinstagram\.com)/(p|reels?|tv|share)/([\w-]+)",
-        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram\.com|kkinstagram\.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
+        r"https?://(?:www\.)?(instagram\.com|oginstagram\.com)/(p|reels?|tv|share)/([\w-]+)",
+        r"https?://(?:www\.)?(instagram\.com|oginstagram\.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
     ]
     replacement = "instagram.com"  # Keep Instagram domain, just remove trackers
-    
+
     def get_embed_url(self) -> Optional[str]:
-        """Get the embed URL using kkinstagram for better embeds."""
+        """Get the embed URL using oginstagram for better embeds."""
         if not self.is_valid():
             return None
-        # Replace domain with kkinstagram for embed
+        # Replace domain with oginstagram for embed
         for route in self.routes:
             if re.match(route, self.url, re.IGNORECASE):
                 embed_url = re.sub(
-                    r'https?://[^/]+', 
-                    'https://kkinstagram.com', 
-                    self.url, 
+                    r'https?://[^/]+',
+                    'https://oginstagram.com',
+                    self.url,
                     flags=re.IGNORECASE
                 )
                 return self._clean_tracking_params(embed_url)
