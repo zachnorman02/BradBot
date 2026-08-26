@@ -149,8 +149,8 @@ class InstagramLink(SimpleWebsiteLink):
     """Instagram link handler."""
     name = "Instagram"
     routes = [
-        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram\.com|kkinstagram\.com|oginstagram\.com)/(p|reels?|tv|share)/([\w-]+)",
-        r"https?://(?:www\.)?(instagram\.com|d\.vxinstagram\.com|kkinstagram\.com|oginstagram\.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
+        r"https?://(?:www\.)?(instagram\.com|oginstagram\.com)/(p|reels?|tv|share)/([\w-]+)",
+        r"https?://(?:www\.)?(instagram\.com|oginstagram\.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
     ]
     replacement = "instagram.com"  # Keep Instagram domain, just remove trackers
 
