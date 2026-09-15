@@ -28,6 +28,7 @@ choices here:
 import discord
 
 from utils.color_parsing import parse_hex_color
+from utils.image_processing import prepare_role_icon
 
 # The one fixed RGB triple Discord's API treats as the "holographic" role
 # style. Any other tertiary color combination is rejected by the API, so we
@@ -164,10 +165,11 @@ class BoosterCustomizeModal(discord.ui.Modal, title="Customize Booster Role"):
         )
         if icon_files:
             try:
-                edit_kwargs["display_icon"] = await icon_files[0].read()
+                icon_bytes = await icon_files[0].read()
             except discord.HTTPException as e:
                 await interaction.response.send_message(f"❌ Could not read uploaded icon: {e}", ephemeral=True)
                 return
+            edit_kwargs["display_icon"] = prepare_role_icon(icon_bytes)
         elif want_clear_icon:
             edit_kwargs["display_icon"] = None
 

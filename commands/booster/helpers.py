@@ -5,6 +5,7 @@ from typing import Optional
 import discord
 
 from database import db
+from utils.image_processing import prepare_role_icon
 from utils.logger import logger
 
 # Guild setting storing a comma-separated list of role IDs that should never
@@ -216,7 +217,10 @@ async def _apply_icon(role: discord.Role, icon_data, guild: discord.Guild) -> bo
         logger.info(f"Guild missing ROLE_ICONS; skip icon for {role}")
         return False
     try:
-        await role.edit(display_icon=payload)
+        # Icons saved before we started normalizing uploads may still be
+        # encoded in a way that loses transparency, so re-normalize on
+        # every re-apply, not just at upload time.
+        await role.edit(display_icon=prepare_role_icon(payload))
         return True
     except Exception as e:
         logger.error(f"Could not apply icon for {role}: {e}")
