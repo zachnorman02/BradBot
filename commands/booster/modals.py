@@ -25,6 +25,8 @@ choices here:
   react to), so Clear Icon is a separate Off/On dropdown. Uploading a new
   icon always wins over Clear Icon if both are set.
 """
+import asyncio
+
 import discord
 
 from utils.color_parsing import parse_hex_color
@@ -169,7 +171,8 @@ class BoosterCustomizeModal(discord.ui.Modal, title="Customize Booster Role"):
             except discord.HTTPException as e:
                 await interaction.response.send_message(f"❌ Could not read uploaded icon: {e}", ephemeral=True)
                 return
-            edit_kwargs["display_icon"] = prepare_role_icon(icon_bytes)
+            # Decoding/quantizing/re-encoding is CPU-bound; keep it off the event loop.
+            edit_kwargs["display_icon"] = await asyncio.to_thread(prepare_role_icon, icon_bytes)
         elif want_clear_icon:
             edit_kwargs["display_icon"] = None
 

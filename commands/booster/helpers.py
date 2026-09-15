@@ -1,5 +1,6 @@
 """Booster-role business logic shared between the /booster commands and the
 admin domain's booster-related user context menus."""
+import asyncio
 from typing import Optional
 
 import discord
@@ -220,7 +221,9 @@ async def _apply_icon(role: discord.Role, icon_data, guild: discord.Guild) -> bo
         # Icons saved before we started normalizing uploads may still be
         # encoded in a way that loses transparency, so re-normalize on
         # every re-apply, not just at upload time.
-        await role.edit(display_icon=prepare_role_icon(payload))
+        # Decoding/quantizing/re-encoding is CPU-bound; keep it off the event loop.
+        normalized = await asyncio.to_thread(prepare_role_icon, payload)
+        await role.edit(display_icon=normalized)
         return True
     except Exception as e:
         logger.error(f"Could not apply icon for {role}: {e}")

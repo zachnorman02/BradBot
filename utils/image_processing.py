@@ -24,6 +24,13 @@ MAX_ROLE_ICON_BYTES = 256 * 1024
 # most uploads never hit this, since color reduction alone usually gets a
 # role icon under the size limit without losing any resolution.
 SANITY_MAX_DIMENSION = 1024
+# Refuse to even decode an input above this many pixels. Image.open() only
+# parses the header, so this check happens before the expensive part;
+# without it, a small file that declares an enormous pixel grid (a classic
+# "decompression bomb") gets fully decoded into memory before anything
+# here gets a chance to shrink it back down. Ordinary uploads -- even a
+# large photo -- land nowhere near this.
+MAX_INPUT_PIXELS = 40_000_000  # ~40 MP, e.g. an 8000x5000 image
 MIN_DIMENSION = 32  # last-resort floor if quantize/quality alone can't hit the size limit
 MIN_JPEG_QUALITY = 35
 # Palette sizes to try, largest first, when a transparent PNG needs to shrink.
@@ -35,9 +42,9 @@ QUANTIZE_STEPS = (256, 192, 128, 96, 64, 48, 32)
 def _has_alpha(image: Image.Image) -> bool:
     if image.mode in ("RGBA", "LA"):
         return True
-    if image.mode == "P":
-        return "transparency" in image.info
-    return False
+    # A grayscale/RGB/palette PNG can still carry a tRNS chunk marking one
+    # color value as transparent -- Pillow surfaces that as `info`, not mode.
+    return "transparency" in image.info
 
 
 def _encode_png(image: Image.Image) -> bytes:
@@ -110,7 +117,7 @@ def _compress_opaque(image: Image.Image, max_bytes: int) -> bytes:
 
     while len(encoded) > max_bytes:
         if quality > MIN_JPEG_QUALITY:
-            quality -= 15
+            quality = max(MIN_JPEG_QUALITY, quality - 15)
         else:
             smaller = _shrink(image)
             if smaller is None:
@@ -141,6 +148,10 @@ def prepare_role_icon(data: bytes, *, max_bytes: int = MAX_ROLE_ICON_BYTES) -> b
     """
     try:
         image = Image.open(BytesIO(data))
+        width, height = image.size
+        if width * height > MAX_INPUT_PIXELS:
+            logger.warning(f"Uploaded icon is {width}x{height}; refusing to decode, using as-is")
+            return data
         image.load()
     except Exception as e:
         logger.warning(f"Could not process uploaded icon image, using as-is: {e}")
