@@ -146,7 +146,6 @@ async def process_message_links(message: discord.Message) -> dict | None:
         - content_changed: Whether the content was modified
         - new_content: The modified content
         - embedez_url: EmbedEZ URL if applicable
-        - instagram_embed_url: Instagram embed URL if applicable
         - urls: Original URLs found
         - fixed_urls: Dictionary of URL replacements
         
@@ -187,17 +186,12 @@ async def process_message_links(message: discord.Message) -> dict | None:
     content_changed = False
     fixed_urls = {}
     embedez_url = None
-    instagram_embed_url = None
-    
+
     # Process all URLs for fixes
     for raw_url, normalized_url, trailing_punctuation in urls_to_process:
         for website_class in websites:
             website = website_class.if_valid(normalized_url)
             if website:
-                # Check if this is Instagram and get embed URL
-                if website.__class__.__name__ == 'InstagramLink' and hasattr(website, 'get_embed_url'):
-                    instagram_embed_url = website.get_embed_url()
-                
                 fixed_url = await website.render()
                 fixed_url = _strip_trailing_slash(fixed_url) if fixed_url else fixed_url
                 if fixed_url and fixed_url != normalized_url:
@@ -264,14 +258,11 @@ async def process_message_links(message: discord.Message) -> dict | None:
         new_content = f'{message.author.mention}: {new_content}'
         if embedez_url:
             new_content += f"\n-# [EmbedEZ]({embedez_url})"
-        if instagram_embed_url:
-            new_content += f"\n-# [Embed]({instagram_embed_url})"
-    
+
     return {
         'content_changed': content_changed,
         'new_content': new_content,
         'embedez_url': embedez_url,
-        'instagram_embed_url': instagram_embed_url,
         'urls': urls,
         'fixed_urls': fixed_urls
     }

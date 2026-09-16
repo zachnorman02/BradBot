@@ -7,7 +7,7 @@ import asyncio
 from database import db
 from collections import defaultdict
 from .counting import clear_counting_penalty_if_expired
-from commands.booster.helpers import _ensure_role_position, find_personal_roles as _find_personal_roles
+from commands.booster.helpers import _apply_icon, _ensure_role_position, find_personal_roles as _find_personal_roles
 from utils.logger import logger
 
 
@@ -471,11 +471,8 @@ async def _restore_or_create_booster_role(member: discord.Member) -> bool:
                 )
                 
                 # Set icon if it exists
-                if db_role_data['icon_data'] and "ROLE_ICONS" in member.guild.features:
-                    try:
-                        await restored_role.edit(display_icon=db_role_data['icon_data'])
-                    except Exception as e:
-                        print(f"Could not restore role icon for {member.display_name}: {e}")
+                if db_role_data['icon_data']:
+                    await _apply_icon(restored_role, db_role_data['icon_data'], member.guild)
 
                 await _ensure_role_position(restored_role, member.guild.me, member)
                 
