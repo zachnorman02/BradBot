@@ -76,9 +76,18 @@ def _clear_fully_transparent(image: Image.Image) -> Image.Image:
 
 
 def _quantize(image: Image.Image, colors: int) -> Image.Image:
+    """Reduce to a smaller color count for a much smaller PNG, but hand
+    back a true RGBA image, not the indexed "P" + tRNS chunk `quantize()`
+    actually returns. That indexed representation is exactly what this
+    module exists to get away from -- it's the encoding that doesn't
+    reliably round-trip through Discord's image pipeline (see module
+    docstring), so re-introducing it here just to save a few more bytes
+    would defeat the point.
+    """
     # FASTOCTREE is the quantize method that understands a source alpha
     # channel; the default (MEDIANCUT) would just drop it.
-    return image.quantize(colors=colors, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.FLOYDSTEINBERG)
+    quantized = image.quantize(colors=colors, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.FLOYDSTEINBERG)
+    return quantized.convert("RGBA")
 
 
 def _shrink(image: Image.Image) -> Image.Image | None:

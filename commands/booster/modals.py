@@ -126,6 +126,12 @@ class BoosterCustomizeModal(discord.ui.Modal, title="Customize Booster Role"):
     async def on_submit(self, interaction: discord.Interaction):
         from commands.booster.helpers import save_role_to_db
 
+        # Icon processing + the role edit can take longer than Discord's ~3s
+        # ack window (a large valid upload alone can take a moment to decode
+        # and quantize), so acknowledge immediately and respond via followup
+        # for every path below instead of the initial interaction response.
+        await interaction.response.defer(ephemeral=True)
+
         name = self.role_name.component.value.strip() or self.role.name
 
         colors_raw = self.colors.component.value.strip()
@@ -154,7 +160,7 @@ class BoosterCustomizeModal(discord.ui.Modal, title="Customize Booster Role"):
                 elif s_action == "set":
                     secondary_color = s_value
         except ValueError as e:
-            await interaction.response.send_message(f"❌ {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ {e}", ephemeral=True)
             return
 
         icon_files = self.icon.component.values
@@ -169,7 +175,7 @@ class BoosterCustomizeModal(discord.ui.Modal, title="Customize Booster Role"):
             try:
                 icon_bytes = await icon_files[0].read()
             except discord.HTTPException as e:
-                await interaction.response.send_message(f"❌ Could not read uploaded icon: {e}", ephemeral=True)
+                await interaction.followup.send(f"❌ Could not read uploaded icon: {e}", ephemeral=True)
                 return
             # Decoding/quantizing/re-encoding is CPU-bound; keep it off the event loop.
             edit_kwargs["display_icon"] = await asyncio.to_thread(prepare_role_icon, icon_bytes)
@@ -179,14 +185,14 @@ class BoosterCustomizeModal(discord.ui.Modal, title="Customize Booster Role"):
         try:
             await self.role.edit(**edit_kwargs)
         except discord.Forbidden:
-            await interaction.response.send_message("❌ I don't have permission to edit that role.", ephemeral=True)
+            await interaction.followup.send("❌ I don't have permission to edit that role.", ephemeral=True)
             return
         except discord.HTTPException as e:
-            await interaction.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Discord error: {e}", ephemeral=True)
             return
 
         await save_role_to_db(self.member.id, self.role.guild.id, self.role)
         note = " (Colors ignored -- Holographic was On)" if want_holographic and colors_raw else ""
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"✅ Updated {self.member.mention}'s booster role: {self.role.mention}{note}", ephemeral=True
         )
