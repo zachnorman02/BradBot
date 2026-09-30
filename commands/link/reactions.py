@@ -46,8 +46,8 @@ async def handle_link_message_reaction(bot: discord.Client, payload: discord.Raw
     if emoji not in LINK_MESSAGE_EMOJIS:
         return
 
-    channel = bot.get_channel(payload.channel_id) or await bot.fetch_channel(payload.channel_id)
     try:
+        channel = bot.get_channel(payload.channel_id) or await bot.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
     except discord.DiscordException:
         return
@@ -56,7 +56,10 @@ async def handle_link_message_reaction(bot: discord.Client, payload: discord.Raw
     if owner_id is None:
         return  # not one of our replaced-link messages
 
-    reactor = payload.member or bot.get_user(payload.user_id) or await bot.fetch_user(payload.user_id)
+    try:
+        reactor = payload.member or bot.get_user(payload.user_id) or await bot.fetch_user(payload.user_id)
+    except discord.DiscordException:
+        return
 
     if payload.user_id != owner_id:
         # Locked to the original poster, same as the Apps context menus.

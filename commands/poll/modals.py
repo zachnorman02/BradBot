@@ -170,8 +170,14 @@ class PollCreateModal(discord.ui.Modal, title="Create Poll"):
             )
             embed.set_footer(text=f"Poll ID: {poll_id} • Created by {interaction.user.display_name} • 0 responses")
             embed.add_field(name="How to Respond", value="Click the **Submit Response** button below to share your answer!", inline=False)
+            image_file = None
             if image:
-                embed.set_image(url=image.url)
+                # Re-upload the modal's attachment as a real file on this
+                # message rather than pointing the embed at the upload's own
+                # CDN URL -- that URL isn't guaranteed to keep working once
+                # it's not attached to any message.
+                image_file = await image.to_file()
+                embed.set_image(url=f"attachment://{image_file.filename}")
 
             poll_settings = []
             if not allow_multiple:
@@ -190,7 +196,10 @@ class PollCreateModal(discord.ui.Modal, title="Create Poll"):
                 embed.add_field(name="⏱️ Auto-Close", value="\n".join(auto_close_info), inline=False)
 
             view = PollView(poll_id, question)
-            await interaction.response.send_message(embed=embed, view=view)
+            if image_file:
+                await interaction.response.send_message(embed=embed, view=view, file=image_file)
+            else:
+                await interaction.response.send_message(embed=embed, view=view)
 
             message = await interaction.original_response()
             db.update_poll_message_id(poll_id, message.id)

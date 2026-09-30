@@ -583,49 +583,44 @@ async def _check_booster_roles_for_guild(guild: discord.Guild):
     on_member_update handler catching it (e.g. missed gateway event): save
     and remove their tracked booster role, same as handle_booster_stopped.
 
-    member.premium_since here comes from the gateway member cache, which is
-    exactly what a missed event (the thing this scan exists to catch) can
-    leave stale -- so a cached "not boosting" isn't good enough evidence to
-    delete someone's role on. Re-fetch the member from the API first to get
-    an authoritative answer before doing anything destructive.
+    Walks every DB-tracked booster role for this guild and re-fetches each
+    member fresh from the API, rather than gating on guild.members' cached
+    premium_since. That cache is exactly what a missed event leaves stale --
+    gating on "cached not boosting" before ever checking would silently skip
+    anyone whose cache is stuck showing them as still boosting after they
+    actually stopped, which is precisely the case this scan exists to catch.
+    A short delay between fetches keeps a guild with many tracked boosters
+    from firing an unbounded burst of requests in one go.
     """
-    for member in guild.members:
-        # Skip bots
-        if member.bot:
+    for row in db.get_all_booster_roles(guild.id):
+        user_id = row['user_id']
+        try:
+            member = await guild.fetch_member(user_id)
+        except discord.NotFound:
+            continue  # they've left the guild; not this scan's concern
+        except Exception as e:
+            print(f"[Daily scan] Could not confirm boost status for user {user_id}, skipping: {e}")
             continue
 
-        # Find custom roles (only one member, not @everyone)
+        await asyncio.sleep(1)  # be gentle on the API across a guild with many tracked boosters
+
+        if member.bot or member.premium_since:
+            continue  # still boosting -- nothing to reconcile
+
         personal_roles = _find_personal_roles(member)
         personal_roles = [r for r in personal_roles if not _is_counting_penalty_role(guild.id, r.id)]
+        if not personal_roles:
+            continue
 
-        # Check if user has custom roles but is NOT a booster (lost booster status)
-        if personal_roles and not member.premium_since:
-            # Only act if they have a booster role in the database (meaning they were previously a booster)
-            existing_role = db.get_booster_role(member.id, guild.id)
-            if not existing_role:
-                continue
-
-            try:
-                fresh_member = await guild.fetch_member(member.id)
-            except discord.NotFound:
-                continue  # they've left the guild; not this scan's concern
-            except Exception as e:
-                print(f"[Daily scan] Could not confirm boost status for {member.display_name}, skipping: {e}")
-                continue
-
-            if fresh_member.premium_since:
-                print(f"[Daily scan] Cached boost status for {member.display_name} was stale -- they're still boosting, leaving role alone")
-                continue
-
-            # Use the highest personal role by position
-            role = max(personal_roles, key=lambda r: r.position)
-            if await _save_booster_role(member, role):
-                print(f"💾 [Daily scan] Updated booster role configuration for {member.display_name}")
-            try:
-                await role.delete(reason=f"[Daily scan] Booster role removed: {member.display_name} is no longer boosting")
-                print(f"🗑️ [Daily scan] Removed booster role '{role.name}' from {member.display_name} (no longer boosting)")
-            except Exception as e:
-                print(f"[Daily scan] Error removing booster role for {member.display_name}: {e}")
+        # Use the highest personal role by position
+        role = max(personal_roles, key=lambda r: r.position)
+        if await _save_booster_role(member, role):
+            print(f"💾 [Daily scan] Updated booster role configuration for {member.display_name}")
+        try:
+            await role.delete(reason=f"[Daily scan] Booster role removed: {member.display_name} is no longer boosting")
+            print(f"🗑️ [Daily scan] Removed booster role '{role.name}' from {member.display_name} (no longer boosting)")
+        except Exception as e:
+            print(f"[Daily scan] Error removing booster role for {member.display_name}: {e}")
 
 
 async def _check_verified_roles_for_guild(guild: discord.Guild, verified_role, lvl0_role):

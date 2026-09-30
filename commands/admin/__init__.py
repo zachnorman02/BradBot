@@ -11,6 +11,8 @@ from commands.admin.context_menus import (
     restore_booster_role_ctx,
     edit_booster_role_ctx,
     test_booster_role_ctx,
+    exclude_booster_user_ctx,
+    include_booster_user_ctx,
 )
 
 ADMIN_CONTEXT_MENUS = [
@@ -19,6 +21,8 @@ ADMIN_CONTEXT_MENUS = [
     restore_booster_role_ctx,
     edit_booster_role_ctx,
     test_booster_role_ctx,
+    exclude_booster_user_ctx,
+    include_booster_user_ctx,
 ]
 
 __all__ = [
