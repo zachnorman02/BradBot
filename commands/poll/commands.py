@@ -16,6 +16,7 @@ from utils.logger import logger
 from utils.interaction_helpers import has_permission_or_owner
 from commands.common import owner_or_permissions
 from commands.poll.views import PollView, ClosedPollView
+from commands.poll.modals import PollCreateModal
 from commands.poll.helpers import update_poll_embed, can_view_poll_results
 
 
@@ -26,67 +27,16 @@ class PollGroup(app_commands.Group):
         super().__init__(name="poll", description="Create and manage text-response polls")
 
     @app_commands.command(name="create", description="Create a new text-response poll")
-    @app_commands.describe(
-        question="The poll question or prompt",
-        max_responses="Optional: Auto-close after this many responses",
-        duration_minutes="Optional: Auto-close after this many minutes",
-        show_responses="Show responses in the poll box (default: hidden)",
-        public_results="Allow anyone to view results (default: yes, only creator+admins if no)",
-        allow_multiple="Allow users to submit multiple responses (default: yes)",
-    )
     @owner_or_permissions(send_polls=True)
-    async def create(
-        self, interaction: discord.Interaction, question: str,
-        max_responses: int = None, duration_minutes: int = None,
-        show_responses: bool = False, public_results: bool = True, allow_multiple: bool = True,
-    ):
-        """Create a new poll where users can submit text responses."""
+    async def create(self, interaction: discord.Interaction):
+        """Open a form covering the question, an optional image, on/off
+        settings, and auto-close options -- replaces the old command-option
+        surface (see commands/poll/modals.py's PollCreateModal)."""
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
             return
 
-        try:
-            if not db.connection_pool:
-                db.init_pool()
-
-            close_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=duration_minutes) if duration_minutes else None
-
-            poll_id = db.create_poll(
-                guild_id=interaction.guild.id, channel_id=interaction.channel.id, creator_id=interaction.user.id,
-                question=question, max_responses=max_responses, close_at=close_at,
-                show_responses=show_responses, public_results=public_results, allow_multiple_responses=allow_multiple,
-            )
-
-            embed = discord.Embed(title="📊 Poll", description=question, color=discord.Color.blue(), timestamp=dt.datetime.now(dt.timezone.utc))
-            embed.set_footer(text=f"Poll ID: {poll_id} • Created by {interaction.user.display_name} • 0 responses")
-            embed.add_field(name="How to Respond", value="Click the **Submit Response** button below to share your answer!", inline=False)
-
-            poll_settings = []
-            if not allow_multiple:
-                poll_settings.append("🔒 One response per person")
-            if not public_results:
-                poll_settings.append("🔐 Results visible to creator & admins only")
-            if poll_settings:
-                embed.add_field(name="⚙️ Settings", value="\n".join(poll_settings), inline=False)
-
-            auto_close_info = []
-            if max_responses:
-                auto_close_info.append(f"• Closes after **{max_responses}** responses")
-            if close_at:
-                auto_close_info.append(f"• Closes <t:{int(close_at.timestamp())}:R>")
-            if auto_close_info:
-                embed.add_field(name="⏱️ Auto-Close", value="\n".join(auto_close_info), inline=False)
-
-            view = PollView(poll_id, question)
-            await interaction.response.send_message(embed=embed, view=view)
-
-            message = await interaction.original_response()
-            db.update_poll_message_id(poll_id, message.id)
-
-            logger.info(f"📊 Poll created by {interaction.user} in {interaction.guild.name}: {question}")
-        except Exception as e:
-            logger.error(f"Error creating poll: {e}")
-            await interaction.response.send_message("❌ An error occurred while creating the poll. Please try again.", ephemeral=True)
+        await interaction.response.send_modal(PollCreateModal())
 
     @create.error
     async def create_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
