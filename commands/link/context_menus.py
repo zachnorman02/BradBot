@@ -30,3 +30,21 @@ async def delete_bot_message_ctx(interaction: discord.Interaction, message: disc
         await interaction.response.send_message("✅ Message deleted.", ephemeral=True)
     except discord.DiscordException as e:
         await interaction.response.send_message(f"❌ Failed to delete message: {e}", ephemeral=True)
+
+
+@app_commands.context_menu(name="Remove Embed")
+async def remove_embed_ctx(interaction: discord.Interaction, message: discord.Message):
+    """Suppress the embed Discord generated for the link, keeping the
+    message text itself -- e.g. the link turned out NSFW or otherwise isn't
+    something the author wants previewed. Same author-only lock as
+    Delete/Edit Bot Message; also reachable via the 🙈 reaction shortcut."""
+    ok, result = validate_own_replaced_message(message, interaction)
+    if not ok:
+        await interaction.response.send_message(f"❌ {result}", ephemeral=True)
+        return
+
+    try:
+        await message.edit(suppress=True)
+        await interaction.response.send_message("✅ Embed removed.", ephemeral=True)
+    except discord.DiscordException as e:
+        await interaction.response.send_message(f"❌ Failed to remove embed: {e}", ephemeral=True)

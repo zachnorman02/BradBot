@@ -8,12 +8,17 @@
   core/tasks.py's handle_booster_started). Manual /booster customize or
   /booster restore still work for an excluded user -- this only blocks the
   automatic on-boost creation.
+- restore: slash-command equivalent of the "Restore Booster Role" context
+  menu (commands/admin/context_menus.py), for when right-clicking the
+  member isn't convenient -- slash command user parameters can be searched
+  by name/ID instead of needing to find them in a channel or member list.
 """
 import discord
 from discord import app_commands
 
 from commands.common import GuildOnlyGroup, owner_or_permissions
-from utils.interaction_helpers import send_error, send_success
+from database import db
+from utils.interaction_helpers import send_error, send_success, is_bot_owner, error_response
 
 
 class AdminBoosterGroup(GuildOnlyGroup):
@@ -21,6 +26,48 @@ class AdminBoosterGroup(GuildOnlyGroup):
 
     def __init__(self):
         super().__init__(name="booster", description="Control which roles/users can get a booster role")
+
+    @app_commands.command(name="restore", description="Recreate/reassign a member's saved booster role (e.g. after it was accidentally deleted)")
+    @app_commands.describe(member="Member whose booster role should be restored from saved data")
+    @owner_or_permissions(manage_roles=True)
+    async def restore(self, interaction: discord.Interaction, member: discord.Member):
+        """Slash-command twin of the "Restore Booster Role" context menu --
+        same restore_member_booster_role call, same assign-only-if-currently-
+        boosting safety, just reachable by picking a member instead of
+        right-clicking one."""
+        from commands.booster.helpers import restore_member_booster_role
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            if not db.connection_pool:
+                db.init_pool()
+
+            saved = [e for e in db.get_all_booster_roles(interaction.guild.id) if e["user_id"] == member.id]
+            if not saved:
+                await send_error(interaction, f"No saved booster role found for {member.mention}.")
+                return
+
+            is_booster = any(r.is_premium_subscriber() for r in member.roles)
+            assign = is_booster or await is_bot_owner(interaction)
+
+            role_obj, icon_applied = await restore_member_booster_role(
+                interaction.guild, member, saved[0], reason="Admin restore booster role (/admin booster restore)", target_role=None, assign=assign,
+            )
+            if not role_obj:
+                await send_error(interaction, f"Failed to restore a booster role for {member.mention}.")
+                return
+
+            note = "" if icon_applied or not saved[0].get("icon_data") else " (icon failed to apply)"
+            if assign:
+                await send_success(interaction, f"Restored {member.mention}'s booster role: {role_obj.mention}{note}")
+            else:
+                await send_success(
+                    interaction,
+                    f"Recreated {member.mention}'s booster role: {role_obj.mention}{note}\n"
+                    f"⚠️ Not assigned to {member.mention} -- they aren't currently boosting.",
+                )
+        except Exception as e:
+            await error_response(interaction, e, context="admin_booster_restore")
 
     @app_commands.command(name="exclude", description="Prevent a role from ever being treated as someone's booster role")
     @app_commands.describe(role="Role to exclude (e.g. an Admin role, a VIP award role)")

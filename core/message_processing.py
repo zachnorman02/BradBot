@@ -297,7 +297,12 @@ async def send_processed_message(message: discord.Message, processed_result: dic
         mention_author=False,
         silent=silent_flag
     )
-    
+
+    if sent_message:
+        from commands.link.reactions import add_link_message_reactions
+        await add_link_message_reactions(sent_message)
+
+
     # Store message tracking for reply notifications
     if sent_message and message.guild:
         # Get the first fixed URL for tracking
