@@ -1473,7 +1473,12 @@ MIGRATIONS = [
     # dropped: it's redundant now that 036 checks both column names itself
     # before folding and dropping the whole table anyway.
     Migration035(),  # Rename message_audit_logs.action to event_type
-    Migration036(),  # Fold counting_penalties into scheduled_roles, then drop it
+    # 036 (fold counting_penalties into scheduled_roles, then drop it) is
+    # disabled for now -- the role running migrations doesn't own that
+    # table and DROP TABLE needs ownership same as ALTER. Not required for
+    # the bot to run (nothing reads/writes counting_penalties anymore
+    # either way); re-enable once that table's ownership is sorted out.
+    # Migration036(),
 ]
 
 def get_applied_migrations():
@@ -1504,15 +1509,39 @@ def _ensure_table_ownership():
     every table individually -- run every migration pass so any
     newly-created table is covered automatically next time too, not just
     whatever happened to exist when this was written.
+
+    Targets CURRENT_USER (whoever this connection actually is), not a
+    hardcoded role name -- a guessed name is pointless anyway, since
+    reassigning a table's ownership requires the executing role to already
+    own it (or be superuser) regardless of what the new owner is called.
+    If that's not true for this connection, this can only report which
+    tables are still misowned, not fix them -- see the printed message.
     """
+    current_user_row = db.execute_query("SELECT current_user")
+    current_user = current_user_row[0][0] if current_user_row else None
+    print(f"   Connected as: {current_user!r}")
+
     tables = db.execute_query(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
     ) or []
+    failed = []
     for (table_name,) in tables:
         try:
-            db.execute_query(f"ALTER TABLE main.{table_name} OWNER TO admin", fetch=False)
+            # Target whoever is actually connected, not a guessed/hardcoded
+            # role name -- "ourselves", not "admin" specifically.
+            db.execute_query(f"ALTER TABLE main.{table_name} OWNER TO {current_user}", fetch=False)
         except Exception as e:
+            failed.append(table_name)
             print(f"   ⚠️ Could not claim ownership of main.{table_name}: {e}")
+
+    if failed:
+        print(
+            f"   ⚠️ {len(failed)} table(s) still not owned by {current_user!r}: {', '.join(failed)}. "
+            f"This means {current_user!r} isn't a superuser/doesn't already own them, so it can't "
+            f"reassign ownership to itself -- that has to be done once by whichever role *does* "
+            f"currently own them (or a true DB admin), e.g.: "
+            f"ALTER TABLE main.<table> OWNER TO {current_user};"
+        )
 
 
 def apply_migrations():
