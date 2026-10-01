@@ -185,7 +185,7 @@ async def on_ready():
         # Grant admin permissions on all tables
         try:
             db.execute_query("""
-                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA main TO admin
+                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA app TO admin
             """, fetch=False)
             logger.info("Granted admin privileges on all tables")
         except Exception as perm_error:
@@ -198,7 +198,7 @@ async def on_ready():
     try:
         # Get all active polls
         active_polls = db.execute_query(
-            "SELECT id, question FROM main.polls WHERE is_active = TRUE"
+            "SELECT id, question FROM app.polls WHERE is_active = TRUE"
         )
         for poll_id, question in active_polls:
             view = PollView(poll_id, question)

@@ -1289,7 +1289,7 @@ async def poll_auto_close_check(bot):
             # Get all active polls with expired close_at times
             query = """
             SELECT id, guild_id, channel_id, message_id, question, close_at
-            FROM main.polls
+            FROM app.polls
             WHERE is_active = TRUE AND close_at IS NOT NULL AND close_at <= CURRENT_TIMESTAMP
             """
             expired_polls = db.execute_query(query)
@@ -1353,7 +1353,7 @@ async def poll_results_refresh(bot):
 
             polls = db.execute_query("""
                 SELECT id, guild_id, channel_id, message_id
-                FROM main.polls
+                FROM app.polls
                 WHERE show_responses = TRUE AND message_id IS NOT NULL
             """)
 

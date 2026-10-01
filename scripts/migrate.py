@@ -54,7 +54,7 @@ class Migration001(Migration):
         
         # Migration tracking table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.schema_migrations (
+            CREATE TABLE IF NOT EXISTS app.schema_migrations (
                 version VARCHAR(10) PRIMARY KEY,
                 description TEXT,
                 applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -63,7 +63,7 @@ class Migration001(Migration):
         
         # Settings table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.settings (
+            CREATE TABLE IF NOT EXISTS app.settings (
                 entity_type CHARACTER VARYING NOT NULL,
                 entity_id BIGINT NOT NULL,
                 guild_id BIGINT NOT NULL,
@@ -77,7 +77,7 @@ class Migration001(Migration):
         
         # Index for faster lookups
         db.execute_query("""
-            CREATE INDEX ASYNC IF NOT EXISTS idx_settings_name ON main.settings(setting_name)
+            CREATE INDEX ASYNC IF NOT EXISTS idx_settings_name ON app.settings(setting_name)
         """, fetch=False)
         
         # Additional core tables (these were originally created via init methods)
@@ -85,7 +85,7 @@ class Migration001(Migration):
         
         # Birthdays table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.birthdays (
+            CREATE TABLE IF NOT EXISTS app.birthdays (
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
                 year INTEGER,
@@ -100,7 +100,7 @@ class Migration001(Migration):
         
         # Starboard boards table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.starboard_boards (
+            CREATE TABLE IF NOT EXISTS app.starboard_boards (
                 id INTEGER PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
                 channel_id BIGINT NOT NULL,
@@ -113,7 +113,7 @@ class Migration001(Migration):
         
         # Starboard posts table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.starboard_posts (
+            CREATE TABLE IF NOT EXISTS app.starboard_posts (
                 message_id BIGINT NOT NULL,
                 board_id INTEGER NOT NULL,
                 star_message_id BIGINT,
@@ -131,7 +131,7 @@ class Migration001(Migration):
         
         # Counting configs table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.counting_configs (
+            CREATE TABLE IF NOT EXISTS app.counting_configs (
                 guild_id BIGINT PRIMARY KEY,
                 channel_id BIGINT NOT NULL,
                 idiot_role_id BIGINT,
@@ -142,7 +142,7 @@ class Migration001(Migration):
         
         # Counting penalties table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.counting_penalties (
+            CREATE TABLE IF NOT EXISTS app.counting_penalties (
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
                 penalty_end_at TIMESTAMP,
@@ -153,7 +153,7 @@ class Migration001(Migration):
         
         # Echo logs table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.echo_logs (
+            CREATE TABLE IF NOT EXISTS app.echo_logs (
                 id BIGINT PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
@@ -167,7 +167,7 @@ class Migration001(Migration):
         
         # TTS logs table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.tts_logs (
+            CREATE TABLE IF NOT EXISTS app.tts_logs (
                 id BIGINT PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
@@ -188,7 +188,7 @@ class Migration001(Migration):
         
         # Command toggles table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.command_toggles (
+            CREATE TABLE IF NOT EXISTS app.command_toggles (
                 guild_id BIGINT NOT NULL,
                 command TEXT NOT NULL,
                 enabled BOOLEAN DEFAULT TRUE,
@@ -200,7 +200,7 @@ class Migration001(Migration):
         
         # Command bans table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.command_bans (
+            CREATE TABLE IF NOT EXISTS app.command_bans (
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
                 command TEXT NOT NULL,
@@ -213,7 +213,7 @@ class Migration001(Migration):
         
         # Persistent panels table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.persistent_panels (
+            CREATE TABLE IF NOT EXISTS app.persistent_panels (
                 message_id BIGINT PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
                 channel_id BIGINT NOT NULL,
@@ -224,7 +224,7 @@ class Migration001(Migration):
         
         # Message audit logs table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.message_audit_logs (
+            CREATE TABLE IF NOT EXISTS app.message_audit_logs (
                 id BIGINT PRIMARY KEY,
                 guild_id BIGINT,
                 channel_id BIGINT,
@@ -239,7 +239,7 @@ class Migration001(Migration):
         
         # Alarms table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.alarms (
+            CREATE TABLE IF NOT EXISTS app.alarms (
                 id TEXT PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
                 channel_id BIGINT,
@@ -252,7 +252,7 @@ class Migration001(Migration):
         
         # Scheduled roles table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.scheduled_roles (
+            CREATE TABLE IF NOT EXISTS app.scheduled_roles (
                 id BIGINT PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
@@ -267,7 +267,7 @@ class Migration001(Migration):
         
         # Member activity table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.member_activity (
+            CREATE TABLE IF NOT EXISTS app.member_activity (
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
                 last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -285,7 +285,7 @@ class Migration002(Migration):
     def up(self):
         # Create message tracking table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.message_tracking (
+            CREATE TABLE IF NOT EXISTS app.message_tracking (
                 message_id BIGINT PRIMARY KEY,
                 user_id BIGINT NOT NULL,
                 guild_id BIGINT NOT NULL,
@@ -297,11 +297,11 @@ class Migration002(Migration):
         
         # Create indexes separately
         db.execute_query("""
-            CREATE INDEX ASYNC IF NOT EXISTS idx_message_tracking_user ON main.message_tracking(user_id)
+            CREATE INDEX ASYNC IF NOT EXISTS idx_message_tracking_user ON app.message_tracking(user_id)
         """, fetch=False)
         
         db.execute_query("""
-            CREATE INDEX ASYNC IF NOT EXISTS idx_message_tracking_guild ON main.message_tracking(guild_id)
+            CREATE INDEX ASYNC IF NOT EXISTS idx_message_tracking_guild ON app.message_tracking(guild_id)
         """, fetch=False)
         
         print(f"✅ Applied migration {self.version}: {self.description}")
@@ -322,12 +322,12 @@ class Migration004(Migration):
     def up(self):
         # Delete older duplicate entries, keeping only the most recent for each user
         db.execute_query("""
-            DELETE FROM main.settings
+            DELETE FROM app.settings
             WHERE entity_type = 'user' 
             AND setting_name = 'reply_notifications'
             AND (entity_type, entity_id, guild_id, setting_name, updated_at) NOT IN (
                 SELECT entity_type, entity_id, guild_id, setting_name, MAX(updated_at)
-                FROM main.settings
+                FROM app.settings
                 WHERE entity_type = 'user' AND setting_name = 'reply_notifications'
                 GROUP BY entity_type, entity_id, guild_id, setting_name
             )
@@ -344,7 +344,7 @@ class Migration005(Migration):
     def up(self):
         # Create booster_roles table
         sql = """
-        CREATE TABLE IF NOT EXISTS main.booster_roles (
+        CREATE TABLE IF NOT EXISTS app.booster_roles (
             user_id BIGINT NOT NULL,
             guild_id BIGINT NOT NULL,
             role_id BIGINT NOT NULL,
@@ -363,7 +363,7 @@ class Migration005(Migration):
         # Create index on guild_id for faster lookups (Aurora DSQL requires ASYNC)
         index_sql = """
         CREATE INDEX ASYNC idx_booster_roles_guild 
-        ON main.booster_roles(guild_id);
+        ON app.booster_roles(guild_id);
         """
         try:
             db.execute_query(index_sql, fetch=False)
@@ -382,14 +382,14 @@ class Migration006(Migration):
     def up(self):
         # Rename settings table to user_settings
         rename_sql = """
-        ALTER TABLE main.settings RENAME TO user_settings;
+        ALTER TABLE app.settings RENAME TO user_settings;
         """
         db.execute_query(rename_sql, fetch=False)
         print(f"   ✅ Renamed settings table to user_settings")
         
         # Create guild_settings table
         create_table_sql = """
-        CREATE TABLE IF NOT EXISTS main.guild_settings (
+        CREATE TABLE IF NOT EXISTS app.guild_settings (
             guild_id BIGINT NOT NULL,
             setting_name CHARACTER VARYING NOT NULL,
             setting_value TEXT,
@@ -404,7 +404,7 @@ class Migration006(Migration):
         # Create index on guild_id for faster lookups
         index_sql = """
         CREATE INDEX ASYNC idx_guild_settings_guild 
-        ON main.guild_settings(guild_id);
+        ON app.guild_settings(guild_id);
         """
         try:
             db.execute_query(index_sql, fetch=False)
@@ -426,7 +426,7 @@ class Migration007(Migration):
     def up(self):
         # Add secondary_color_hex column
         alter_secondary_sql = """
-        ALTER TABLE main.booster_roles 
+        ALTER TABLE app.booster_roles 
         ADD COLUMN IF NOT EXISTS secondary_color_hex TEXT;
         """
         db.execute_query(alter_secondary_sql, fetch=False)
@@ -434,7 +434,7 @@ class Migration007(Migration):
         
         # Add tertiary_color_hex column
         alter_tertiary_sql = """
-        ALTER TABLE main.booster_roles 
+        ALTER TABLE app.booster_roles 
         ADD COLUMN IF NOT EXISTS tertiary_color_hex TEXT;
         """
         db.execute_query(alter_tertiary_sql, fetch=False)
@@ -448,7 +448,7 @@ class Migration008(Migration):
     def up(self):
         # Update to 'gradient' if secondary_color_hex exists but not tertiary
         update_gradient_sql = """
-        UPDATE main.booster_roles 
+        UPDATE app.booster_roles 
         SET color_type = 'gradient'
         WHERE secondary_color_hex IS NOT NULL 
         AND (tertiary_color_hex IS NULL OR tertiary_color_hex = '')
@@ -459,7 +459,7 @@ class Migration008(Migration):
         
         # Update to 'holographic' if both secondary and tertiary exist
         update_holographic_sql = """
-        UPDATE main.booster_roles 
+        UPDATE app.booster_roles 
         SET color_type = 'holographic'
         WHERE secondary_color_hex IS NOT NULL 
         AND tertiary_color_hex IS NOT NULL 
@@ -485,7 +485,7 @@ class Migration010(Migration):
     def up(self):
         # Create polls table (ID will be generated by application using MAX(id) + 1)
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.polls (
+            CREATE TABLE IF NOT EXISTS app.polls (
                 id INTEGER PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
                 channel_id BIGINT NOT NULL,
@@ -500,7 +500,7 @@ class Migration010(Migration):
         
         # Create poll_responses table (ID will be generated by application using MAX(id) + 1)
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.poll_responses (
+            CREATE TABLE IF NOT EXISTS app.poll_responses (
                 id INTEGER PRIMARY KEY,
                 poll_id INTEGER NOT NULL,
                 user_id BIGINT NOT NULL,
@@ -516,7 +516,7 @@ class Migration010(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_polls_guild_active 
-                ON main.polls(guild_id, is_active)
+                ON app.polls(guild_id, is_active)
             """, fetch=False)
             print(f"   ℹ️  Index creation started asynchronously for polls table")
         except Exception as e:
@@ -528,7 +528,7 @@ class Migration010(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_poll_responses_poll_id 
-                ON main.poll_responses(poll_id)
+                ON app.poll_responses(poll_id)
             """, fetch=False)
             print(f"   ℹ️  Index creation started asynchronously for poll_responses table")
         except Exception as e:
@@ -547,42 +547,42 @@ class Migration011(Migration):
     def up(self):
         # Add max_responses column
         db.execute_query("""
-            ALTER TABLE main.polls 
+            ALTER TABLE app.polls 
             ADD COLUMN IF NOT EXISTS max_responses INTEGER
         """, fetch=False)
         print(f"   ✅ Added max_responses column to polls")
         
         # Add close_at column
         db.execute_query("""
-            ALTER TABLE main.polls 
+            ALTER TABLE app.polls 
             ADD COLUMN IF NOT EXISTS close_at TIMESTAMP
         """, fetch=False)
         print(f"   ✅ Added close_at column to polls")
         
         # Add show_responses column (whether to display responses in the poll embed)
         db.execute_query("""
-            ALTER TABLE main.polls 
+            ALTER TABLE app.polls 
             ADD COLUMN IF NOT EXISTS show_responses BOOLEAN
         """, fetch=False)
         print(f"   ✅ Added show_responses column to polls")
         
         # Set default value for existing rows
         db.execute_query("""
-            UPDATE main.polls 
+            UPDATE app.polls 
             SET show_responses = FALSE 
             WHERE show_responses IS NULL
         """, fetch=False)
         
         # Add public_results column (whether anyone can view results or just creator+admins)
         db.execute_query("""
-            ALTER TABLE main.polls 
+            ALTER TABLE app.polls 
             ADD COLUMN IF NOT EXISTS public_results BOOLEAN
         """, fetch=False)
         print(f"   ✅ Added public_results column to polls")
         
         # Set default value for existing rows
         db.execute_query("""
-            UPDATE main.polls 
+            UPDATE app.polls 
             SET public_results = TRUE 
             WHERE public_results IS NULL
         """, fetch=False)
@@ -594,14 +594,14 @@ class Migration012(Migration):
     def up(self):
         # Add allow_multiple_responses column
         db.execute_query("""
-            ALTER TABLE main.polls 
+            ALTER TABLE app.polls 
             ADD COLUMN IF NOT EXISTS allow_multiple_responses BOOLEAN
         """, fetch=False)
         print(f"   ✅ Added allow_multiple_responses column to polls")
         
         # Set default value for existing rows (allow multiple by default for backwards compatibility)
         db.execute_query("""
-            UPDATE main.polls 
+            UPDATE app.polls 
             SET allow_multiple_responses = TRUE 
             WHERE allow_multiple_responses IS NULL
         """, fetch=False)
@@ -613,7 +613,7 @@ class Migration013(Migration):
     def up(self):
         # Create reminders table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.reminders (
+            CREATE TABLE IF NOT EXISTS app.reminders (
                 id INTEGER PRIMARY KEY,
                 user_id BIGINT NOT NULL,
                 guild_id BIGINT,
@@ -630,7 +630,7 @@ class Migration013(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_reminders_pending 
-                ON main.reminders(remind_at, is_sent) 
+                ON app.reminders(remind_at, is_sent) 
                 WHERE is_sent = FALSE
             """, fetch=False)
             print(f"   ✅ Created index on reminders(remind_at, is_sent)")
@@ -644,7 +644,7 @@ class Migration014(Migration):
     def up(self):
         # Create timers table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.timers (
+            CREATE TABLE IF NOT EXISTS app.timers (
                 id INTEGER PRIMARY KEY,
                 user_id BIGINT NOT NULL,
                 guild_id BIGINT NOT NULL,
@@ -662,7 +662,7 @@ class Migration014(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_timers_active 
-                ON main.timers(is_complete, end_time) 
+                ON app.timers(is_complete, end_time) 
                 WHERE is_complete = FALSE
             """, fetch=False)
             print(f"   ✅ Created index on timers(is_complete, end_time)")
@@ -679,7 +679,7 @@ class Migration015(Migration):
         
         # Delete roles that don't have an icon hash (likely permission roles, not booster roles)
         db.execute_query("""
-            DELETE FROM main.booster_roles
+            DELETE FROM app.booster_roles
             WHERE icon_hash IS NULL
         """, fetch=False)
         
@@ -695,7 +695,7 @@ class Migration016(Migration):
         
         # Create task_logs table (no auto-increment, IDs generated in code)
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.task_logs (
+            CREATE TABLE IF NOT EXISTS app.task_logs (
                 id BIGINT PRIMARY KEY,
                 task_name VARCHAR(100) NOT NULL,
                 guild_id BIGINT,
@@ -713,19 +713,19 @@ class Migration016(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_task_logs_task_name 
-                ON main.task_logs(task_name, started_at)
+                ON app.task_logs(task_name, started_at)
             """, fetch=False)
             print(f"   ✅ Created index on task_logs(task_name, started_at)")
             
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_task_logs_guild 
-                ON main.task_logs(guild_id, started_at)
+                ON app.task_logs(guild_id, started_at)
             """, fetch=False)
             print(f"   ✅ Created index on task_logs(guild_id, started_at)")
             
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_task_logs_status 
-                ON main.task_logs(status, started_at)
+                ON app.task_logs(status, started_at)
             """, fetch=False)
             print(f"   ✅ Created index on task_logs(status, started_at)")
         except Exception as e:
@@ -748,7 +748,7 @@ class Migration018(Migration):
         
         # Create saved_emojis table (supports both emojis and stickers)
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.saved_emojis (
+            CREATE TABLE IF NOT EXISTS app.saved_emojis (
                 id BIGINT PRIMARY KEY,
                 name VARCHAR(100) NOT NULL,
                 image_data BYTEA NOT NULL,
@@ -767,7 +767,7 @@ class Migration018(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_saved_emojis_name 
-                ON main.saved_emojis(name)
+                ON app.saved_emojis(name)
             """, fetch=False)
             print(f"   ✅ Created index on saved_emojis(name)")
         except Exception as e:
@@ -782,7 +782,7 @@ class Migration019(Migration):
         
         # Create role configurations table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.conditional_role_configs (
+            CREATE TABLE IF NOT EXISTS app.conditional_role_configs (
                 guild_id BIGINT NOT NULL,
                 role_id BIGINT NOT NULL,
                 role_name VARCHAR(100),
@@ -797,7 +797,7 @@ class Migration019(Migration):
         
         # Create eligibility tracking table
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.conditional_role_eligibility (
+            CREATE TABLE IF NOT EXISTS app.conditional_role_eligibility (
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
                 role_id BIGINT NOT NULL,
@@ -834,7 +834,7 @@ class Migration020(Migration):
         for user_id in add_user_ids:
             try:
                 query = """
-                INSERT INTO main.conditional_role_eligibility (guild_id, user_id, role_id, eligible, marked_at, notes)
+                INSERT INTO app.conditional_role_eligibility (guild_id, user_id, role_id, eligible, marked_at, notes)
                 VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP, 'Manually added - role was removed during deferral')
                 ON CONFLICT (guild_id, user_id, role_id) DO NOTHING
                 """
@@ -846,7 +846,7 @@ class Migration020(Migration):
         for user_id in delete_user_ids:
             try:
                 query = """
-                DELETE FROM main.conditional_role_eligibility
+                DELETE FROM app.conditional_role_eligibility
                 WHERE guild_id = %s AND user_id = %s AND role_id = %s
                 """
                 db.execute_query(query, (guild_id, user_id, role_id), fetch=False)
@@ -865,7 +865,7 @@ class Migration021(Migration):
         """Delete the eligible column since we track eligibility by presence in the table"""
         try:
             query = """
-            ALTER TABLE main.conditional_role_eligibility
+            ALTER TABLE app.conditional_role_eligibility
             DROP COLUMN eligible
             """
             db.execute_query(query, fetch=False)
@@ -886,7 +886,7 @@ class Migration022(Migration):
             # Aurora DSQL doesn't support DROP COLUMN, so we need to recreate the table
             # Create new table without eligible column
             db.execute_query("""
-                CREATE TABLE IF NOT EXISTS main.conditional_role_eligibility_new (
+                CREATE TABLE IF NOT EXISTS app.conditional_role_eligibility_new (
                     guild_id BIGINT NOT NULL,
                     user_id BIGINT NOT NULL,
                     role_id BIGINT NOT NULL,
@@ -900,22 +900,22 @@ class Migration022(Migration):
             
             # Copy data from old table to new table
             db.execute_query("""
-                INSERT INTO main.conditional_role_eligibility_new 
+                INSERT INTO app.conditional_role_eligibility_new 
                 (guild_id, user_id, role_id, marked_at, marked_by_user_id, notes)
                 SELECT guild_id, user_id, role_id, marked_at, marked_by_user_id, notes
-                FROM main.conditional_role_eligibility
+                FROM app.conditional_role_eligibility
             """, fetch=False)
             print(f"   ✅ Migrated data to new table")
             
             # Drop old table
             db.execute_query("""
-                DROP TABLE main.conditional_role_eligibility
+                DROP TABLE app.conditional_role_eligibility
             """, fetch=False)
             print(f"   ✅ Dropped old table")
             
             # Rename new table to original name
             db.execute_query("""
-                ALTER TABLE main.conditional_role_eligibility_new 
+                ALTER TABLE app.conditional_role_eligibility_new 
                 RENAME TO conditional_role_eligibility
             """, fetch=False)
             print(f"   ✅ Renamed table - eligible column removed")
@@ -935,7 +935,7 @@ class Migration023(Migration):
         print(f"   📋 Creating role_rules table...")
         
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.role_rules (
+            CREATE TABLE IF NOT EXISTS app.role_rules (
                 id BIGINT PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
                 rule_name VARCHAR(100) NOT NULL,
@@ -953,7 +953,7 @@ class Migration023(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_role_rules_guild 
-                ON main.role_rules(guild_id)
+                ON app.role_rules(guild_id)
             """, fetch=False)
             print(f"   ✅ Created index on role_rules(guild_id)")
         except Exception as e:
@@ -971,7 +971,7 @@ class Migration024(Migration):
         print(f"   📋 Creating channel_restrictions table...")
         
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.channel_restrictions (
+            CREATE TABLE IF NOT EXISTS app.channel_restrictions (
                 guild_id BIGINT NOT NULL,
                 channel_id BIGINT NOT NULL,
                 blocking_role_id BIGINT NOT NULL,
@@ -985,7 +985,7 @@ class Migration024(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_channel_restrictions_guild 
-                ON main.channel_restrictions(guild_id)
+                ON app.channel_restrictions(guild_id)
             """, fetch=False)
             print(f"   ✅ Created index on channel_restrictions(guild_id)")
         except Exception as e:
@@ -1004,7 +1004,7 @@ class Migration025(Migration):
         
         # Message mirror configurations
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.message_mirrors (
+            CREATE TABLE IF NOT EXISTS app.message_mirrors (
                 guild_id BIGINT NOT NULL,
                 source_channel_id BIGINT NOT NULL,
                 target_channel_id BIGINT NOT NULL,
@@ -1018,11 +1018,11 @@ class Migration025(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_message_mirrors_guild 
-                ON main.message_mirrors(guild_id)
+                ON app.message_mirrors(guild_id)
             """, fetch=False)
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_message_mirrors_source 
-                ON main.message_mirrors(source_channel_id)
+                ON app.message_mirrors(source_channel_id)
             """, fetch=False)
             print(f"   ✅ Created indexes on message_mirrors")
         except Exception as e:
@@ -1039,11 +1039,11 @@ class Migration026(Migration):
         print("   📋 Adding mode column to channel_restrictions...")
         # Some Aurora DSQL configs reject defaults in ALTER ADD; add without default, then normalize.
         db.execute_query("""
-            ALTER TABLE main.channel_restrictions
+            ALTER TABLE app.channel_restrictions
             ADD COLUMN IF NOT EXISTS mode VARCHAR(16)
         """, fetch=False)
         db.execute_query("""
-            UPDATE main.channel_restrictions
+            UPDATE app.channel_restrictions
             SET mode = 'block'
             WHERE mode IS NULL OR mode = ''
         """, fetch=False)
@@ -1053,7 +1053,7 @@ class Migration026(Migration):
         
         # Track individual mirrored messages
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.mirrored_messages (
+            CREATE TABLE IF NOT EXISTS app.mirrored_messages (
                 original_message_id BIGINT NOT NULL,
                 original_channel_id BIGINT NOT NULL,
                 mirror_message_id BIGINT NOT NULL,
@@ -1069,11 +1069,11 @@ class Migration026(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_mirrored_messages_original 
-                ON main.mirrored_messages(original_message_id)
+                ON app.mirrored_messages(original_message_id)
             """, fetch=False)
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_mirrored_messages_mirror 
-                ON main.mirrored_messages(mirror_message_id)
+                ON app.mirrored_messages(mirror_message_id)
             """, fetch=False)
             print(f"   ✅ Created indexes on mirrored_messages")
         except Exception as e:
@@ -1089,7 +1089,7 @@ class Migration027(Migration):
     def up(self):
         print("   📋 Creating rules_agreement table...")
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.rules_agreement (
+            CREATE TABLE IF NOT EXISTS app.rules_agreement (
                 guild_id BIGINT PRIMARY KEY,
                 message_data TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1108,7 +1108,7 @@ class Migration028(Migration):
     def up(self):
         print("   📋 Creating role_denies table...")
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.role_denies (
+            CREATE TABLE IF NOT EXISTS app.role_denies (
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
                 role_id BIGINT NOT NULL,
@@ -1124,7 +1124,7 @@ class Migration028(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_role_denies_guild_user
-                ON main.role_denies(guild_id, user_id)
+                ON app.role_denies(guild_id, user_id)
             """, fetch=False)
             print("   ✅ Created index on role_denies(guild_id, user_id)")
         except Exception as e:
@@ -1140,7 +1140,7 @@ class Migration029(Migration):
     def up(self):
         print("   📋 Creating role_deny_attempt_logs table...")
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.role_deny_attempt_logs (
+            CREATE TABLE IF NOT EXISTS app.role_deny_attempt_logs (
                 id BIGINT PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
@@ -1156,7 +1156,7 @@ class Migration029(Migration):
         try:
             db.execute_query("""
                 CREATE INDEX ASYNC IF NOT EXISTS idx_role_deny_attempts_guild_time
-                ON main.role_deny_attempt_logs(guild_id, attempted_at)
+                ON app.role_deny_attempt_logs(guild_id, attempted_at)
             """, fetch=False)
             print("   ✅ Created index on role_deny_attempt_logs(guild_id, attempted_at)")
         except Exception as e:
@@ -1172,7 +1172,7 @@ class Migration030(Migration):
     def up(self):
         print("   📋 Adding log_channel_id to role_denies...")
         db.execute_query("""
-            ALTER TABLE main.role_denies
+            ALTER TABLE app.role_denies
             ADD COLUMN IF NOT EXISTS log_channel_id BIGINT
         """, fetch=False)
         print("   ✅ Added log_channel_id column to role_denies")
@@ -1204,29 +1204,29 @@ class Migration031(Migration):
 
     def up(self):
         if _column_exists("scheduled_roles", "status") and not _column_exists("scheduled_roles", "completed"):
-            print("   ℹ️ main.scheduled_roles already migrated, skipping")
+            print("   ℹ️ app.scheduled_roles already migrated, skipping")
             return
 
         print("   📋 Adding status/last_error columns to scheduled_roles...")
         db.execute_query("""
-            ALTER TABLE main.scheduled_roles
+            ALTER TABLE app.scheduled_roles
             ADD COLUMN IF NOT EXISTS status VARCHAR(20)
         """, fetch=False)
         db.execute_query("""
-            ALTER TABLE main.scheduled_roles
+            ALTER TABLE app.scheduled_roles
             ADD COLUMN IF NOT EXISTS last_error TEXT
         """, fetch=False)
         db.execute_query("""
-            UPDATE main.scheduled_roles
+            UPDATE app.scheduled_roles
             SET status = CASE WHEN completed THEN 'completed' ELSE 'pending' END
             WHERE status IS NULL
         """, fetch=False)
         print("   ✅ Added and backfilled status/last_error")
 
         print("   📋 Recreating scheduled_roles without the completed column...")
-        db.execute_query("DROP TABLE IF EXISTS main.scheduled_roles_new", fetch=False)
+        db.execute_query("DROP TABLE IF EXISTS app.scheduled_roles_new", fetch=False)
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.scheduled_roles_new (
+            CREATE TABLE IF NOT EXISTS app.scheduled_roles_new (
                 id BIGINT PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
@@ -1240,13 +1240,13 @@ class Migration031(Migration):
             )
         """, fetch=False)
         db.execute_query("""
-            INSERT INTO main.scheduled_roles_new
+            INSERT INTO app.scheduled_roles_new
                 (id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, created_at, status, last_error)
             SELECT id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, created_at, status, last_error
-            FROM main.scheduled_roles
+            FROM app.scheduled_roles
         """, fetch=False)
-        db.execute_query("DROP TABLE main.scheduled_roles", fetch=False)
-        db.execute_query("ALTER TABLE main.scheduled_roles_new RENAME TO scheduled_roles", fetch=False)
+        db.execute_query("DROP TABLE app.scheduled_roles", fetch=False)
+        db.execute_query("ALTER TABLE app.scheduled_roles_new RENAME TO scheduled_roles", fetch=False)
         print("   ✅ Recreated scheduled_roles without the completed column")
 
 
@@ -1269,16 +1269,16 @@ class Migration032(Migration):
 
     def up(self):
         if _column_exists("command_bans", "created_at") and not _column_exists("command_bans", "banned_at"):
-            print("   ℹ️ main.command_bans already migrated, skipping")
+            print("   ℹ️ app.command_bans already migrated, skipping")
             return
         if not _column_exists("command_bans", "banned_at"):
-            print("   ℹ️ main.command_bans.banned_at doesn't exist, nothing to rename")
+            print("   ℹ️ app.command_bans.banned_at doesn't exist, nothing to rename")
             return
 
         print("   📋 Recreating command_bans with created_at instead of banned_at...")
-        db.execute_query("DROP TABLE IF EXISTS main.command_bans_new", fetch=False)
+        db.execute_query("DROP TABLE IF EXISTS app.command_bans_new", fetch=False)
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.command_bans_new (
+            CREATE TABLE IF NOT EXISTS app.command_bans_new (
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
                 command TEXT NOT NULL,
@@ -1289,12 +1289,12 @@ class Migration032(Migration):
             )
         """, fetch=False)
         db.execute_query("""
-            INSERT INTO main.command_bans_new (guild_id, user_id, command, reason, banned_by, created_at)
+            INSERT INTO app.command_bans_new (guild_id, user_id, command, reason, banned_by, created_at)
             SELECT guild_id, user_id, command, reason, banned_by, banned_at
-            FROM main.command_bans
+            FROM app.command_bans
         """, fetch=False)
-        db.execute_query("DROP TABLE main.command_bans", fetch=False)
-        db.execute_query("ALTER TABLE main.command_bans_new RENAME TO command_bans", fetch=False)
+        db.execute_query("DROP TABLE app.command_bans", fetch=False)
+        db.execute_query("ALTER TABLE app.command_bans_new RENAME TO command_bans", fetch=False)
         print("   ✅ Recreated command_bans with created_at column")
 
 
@@ -1315,11 +1315,11 @@ class Migration033(Migration):
     def up(self):
         print("   📋 Adding updated_at to counting_configs...")
         db.execute_query("""
-            ALTER TABLE main.counting_configs
+            ALTER TABLE app.counting_configs
             ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP
         """, fetch=False)
         db.execute_query("""
-            UPDATE main.counting_configs
+            UPDATE app.counting_configs
             SET updated_at = CURRENT_TIMESTAMP
             WHERE updated_at IS NULL
         """, fetch=False)
@@ -1340,16 +1340,16 @@ class Migration035(Migration):
 
     def up(self):
         if _column_exists("message_audit_logs", "event_type") and not _column_exists("message_audit_logs", "action"):
-            print("   ℹ️ main.message_audit_logs already migrated, skipping")
+            print("   ℹ️ app.message_audit_logs already migrated, skipping")
             return
         if not _column_exists("message_audit_logs", "action"):
-            print("   ℹ️ main.message_audit_logs.action doesn't exist, nothing to rename")
+            print("   ℹ️ app.message_audit_logs.action doesn't exist, nothing to rename")
             return
 
         print("   📋 Recreating message_audit_logs with event_type instead of action...")
-        db.execute_query("DROP TABLE IF EXISTS main.message_audit_logs_new", fetch=False)
+        db.execute_query("DROP TABLE IF EXISTS app.message_audit_logs_new", fetch=False)
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS main.message_audit_logs_new (
+            CREATE TABLE IF NOT EXISTS app.message_audit_logs_new (
                 id BIGINT PRIMARY KEY,
                 guild_id BIGINT,
                 channel_id BIGINT,
@@ -1362,13 +1362,13 @@ class Migration035(Migration):
             )
         """, fetch=False)
         db.execute_query("""
-            INSERT INTO main.message_audit_logs_new
+            INSERT INTO app.message_audit_logs_new
                 (id, guild_id, channel_id, message_id, user_id, event_type, old_content, new_content, created_at)
             SELECT id, guild_id, channel_id, message_id, user_id, action, old_content, new_content, created_at
-            FROM main.message_audit_logs
+            FROM app.message_audit_logs
         """, fetch=False)
-        db.execute_query("DROP TABLE main.message_audit_logs", fetch=False)
-        db.execute_query("ALTER TABLE main.message_audit_logs_new RENAME TO message_audit_logs", fetch=False)
+        db.execute_query("DROP TABLE app.message_audit_logs", fetch=False)
+        db.execute_query("ALTER TABLE app.message_audit_logs_new RENAME TO message_audit_logs", fetch=False)
         print("   ✅ Recreated message_audit_logs with event_type column")
 
 
@@ -1395,7 +1395,7 @@ class Migration036(Migration):
             WHERE table_schema = 'main' AND table_name = 'counting_penalties'
         """)
         if not exists:
-            print("   ℹ️ main.counting_penalties doesn't exist, nothing to migrate")
+            print("   ℹ️ app.counting_penalties doesn't exist, nothing to migrate")
             return
 
         if _column_exists("counting_penalties", "expires_at"):
@@ -1406,13 +1406,13 @@ class Migration036(Migration):
             expiry_col = None
 
         if expiry_col is None:
-            print("   ⚠️ main.counting_penalties has neither expires_at nor penalty_end_at, skipping data migration")
+            print("   ⚠️ app.counting_penalties has neither expires_at nor penalty_end_at, skipping data migration")
         else:
-            rows = db.execute_query(f"SELECT guild_id, user_id, {expiry_col} FROM main.counting_penalties") or []
+            rows = db.execute_query(f"SELECT guild_id, user_id, {expiry_col} FROM app.counting_penalties") or []
             print(f"   📋 Migrating {len(rows)} counting_penalties row(s) to scheduled_roles...")
             for guild_id, user_id, expires_at in rows:
                 config_row = db.execute_query(
-                    "SELECT idiot_role_id FROM main.counting_configs WHERE guild_id = %s",
+                    "SELECT idiot_role_id FROM app.counting_configs WHERE guild_id = %s",
                     (guild_id,),
                 )
                 role_id = config_row[0][0] if config_row and config_row[0][0] else None
@@ -1422,7 +1422,7 @@ class Migration036(Migration):
                 sched_id = int(time.time() * 1_000_000)
                 db.execute_query(
                     """
-                    INSERT INTO main.scheduled_roles
+                    INSERT INTO app.scheduled_roles
                     (id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, status)
                     VALUES (%s, %s, %s, '', %s, %s, NULL, 'pending')
                     """,
@@ -1432,7 +1432,7 @@ class Migration036(Migration):
             print("   ✅ Migrated counting_penalties rows to scheduled_roles")
 
         print("   📋 Dropping counting_penalties table...")
-        db.execute_query("DROP TABLE IF EXISTS main.counting_penalties", fetch=False)
+        db.execute_query("DROP TABLE IF EXISTS app.counting_penalties", fetch=False)
         print("   ✅ Dropped counting_penalties table")
 
 
@@ -1485,7 +1485,7 @@ def get_applied_migrations():
     """Get list of already applied migration versions"""
     try:
         result = db.execute_query(
-            "SELECT version FROM main.schema_migrations ORDER BY version"
+            "SELECT version FROM app.schema_migrations ORDER BY version"
         )
         return [row[0] for row in result]
     except Exception:
@@ -1496,7 +1496,7 @@ def _ensure_table_ownership():
     """Make sure the connecting role owns every table in schema main before
     attempting any migration.
 
-    main.py's on_ready does `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA
+    app.py's on_ready does `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA
     main TO admin` on every bot startup, but a GRANT only covers row-level
     operations (SELECT/INSERT/UPDATE/DELETE) -- it does not make the
     grantee the table's *owner*, which is specifically what ALTER TABLE /
@@ -1529,10 +1529,10 @@ def _ensure_table_ownership():
         try:
             # Target whoever is actually connected, not a guessed/hardcoded
             # role name -- "ourselves", not "admin" specifically.
-            db.execute_query(f"ALTER TABLE main.{table_name} OWNER TO {current_user}", fetch=False)
+            db.execute_query(f"ALTER TABLE app.{table_name} OWNER TO {current_user}", fetch=False)
         except Exception as e:
             failed.append(table_name)
-            print(f"   ⚠️ Could not claim ownership of main.{table_name}: {e}")
+            print(f"   ⚠️ Could not claim ownership of app.{table_name}: {e}")
 
     if failed:
         print(
@@ -1540,7 +1540,7 @@ def _ensure_table_ownership():
             f"This means {current_user!r} isn't a superuser/doesn't already own them, so it can't "
             f"reassign ownership to itself -- that has to be done once by whichever role *does* "
             f"currently own them (or a true DB admin), e.g.: "
-            f"ALTER TABLE main.<table> OWNER TO {current_user};"
+            f"ALTER TABLE app.<table> OWNER TO {current_user};"
         )
 
 
@@ -1569,7 +1569,7 @@ def apply_migrations():
                 
                 # Record migration
                 db.execute_query(
-                    "INSERT INTO main.schema_migrations (version, description) VALUES (%s, %s)",
+                    "INSERT INTO app.schema_migrations (version, description) VALUES (%s, %s)",
                     (migration.version, migration.description),
                     fetch=False
                 )
@@ -1592,7 +1592,7 @@ def rollback_migration(version: str):
             print(f"Rolling back migration {version}...")
             migration.down()
             db.execute_query(
-                "DELETE FROM main.schema_migrations WHERE version = %s",
+                "DELETE FROM app.schema_migrations WHERE version = %s",
                 (version,),
                 fetch=False
             )

@@ -100,7 +100,7 @@ class AlarmGroup(app_commands.Group):
             return
 
         try:
-            row = db.execute_query('SELECT id FROM main.alarms WHERE id = %s AND guild_id = %s', (id, interaction.guild.id))
+            row = db.execute_query('SELECT id FROM app.alarms WHERE id = %s AND guild_id = %s', (id, interaction.guild.id))
             if not row:
                 await interaction.response.send_message('Alarm id not found.', ephemeral=True)
                 return

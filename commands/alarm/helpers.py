@@ -98,7 +98,7 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
     try:
         ffmpeg_exec = which_ffmpeg() or 'ffmpeg'
 
-        rows = db.execute_query("SELECT fire_at FROM main.alarms WHERE id = %s", (alarm_id,))
+        rows = db.execute_query("SELECT fire_at FROM app.alarms WHERE id = %s", (alarm_id,))
         if not rows:
             return
         fire_at = rows[0][0]
@@ -391,7 +391,7 @@ async def _alarm_worker(bot: discord.Client, alarm_id: str, guild_id: int, creat
                     try:
                         next_fire = fire_dt + dt.timedelta(seconds=int(interval_seconds))
                         next_fire_iso = next_fire.astimezone(dt.timezone.utc).isoformat() if next_fire.tzinfo else next_fire.replace(tzinfo=dt.timezone.utc).isoformat()
-                        db.execute_query('UPDATE main.alarms SET fire_at = %s WHERE id = %s', (next_fire_iso, alarm_id), fetch=False)
+                        db.execute_query('UPDATE app.alarms SET fire_at = %s WHERE id = %s', (next_fire_iso, alarm_id), fetch=False)
                         fire_dt = next_fire
                         continue
                     except Exception:
