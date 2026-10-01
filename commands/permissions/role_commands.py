@@ -120,7 +120,6 @@ class PermissionsRoleGroup(GuildOnlyGroup):
             await error_response(interaction, e, context="permissions_role_temp")
 
     @app_commands.command(name="schedule", description="Schedule role add/remove for a member at a specific date/time")
-    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         user="User to modify",
         date="Date to apply the change (YYYY-MM-DD)",
@@ -129,6 +128,7 @@ class PermissionsRoleGroup(GuildOnlyGroup):
         time="Time to apply the change, 24hr or 12hr (default: 12:00 AM)",
         timezone_offset="Hours behind UTC for date/time (e.g. -5 for EST, -8 for PST; default: 0 / UTC)",
     )
+    @owner_or_permissions(manage_roles=True)
     async def schedule(
         self, interaction: discord.Interaction, user: discord.Member, date: str,
         add_roles: str = "", remove_roles: str = "", time: str = None, timezone_offset: int = 0,
@@ -139,6 +139,24 @@ class PermissionsRoleGroup(GuildOnlyGroup):
 
         add_list, unresolved_a = parse_role_list(interaction.guild, add_roles)
         rem_list, unresolved_r = parse_role_list(interaction.guild, remove_roles)
+
+        # Same guardrails as /permissions role set and temp -- scheduling a
+        # change is still granting/revoking a role, so it shouldn't be a way
+        # to route around the hierarchy check or the deny list.
+        for role in add_list + rem_list:
+            error = check_role_hierarchy(interaction.user, interaction.guild.me, role)
+            if error:
+                await send_error(interaction, f"{role.mention}: {error}")
+                return
+        for role in add_list:
+            if db.is_role_denied(interaction.guild.id, user.id, role.id):
+                logger.warning(f"[ROLE DENY] Blocked /permissions role schedule by {interaction.user.id} for user {user.id} role {role.id}")
+                await record_role_deny_attempt(
+                    interaction.guild, user, role, source="permissions_role_schedule",
+                    actor_user_id=interaction.user.id, notes="Blocked by role deny policy during role schedule",
+                )
+                await send_error(interaction, f"Cannot schedule adding {role.mention} to {user.mention}: role is denied for this user.")
+                return
 
         # Default the time of day to midnight rather than create_discord_timestamp's
         # own "now" default -- scheduling a date with no time means "that whole day
@@ -168,7 +186,7 @@ class PermissionsRoleGroup(GuildOnlyGroup):
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
     @app_commands.command(name="schedule_list", description="List scheduled role changes")
-    @app_commands.default_permissions(administrator=True)
+    @owner_or_permissions(manage_roles=True)
     async def schedule_list(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if not db.connection_pool:
@@ -193,8 +211,8 @@ class PermissionsRoleGroup(GuildOnlyGroup):
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
     @app_commands.command(name="schedule_delete", description="Delete a scheduled role change")
-    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(schedule_id="ID of the scheduled change to delete (from schedule_list)")
+    @owner_or_permissions(manage_roles=True)
     async def schedule_delete(self, interaction: discord.Interaction, schedule_id: int):
         await interaction.response.defer(ephemeral=True)
         if not db.connection_pool:
