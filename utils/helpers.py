@@ -67,31 +67,21 @@ def is_url_suppressed(content: str, url: str) -> bool:
     if has_opening_angle and has_closing_angle:
         return True
     
-    # Check for single backticks `URL`
-    # Look backwards for '`'
-    has_opening_backtick = False
-    for i in range(url_start - 1, -1, -1):
-        if content[i] == '`':
-            has_opening_backtick = True
-            break
-        elif content[i] in (' ', '\n', '\t'):
-            continue
-        else:
-            break
-    
-    # Look forwards for '`'
-    has_closing_backtick = False
-    for i in range(url_end, len(content)):
-        if content[i] == '`':
-            has_closing_backtick = True
-            break
-        elif content[i] in (' ', '\n', '\t'):
-            continue
-        else:
-            break
-    
-    if has_opening_backtick and has_closing_backtick:
-        return True
+    # Check for single backticks `...URL...` -- the URL doesn't need to be
+    # adjacent to the backtick, just inside the same inline-code span (e.g.
+    # `curl https://example.com`). Mask out the triple-backtick blocks
+    # already handled above so their backticks don't throw off pairing the
+    # remaining single ones, then pair consecutive backticks up and check
+    # whether the URL falls inside any complete pair. A trailing unpaired
+    # backtick (odd count) is correctly left unpaired by range()'s step.
+    masked = content
+    for start, end in triple_blocks:
+        masked = masked[:start] + ('\x00' * (end - start)) + masked[end:]
+    backtick_positions = [i for i, ch in enumerate(masked) if ch == '`']
+    for j in range(0, len(backtick_positions) - 1, 2):
+        start, end = backtick_positions[j], backtick_positions[j + 1]
+        if start < url_start < end:
+            return True
     
     return False
 

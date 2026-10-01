@@ -104,13 +104,13 @@ def test_reply_detection():
     
     print("=" * 60)
     print(f"Results: {passed}/{total} tests passed")
-    
+
     if passed == total:
         print("🎉 All tests passed!")
     else:
         print(f"❌ {total - passed} tests failed")
-    
-    return passed == total
+
+    assert passed == total, f"{total - passed} of {total} reply detection case(s) failed"
 
 def interactive_test():
     """Interactive testing mode for reply detection"""
@@ -189,8 +189,13 @@ def interactive_test():
 
 if __name__ == "__main__":
     # Run automated tests
-    all_passed = test_reply_detection()
-    
+    try:
+        test_reply_detection()
+        all_passed = True
+    except AssertionError as e:
+        print(f"\n{e}")
+        all_passed = False
+
     # Offer interactive testing
     choice = input("\nWould you like to run interactive tests? (y/n): ").strip().lower()
     if choice in ['y', 'yes']:
