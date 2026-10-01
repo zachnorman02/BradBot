@@ -1000,9 +1000,10 @@ class Database:
         )
 
     def clear_counting_config(self, guild_id: int):
-        """Remove counting config and penalties for a guild."""
+        """Remove counting config for a guild. Any already-scheduled penalty
+        role removals (main.scheduled_roles) are left alone -- they're not
+        counting-specific rows, just generic scheduled changes."""
         self.execute_query("DELETE FROM main.counting_configs WHERE guild_id = %s", (guild_id,), fetch=False)
-        self.execute_query("DELETE FROM main.counting_penalties WHERE guild_id = %s", (guild_id,), fetch=False)
 
     def get_counting_config(self, guild_id: int) -> dict | None:
         """Fetch counting config for a guild."""
@@ -1050,65 +1051,6 @@ class Database:
             fetch=False
         )
 
-    def record_counting_penalty(self, guild_id: int, user_id: int, expires_at):
-        """Create or update a penalty entry for a user."""
-        self.execute_query(
-            "DELETE FROM main.counting_penalties WHERE guild_id = %s AND user_id = %s",
-            (guild_id, user_id),
-            fetch=False
-        )
-        self.execute_query(
-            """
-            INSERT INTO main.counting_penalties (guild_id, user_id, expires_at)
-            VALUES (%s, %s, %s)
-            """,
-            (guild_id, user_id, expires_at),
-            fetch=False
-        )
-
-    def get_counting_penalty(self, guild_id: int, user_id: int):
-        """Return the penalty expiry for a user if it exists."""
-        result = self.execute_query(
-            """
-            SELECT expires_at FROM main.counting_penalties
-            WHERE guild_id = %s AND user_id = %s
-            LIMIT 1
-            """,
-            (guild_id, user_id)
-        )
-        if result:
-            return result[0][0]
-        return None
-
-    def clear_counting_penalty(self, guild_id: int, user_id: int):
-        """Remove a user's penalty record."""
-        self.execute_query(
-            "DELETE FROM main.counting_penalties WHERE guild_id = %s AND user_id = %s",
-            (guild_id, user_id),
-            fetch=False
-        )
-
-    def get_expired_counting_penalties(self, now):
-        """Return list of expired penalties."""
-        results = self.execute_query(
-            """
-            SELECT guild_id, user_id, expires_at
-            FROM main.counting_penalties
-            WHERE expires_at <= %s
-            """,
-            (now,)
-        )
-        return [{"guild_id": r[0], "user_id": r[1], "expires_at": r[2]} for r in results]
-
-    def get_all_counting_penalties(self):
-        """Return all counting penalties (for robust expiry checks)."""
-        results = self.execute_query(
-            """
-            SELECT guild_id, user_id, expires_at
-            FROM main.counting_penalties
-            """
-        )
-        return [{"guild_id": r[0], "user_id": r[1], "expires_at": r[2]} for r in results]
 
     def log_tts_message(
         self,
@@ -1758,6 +1700,27 @@ class Database:
             (status, error, sched_id),
             fetch=False
         )
+
+    def get_pending_scheduled_role_changes_for_user(self, guild_id: int, user_id: int) -> list:
+        """All pending scheduled role changes for one member in a guild,
+        regardless of whether run_at has passed yet. Used for on-demand
+        "does this specific person have one of these active/due right now"
+        checks -- e.g. counting's penalty-role handling, which needs an
+        immediate answer on their next message rather than waiting for the
+        next scheduled_role_check sweep."""
+        query = """
+        SELECT id, role_ids_to_add, role_ids_to_remove, run_at
+        FROM main.scheduled_roles
+        WHERE guild_id = %s AND user_id = %s AND status = 'pending'
+        ORDER BY run_at ASC
+        """
+        rows = self.execute_query(query, (guild_id, user_id))
+        results = []
+        for row in rows or []:
+            add_ids = [int(x) for x in row[1].split(",") if x] if row[1] else []
+            remove_ids = [int(x) for x in row[2].split(",") if x] if row[2] else []
+            results.append({"id": row[0], "add_ids": add_ids, "remove_ids": remove_ids, "run_at": row[3]})
+        return results
 
     # ============================================================================
     # Member Activity Tracking

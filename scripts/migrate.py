@@ -13,19 +13,47 @@ from database import db
 
 class Migration:
     """Base class for database migrations"""
-    
+
     def __init__(self, version: str, description: str):
         self.version = version
         self.description = description
         self.timestamp = datetime.now()
-    
+
     def up(self):
         """Apply the migration"""
         raise NotImplementedError
-    
+
     def down(self):
         """Rollback the migration (optional)"""
         pass
+
+
+def _column_exists(table: str, column: str) -> bool:
+    """Check live schema state rather than assume it matches this file's
+    migration history -- some tables have drifted from what's recorded here
+    (columns added/renamed out-of-band), so a plain RENAME COLUMN could
+    error on a database that's already been patched a different way."""
+    result = db.execute_query(
+        """
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'main' AND table_name = %s AND column_name = %s
+        """,
+        (table, column),
+    )
+    return bool(result)
+
+
+def _rename_column_if_needed(table: str, old: str, new: str):
+    """Rename old->new only if old exists and new doesn't yet -- a no-op on
+    a database where this was already fixed some other way."""
+    if _column_exists(table, new):
+        print(f"   ℹ️ main.{table}.{new} already exists, skipping rename")
+        return
+    if not _column_exists(table, old):
+        print(f"   ℹ️ main.{table}.{old} doesn't exist either, nothing to rename")
+        return
+    db.execute_query(f"ALTER TABLE main.{table} RENAME COLUMN {old} TO {new}", fetch=False)
+    print(f"   ✅ Renamed main.{table}.{old} to {new}")
 
 # Migration: Initial Schema
 class Migration001(Migration):
@@ -1162,6 +1190,187 @@ class Migration030(Migration):
         print("   ✅ Added log_channel_id column to role_denies")
 
 
+class Migration031(Migration):
+    """Add status/last_error columns to scheduled_roles, drop the dead
+    `completed` boolean once its data is folded into `status`.
+
+    database.py's scheduled-role methods (create_scheduled_role_change,
+    list_scheduled_role_changes, get_due_scheduled_role_changes,
+    mark_scheduled_role_status) read/write a `status` ('pending'/'completed'/
+    'failed') and `last_error` column that were never part of the original
+    scheduled_roles table definition -- it only ever had a `completed`
+    boolean. Without this, every one of those calls fails against a table
+    created from scratch. And once that boolean's one piece of information
+    (done or not) has been folded into `status`, nothing in the codebase
+    reads or writes `completed` ever again, so it comes out too.
+    """
+
+    def __init__(self):
+        super().__init__("031", "Add status/last_error to scheduled_roles, drop completed")
+
+    def up(self):
+        print("   📋 Adding status column to scheduled_roles...")
+        db.execute_query("""
+            ALTER TABLE main.scheduled_roles
+            ADD COLUMN IF NOT EXISTS status VARCHAR(20)
+        """, fetch=False)
+        print("   ✅ Added status column to scheduled_roles")
+
+        print("   📋 Adding last_error column to scheduled_roles...")
+        db.execute_query("""
+            ALTER TABLE main.scheduled_roles
+            ADD COLUMN IF NOT EXISTS last_error TEXT
+        """, fetch=False)
+        print("   ✅ Added last_error column to scheduled_roles")
+
+        # Backfill status for any rows that predate this column, from the
+        # old `completed` boolean -- must happen before that column is
+        # dropped below.
+        db.execute_query("""
+            UPDATE main.scheduled_roles
+            SET status = CASE WHEN completed THEN 'completed' ELSE 'pending' END
+            WHERE status IS NULL
+        """, fetch=False)
+        print("   ✅ Backfilled status from completed column")
+
+        print("   📋 Dropping now-redundant completed column from scheduled_roles...")
+        db.execute_query("""
+            ALTER TABLE main.scheduled_roles
+            DROP COLUMN IF EXISTS completed
+        """, fetch=False)
+        print("   ✅ Dropped completed column from scheduled_roles")
+
+
+class Migration032(Migration):
+    """Rename command_bans.banned_at to created_at.
+
+    ban_user_for_command's INSERT writes a `created_at` column that was
+    never part of this table -- it was created as `banned_at`. Neither name
+    is ever read back (only `reason` is selected), so this is a pure rename
+    to match what the code already expects, not a behavior change.
+    """
+
+    def __init__(self):
+        super().__init__("032", "Rename command_bans.banned_at to created_at")
+
+    def up(self):
+        _rename_column_if_needed("command_bans", "banned_at", "created_at")
+
+
+class Migration033(Migration):
+    """Add missing updated_at column to counting_configs.
+
+    update_counting_state and set_counting_number both SET updated_at on
+    every write, but the table was never given that column at all -- every
+    successful or failed count submission has been failing this call.
+    """
+
+    def __init__(self):
+        super().__init__("033", "Add updated_at to counting_configs")
+
+    def up(self):
+        print("   📋 Adding updated_at to counting_configs...")
+        db.execute_query("""
+            ALTER TABLE main.counting_configs
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        """, fetch=False)
+        print("   ✅ Added updated_at column to counting_configs")
+
+
+class Migration034(Migration):
+    """Rename counting_penalties.penalty_end_at to expires_at.
+
+    Every counting-penalty method (record/get/clear/get_expired) reads and
+    writes `expires_at`, but the table was created with `penalty_end_at`.
+    `penalty_end_at` is never referenced anywhere, so this is a pure rename.
+    """
+
+    def __init__(self):
+        super().__init__("034", "Rename counting_penalties.penalty_end_at to expires_at")
+
+    def up(self):
+        _rename_column_if_needed("counting_penalties", "penalty_end_at", "expires_at")
+
+
+class Migration035(Migration):
+    """Rename message_audit_logs.action to event_type.
+
+    log_message_edit/log_message_delete both insert into `event_type`, but
+    the table was created with `action`. `action` is never referenced
+    anywhere, so this is a pure rename.
+    """
+
+    def __init__(self):
+        super().__init__("035", "Rename message_audit_logs.action to event_type")
+
+    def up(self):
+        _rename_column_if_needed("message_audit_logs", "action", "event_type")
+
+
+class Migration036(Migration):
+    """Retire counting_penalties -- folded into the generic scheduled_roles
+    system. Counting penalties were always just "add a role now, remove it
+    later", the exact thing /permissions role temp already does generically
+    via scheduled_roles; core/counting.py's _apply_penalty now creates a
+    scheduled_roles row the same way instead of its own table, and
+    core/tasks.py's scheduled_role_check sweep (plus an on-demand check on
+    the penalized member's next message) handles the removal. This folds
+    any existing counting_penalties rows into equivalent scheduled_roles
+    entries before dropping the table, so an in-progress penalty isn't lost.
+    """
+
+    def __init__(self):
+        super().__init__("036", "Fold counting_penalties into scheduled_roles, then drop it")
+
+    def up(self):
+        import time
+
+        exists = db.execute_query("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'main' AND table_name = 'counting_penalties'
+        """)
+        if not exists:
+            print("   ℹ️ main.counting_penalties doesn't exist, nothing to migrate")
+            return
+
+        if _column_exists("counting_penalties", "expires_at"):
+            expiry_col = "expires_at"
+        elif _column_exists("counting_penalties", "penalty_end_at"):
+            expiry_col = "penalty_end_at"
+        else:
+            expiry_col = None
+
+        if expiry_col is None:
+            print("   ⚠️ main.counting_penalties has neither expires_at nor penalty_end_at, skipping data migration")
+        else:
+            rows = db.execute_query(f"SELECT guild_id, user_id, {expiry_col} FROM main.counting_penalties") or []
+            print(f"   📋 Migrating {len(rows)} counting_penalties row(s) to scheduled_roles...")
+            for guild_id, user_id, expires_at in rows:
+                config_row = db.execute_query(
+                    "SELECT idiot_role_id FROM main.counting_configs WHERE guild_id = %s",
+                    (guild_id,),
+                )
+                role_id = config_row[0][0] if config_row and config_row[0][0] else None
+                if not role_id:
+                    print(f"   ⚠️ No idiot_role_id configured for guild {guild_id}, skipping penalty for user {user_id}")
+                    continue
+                sched_id = int(time.time() * 1_000_000)
+                db.execute_query(
+                    """
+                    INSERT INTO main.scheduled_roles
+                    (id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, status)
+                    VALUES (%s, %s, %s, '', %s, %s, NULL, 'pending')
+                    """,
+                    (sched_id, guild_id, user_id, str(role_id), expires_at),
+                    fetch=False,
+                )
+            print("   ✅ Migrated counting_penalties rows to scheduled_roles")
+
+        print("   📋 Dropping counting_penalties table...")
+        db.execute_query("DROP TABLE IF EXISTS main.counting_penalties", fetch=False)
+        print("   ✅ Dropped counting_penalties table")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -1192,6 +1401,12 @@ MIGRATIONS = [
     Migration028(),  # Add role_denies table
     Migration029(),  # Add role_deny_attempt_logs table
     Migration030(),  # Add per-deny log channel target
+    Migration031(),  # Add status/last_error columns to scheduled_roles
+    Migration032(),  # Rename command_bans.banned_at to created_at
+    Migration033(),  # Add updated_at to counting_configs
+    Migration034(),  # Rename counting_penalties.penalty_end_at to expires_at
+    Migration035(),  # Rename message_audit_logs.action to event_type
+    Migration036(),  # Fold counting_penalties into scheduled_roles, then drop it
 ]
 
 def get_applied_migrations():

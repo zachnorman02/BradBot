@@ -6,7 +6,6 @@ import datetime as dt
 import asyncio
 from database import db
 from collections import defaultdict
-from .counting import clear_counting_penalty_if_expired
 from commands.booster.helpers import _apply_icon, _ensure_role_position, find_personal_roles as _find_personal_roles
 from utils.logger import logger
 
@@ -1599,118 +1598,56 @@ async def birthday_check(bot):
 
 
 # ============================================================================
-# COUNTING PENALTY CLEANUP
+# SCHEDULED ROLE CHANGES
+#
+# Counting penalties used to be their own table + a dedicated 60s polling
+# task (counting_penalty_check), doing exactly the same "add a role now,
+# remove it later" bookkeeping that scheduled_roles already does generically
+# for /permissions role temp and /permissions role schedule. _apply_penalty
+# (core/counting.py) now just creates a scheduled_roles row like those
+# commands do, so the one sweep below covers counting penalties too -- no
+# separate table or task needed.
 # ============================================================================
 
-async def counting_penalty_check(bot):
-    """Background task to auto-remove expired counting penalties."""
-    await bot.wait_until_ready()
+async def apply_scheduled_role_job(guild: discord.Guild, job: dict) -> None:
+    """Apply one due scheduled role-change job -- add/remove the listed
+    roles for job['user_id'] in `guild` -- then mark it completed/failed.
 
-    while not bot.is_closed():
-        try:
-            await asyncio.sleep(60)
+    Shared by the periodic sweep below and any on-demand "is this specific
+    thing due right now" check (e.g. clear_counting_penalty_if_expired in
+    core/counting.py, which wants an immediate answer on the penalized
+    member's next message rather than waiting for the next sweep).
+    """
+    try:
+        member = guild.get_member(job["user_id"])
+        if not member:
+            try:
+                member = await guild.fetch_member(job["user_id"])
+            except Exception:
+                member = None
+        if not member:
+            db.mark_scheduled_role_status(job["id"], "failed", "User not found")
+            return
 
-            if not db.connection_pool:
-                db.init_pool()
+        add_roles = [r for r in (guild.get_role(rid) for rid in job["add_ids"]) if r]
+        rem_roles = [r for r in (guild.get_role(rid) for rid in job["remove_ids"]) if r]
 
-            now = dt.datetime.now(dt.timezone.utc)
-            # Use DB-side filter first, then fall back to in-Python check to catch any tz/format edge cases.
-            expired = db.get_expired_counting_penalties(now) or []
-            if expired:
-                print(f"[COUNTING] Found {len(expired)} expired penalties via DB filter at {now.isoformat()}")
-            if not expired:
-                # Fallback: check all penalties in Python for robustness
-                all_penalties = db.get_all_counting_penalties()
-                for entry in all_penalties:
-                    expiry_val = entry.get("expires_at")
-                    if not expiry_val:
-                        print(f"[COUNTING] Skipping entry with no expiry: {entry}")
-                        continue
-                    # Normalize expiry to aware UTC
-                    if isinstance(expiry_val, str):
-                        try:
-                            expiry_val_dt = dt.datetime.fromisoformat(expiry_val)
-                        except Exception as parse_err:
-                            print(f"[COUNTING] Failed to parse expiry '{expiry_val}' for {entry}: {parse_err}")
-                            continue
-                    else:
-                        expiry_val_dt = expiry_val
-                    if expiry_val_dt.tzinfo is None:
-                        expiry_val_dt = expiry_val_dt.replace(tzinfo=dt.timezone.utc)
-                    if expiry_val_dt <= now:
-                        expired.append(entry)
-                if not expired:
-                    continue
+        if add_roles:
+            try:
+                await member.add_roles(*add_roles, reason="Scheduled role add")
+            except Exception as e:
+                db.mark_scheduled_role_status(job["id"], "failed", f"Add failed: {e}")
+                return
+        if rem_roles:
+            try:
+                await member.remove_roles(*rem_roles, reason="Scheduled role remove")
+            except Exception as e:
+                db.mark_scheduled_role_status(job["id"], "failed", f"Remove failed: {e}")
+                return
 
-            for entry in expired:
-                guild = bot.get_guild(entry["guild_id"])
-                if not guild:
-                    print(f"[COUNTING] Guild {entry['guild_id']} not found; clearing penalty for user {entry['user_id']}")
-                    db.clear_counting_penalty(entry["guild_id"], entry["user_id"])
-                    continue
-
-                member = guild.get_member(entry["user_id"])
-                if not member:
-                    try:
-                        member = await guild.fetch_member(entry["user_id"])
-                    except Exception as fetch_err:
-                        print(f"[COUNTING] Failed to fetch member {entry['user_id']} in guild {guild.id}: {fetch_err}")
-                        member = None
-                if not member:
-                    print(f"[COUNTING] Member {entry['user_id']} not found in guild {guild.id}; clearing penalty")
-                    db.clear_counting_penalty(entry["guild_id"], entry["user_id"])
-                    continue
-
-                await clear_counting_penalty_if_expired(guild, member, expiry=entry.get("expires_at"))
-
-            # Extra reconciliation: ensure anyone still holding the penalty role is removed if their record is missing/expired.
-            for guild in bot.guilds:
-                config = db.get_counting_config(guild.id)
-                if not config or not config.get("idiot_role_id"):
-                    continue
-                role = guild.get_role(config["idiot_role_id"])
-                if not role:
-                    continue
-                for member in list(role.members):
-                    expiry = db.get_counting_penalty(guild.id, member.id)
-                    if not expiry:
-                        # No DB record; remove role to avoid stale assignment
-                        try:
-                            await member.remove_roles(role, reason="Counting penalty stale; no DB record")
-                            print(f"[COUNTING] Removed stale penalty role from {member} in guild {guild.id} (no DB record)")
-                        except Exception as e:
-                            print(f"[COUNTING] Failed to remove stale penalty role from {member}: {e}")
-                        continue
-                    if isinstance(expiry, str):
-                        try:
-                            expiry_dt = dt.datetime.fromisoformat(expiry)
-                        except Exception as parse_err:
-                            print(f"[COUNTING] Could not parse expiry '{expiry}' for {member}: {parse_err}")
-                            continue
-                    else:
-                        expiry_dt = expiry
-                    if expiry_dt.tzinfo is None:
-                        expiry_dt = expiry_dt.replace(tzinfo=dt.timezone.utc)
-                    if expiry_dt <= now:
-                        try:
-                            await member.remove_roles(role, reason="Counting penalty expired (reconcile)")
-                            print(f"[COUNTING] Removed expired penalty role from {member} in guild {guild.id}")
-                        except Exception as e:
-                            print(f"[COUNTING] Failed to remove expired penalty role during reconcile: {e}")
-                        db.clear_counting_penalty(guild.id, member.id)
-                # Full guild sweep: if any member has the penalty role but no DB record (missed cache), remove it.
-                for member in guild.members:
-                    if role not in member.roles:
-                        continue
-                    if not db.get_counting_penalty(guild.id, member.id):
-                        try:
-                            await member.remove_roles(role, reason="Counting penalty stale; no DB record (full sweep)")
-                            print(f"[COUNTING] Removed stale penalty role from {member} in guild {guild.id} via full sweep")
-                        except Exception as e:
-                            print(f"[COUNTING] Failed to remove stale penalty role during full sweep: {e}")
-
-        except Exception as e:
-            print(f"Error in counting penalty check: {e}")
+        db.mark_scheduled_role_status(job["id"], "completed", None)
+    except Exception as e:
+        db.mark_scheduled_role_status(job["id"], "failed", str(e))
 
 
 async def scheduled_role_check(bot):
@@ -1730,42 +1667,11 @@ async def scheduled_role_check(bot):
                 continue
 
             for job in due:
-                try:
-                    guild = bot.get_guild(job["guild_id"])
-                    if not guild:
-                        db.mark_scheduled_role_status(job["id"], "failed", "Guild not found")
-                        continue
-                    member = guild.get_member(job["user_id"])
-                    if not member:
-                        try:
-                            member = await guild.fetch_member(job["user_id"])
-                        except Exception:
-                            member = None
-                    if not member:
-                        db.mark_scheduled_role_status(job["id"], "failed", "User not found")
-                        continue
-
-                    add_roles = [guild.get_role(rid) for rid in job["add_ids"]]
-                    rem_roles = [guild.get_role(rid) for rid in job["remove_ids"]]
-                    add_roles = [r for r in add_roles if r]
-                    rem_roles = [r for r in rem_roles if r]
-
-                    if add_roles:
-                        try:
-                            await member.add_roles(*add_roles, reason="Scheduled role add")
-                        except Exception as e:
-                            db.mark_scheduled_role_status(job["id"], "failed", f"Add failed: {e}")
-                            continue
-                    if rem_roles:
-                        try:
-                            await member.remove_roles(*rem_roles, reason="Scheduled role remove")
-                        except Exception as e:
-                            db.mark_scheduled_role_status(job["id"], "failed", f"Remove failed: {e}")
-                            continue
-
-                    db.mark_scheduled_role_status(job["id"], "completed", None)
-                except Exception as e:
-                    db.mark_scheduled_role_status(job["id"], "failed", str(e))
+                guild = bot.get_guild(job["guild_id"])
+                if not guild:
+                    db.mark_scheduled_role_status(job["id"], "failed", "Guild not found")
+                    continue
+                await apply_scheduled_role_job(guild, job)
         except Exception as e:
             print(f"Error in scheduled role check: {e}")
 

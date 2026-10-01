@@ -37,7 +37,6 @@ from commands.poll import PollView
 # Local imports - Core functionality
 from core import (
     birthday_check,
-    counting_penalty_check,
     daily_booster_role_check,
     handle_counting_message,
     handle_message_delete,
@@ -287,7 +286,6 @@ async def on_ready():
         bot.loop.create_task(reminder_check(bot))
         bot.loop.create_task(timer_check(bot))
         bot.loop.create_task(birthday_check(bot))
-        bot.loop.create_task(counting_penalty_check(bot))
         bot.loop.create_task(scheduled_role_check(bot))
         logger.info("All background tasks started")
     else:

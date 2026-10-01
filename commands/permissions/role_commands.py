@@ -11,6 +11,7 @@ from utils.logger import logger
 from utils.interaction_helpers import send_error, send_success, error_response
 from utils.role_permissions import check_role_hierarchy
 from utils.role_parsing import parse_role_list
+from utils.timestamp_helpers import create_discord_timestamp
 
 
 def _parse_duration_seconds(duration: str) -> int | None:
@@ -118,15 +119,20 @@ class PermissionsRoleGroup(GuildOnlyGroup):
         except Exception as e:
             await error_response(interaction, e, context="permissions_role_temp")
 
-    @app_commands.command(name="schedule", description="Schedule role add/remove for a member at a specific time")
+    @app_commands.command(name="schedule", description="Schedule role add/remove for a member at a specific date/time")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         user="User to modify",
+        date="Date to apply the change (YYYY-MM-DD)",
         add_roles="Roles to add at the scheduled time (mentions, names, or IDs, comma-separated)",
         remove_roles="Roles to remove at the scheduled time (mentions, names, or IDs, comma-separated)",
-        run_at="When to apply (ISO timestamp, e.g., 2024-12-31T23:59:00Z)",
+        time="Time to apply the change, 24hr or 12hr (default: 12:00 AM)",
+        timezone_offset="Hours behind UTC for date/time (e.g. -5 for EST, -8 for PST; default: 0 / UTC)",
     )
-    async def schedule(self, interaction: discord.Interaction, user: discord.Member, run_at: str, add_roles: str = "", remove_roles: str = ""):
+    async def schedule(
+        self, interaction: discord.Interaction, user: discord.Member, date: str,
+        add_roles: str = "", remove_roles: str = "", time: str = None, timezone_offset: int = 0,
+    ):
         await interaction.response.defer(ephemeral=True)
         if not db.connection_pool:
             db.init_pool()
@@ -134,11 +140,14 @@ class PermissionsRoleGroup(GuildOnlyGroup):
         add_list, unresolved_a = parse_role_list(interaction.guild, add_roles)
         rem_list, unresolved_r = parse_role_list(interaction.guild, remove_roles)
 
-        try:
-            run_dt = dt.datetime.fromisoformat(run_at.replace("Z", "+00:00"))
-        except Exception:
-            await send_error(interaction, "Invalid run_at format. Use ISO like 2024-12-31T23:59:00Z.")
+        # Default the time of day to midnight rather than create_discord_timestamp's
+        # own "now" default -- scheduling a date with no time means "that whole day
+        # starts", not "whatever moment happens to run this command".
+        unix_ts, _, run_dt_utc = create_discord_timestamp(date, time or "00:00", timezone_offset)
+        if unix_ts is None:
+            await send_error(interaction, run_dt_utc)  # error message, on failure
             return
+        run_dt = run_dt_utc.replace(tzinfo=dt.timezone.utc)
 
         sched_id = db.create_scheduled_role_change(
             interaction.guild.id, user.id, [r.id for r in add_list], [r.id for r in rem_list], run_dt, interaction.user.id
