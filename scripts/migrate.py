@@ -43,18 +43,6 @@ def _column_exists(table: str, column: str) -> bool:
     return bool(result)
 
 
-def _rename_column_if_needed(table: str, old: str, new: str):
-    """Rename old->new only if old exists and new doesn't yet -- a no-op on
-    a database where this was already fixed some other way."""
-    if _column_exists(table, new):
-        print(f"   ℹ️ main.{table}.{new} already exists, skipping rename")
-        return
-    if not _column_exists(table, old):
-        print(f"   ℹ️ main.{table}.{old} doesn't exist either, nothing to rename")
-        return
-    db.execute_query(f"ALTER TABLE main.{table} RENAME COLUMN {old} TO {new}", fetch=False)
-    print(f"   ✅ Renamed main.{table}.{old} to {new}")
-
 # Migration: Initial Schema
 class Migration001(Migration):
     def __init__(self):
@@ -1203,58 +1191,111 @@ class Migration031(Migration):
     created from scratch. And once that boolean's one piece of information
     (done or not) has been folded into `status`, nothing in the codebase
     reads or writes `completed` ever again, so it comes out too.
+
+    Aurora DSQL doesn't support ALTER TABLE ... DROP COLUMN (see
+    Migration022, which hit exactly this and had to recreate
+    conditional_role_eligibility instead of dropping a column from it) --
+    so dropping `completed` uses that same recreate-the-table approach
+    rather than DROP COLUMN directly.
     """
 
     def __init__(self):
-        super().__init__("031", "Add status/last_error to scheduled_roles, drop completed")
+        super().__init__("031", "Add status/last_error to scheduled_roles, drop completed (table recreation)")
 
     def up(self):
-        print("   📋 Adding status column to scheduled_roles...")
+        if _column_exists("scheduled_roles", "status") and not _column_exists("scheduled_roles", "completed"):
+            print("   ℹ️ main.scheduled_roles already migrated, skipping")
+            return
+
+        print("   📋 Adding status/last_error columns to scheduled_roles...")
         db.execute_query("""
             ALTER TABLE main.scheduled_roles
             ADD COLUMN IF NOT EXISTS status VARCHAR(20)
         """, fetch=False)
-        print("   ✅ Added status column to scheduled_roles")
-
-        print("   📋 Adding last_error column to scheduled_roles...")
         db.execute_query("""
             ALTER TABLE main.scheduled_roles
             ADD COLUMN IF NOT EXISTS last_error TEXT
         """, fetch=False)
-        print("   ✅ Added last_error column to scheduled_roles")
-
-        # Backfill status for any rows that predate this column, from the
-        # old `completed` boolean -- must happen before that column is
-        # dropped below.
         db.execute_query("""
             UPDATE main.scheduled_roles
             SET status = CASE WHEN completed THEN 'completed' ELSE 'pending' END
             WHERE status IS NULL
         """, fetch=False)
-        print("   ✅ Backfilled status from completed column")
+        print("   ✅ Added and backfilled status/last_error")
 
-        print("   📋 Dropping now-redundant completed column from scheduled_roles...")
+        print("   📋 Recreating scheduled_roles without the completed column...")
+        db.execute_query("DROP TABLE IF EXISTS main.scheduled_roles_new", fetch=False)
         db.execute_query("""
-            ALTER TABLE main.scheduled_roles
-            DROP COLUMN IF EXISTS completed
+            CREATE TABLE IF NOT EXISTS main.scheduled_roles_new (
+                id BIGINT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                role_ids_to_add TEXT,
+                role_ids_to_remove TEXT,
+                run_at TIMESTAMP NOT NULL,
+                created_by BIGINT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status VARCHAR(20),
+                last_error TEXT
+            )
         """, fetch=False)
-        print("   ✅ Dropped completed column from scheduled_roles")
+        db.execute_query("""
+            INSERT INTO main.scheduled_roles_new
+                (id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, created_at, status, last_error)
+            SELECT id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, created_at, status, last_error
+            FROM main.scheduled_roles
+        """, fetch=False)
+        db.execute_query("DROP TABLE main.scheduled_roles", fetch=False)
+        db.execute_query("ALTER TABLE main.scheduled_roles_new RENAME TO scheduled_roles", fetch=False)
+        print("   ✅ Recreated scheduled_roles without the completed column")
 
 
 class Migration032(Migration):
-    """Rename command_bans.banned_at to created_at.
+    """Rename command_bans.banned_at to created_at (table recreation).
 
     ban_user_for_command's INSERT writes a `created_at` column that was
     never part of this table -- it was created as `banned_at`. Neither name
     is ever read back (only `reason` is selected), so this is a pure rename
     to match what the code already expects, not a behavior change.
+
+    No RENAME COLUMN anywhere in this file ever worked against Aurora
+    DSQL either (every prior rename in this history used the recreate-table
+    approach), so this uses the same pattern as Migration031/022 rather
+    than ALTER TABLE ... RENAME COLUMN.
     """
 
     def __init__(self):
-        super().__init__("032", "Rename command_bans.banned_at to created_at")
+        super().__init__("032", "Rename command_bans.banned_at to created_at (table recreation)")
 
     def up(self):
-        _rename_column_if_needed("command_bans", "banned_at", "created_at")
+        if _column_exists("command_bans", "created_at") and not _column_exists("command_bans", "banned_at"):
+            print("   ℹ️ main.command_bans already migrated, skipping")
+            return
+        if not _column_exists("command_bans", "banned_at"):
+            print("   ℹ️ main.command_bans.banned_at doesn't exist, nothing to rename")
+            return
+
+        print("   📋 Recreating command_bans with created_at instead of banned_at...")
+        db.execute_query("DROP TABLE IF EXISTS main.command_bans_new", fetch=False)
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.command_bans_new (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                command TEXT NOT NULL,
+                reason TEXT,
+                banned_by BIGINT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, user_id, command)
+            )
+        """, fetch=False)
+        db.execute_query("""
+            INSERT INTO main.command_bans_new (guild_id, user_id, command, reason, banned_by, created_at)
+            SELECT guild_id, user_id, command, reason, banned_by, banned_at
+            FROM main.command_bans
+        """, fetch=False)
+        db.execute_query("DROP TABLE main.command_bans", fetch=False)
+        db.execute_query("ALTER TABLE main.command_bans_new RENAME TO command_bans", fetch=False)
+        print("   ✅ Recreated command_bans with created_at column")
 
 
 class Migration033(Migration):
@@ -1263,6 +1304,9 @@ class Migration033(Migration):
     update_counting_state and set_counting_number both SET updated_at on
     every write, but the table was never given that column at all -- every
     successful or failed count submission has been failing this call.
+
+    Some Aurora DSQL configs reject a DEFAULT in ALTER TABLE ADD COLUMN
+    (see Migration026) -- add it bare, then backfill with an UPDATE.
     """
 
     def __init__(self):
@@ -1272,39 +1316,60 @@ class Migration033(Migration):
         print("   📋 Adding updated_at to counting_configs...")
         db.execute_query("""
             ALTER TABLE main.counting_configs
-            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP
         """, fetch=False)
-        print("   ✅ Added updated_at column to counting_configs")
-
-
-class Migration034(Migration):
-    """Rename counting_penalties.penalty_end_at to expires_at.
-
-    Every counting-penalty method (record/get/clear/get_expired) reads and
-    writes `expires_at`, but the table was created with `penalty_end_at`.
-    `penalty_end_at` is never referenced anywhere, so this is a pure rename.
-    """
-
-    def __init__(self):
-        super().__init__("034", "Rename counting_penalties.penalty_end_at to expires_at")
-
-    def up(self):
-        _rename_column_if_needed("counting_penalties", "penalty_end_at", "expires_at")
+        db.execute_query("""
+            UPDATE main.counting_configs
+            SET updated_at = CURRENT_TIMESTAMP
+            WHERE updated_at IS NULL
+        """, fetch=False)
+        print("   ✅ Added and backfilled updated_at column on counting_configs")
 
 
 class Migration035(Migration):
-    """Rename message_audit_logs.action to event_type.
+    """Rename message_audit_logs.action to event_type (table recreation).
 
     log_message_edit/log_message_delete both insert into `event_type`, but
     the table was created with `action`. `action` is never referenced
-    anywhere, so this is a pure rename.
+    anywhere, so this is a pure rename -- via the same recreate-table
+    approach as Migration032, not ALTER TABLE ... RENAME COLUMN.
     """
 
     def __init__(self):
-        super().__init__("035", "Rename message_audit_logs.action to event_type")
+        super().__init__("035", "Rename message_audit_logs.action to event_type (table recreation)")
 
     def up(self):
-        _rename_column_if_needed("message_audit_logs", "action", "event_type")
+        if _column_exists("message_audit_logs", "event_type") and not _column_exists("message_audit_logs", "action"):
+            print("   ℹ️ main.message_audit_logs already migrated, skipping")
+            return
+        if not _column_exists("message_audit_logs", "action"):
+            print("   ℹ️ main.message_audit_logs.action doesn't exist, nothing to rename")
+            return
+
+        print("   📋 Recreating message_audit_logs with event_type instead of action...")
+        db.execute_query("DROP TABLE IF EXISTS main.message_audit_logs_new", fetch=False)
+        db.execute_query("""
+            CREATE TABLE IF NOT EXISTS main.message_audit_logs_new (
+                id BIGINT PRIMARY KEY,
+                guild_id BIGINT,
+                channel_id BIGINT,
+                message_id BIGINT,
+                user_id BIGINT,
+                event_type TEXT,
+                old_content TEXT,
+                new_content TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """, fetch=False)
+        db.execute_query("""
+            INSERT INTO main.message_audit_logs_new
+                (id, guild_id, channel_id, message_id, user_id, event_type, old_content, new_content, created_at)
+            SELECT id, guild_id, channel_id, message_id, user_id, action, old_content, new_content, created_at
+            FROM main.message_audit_logs
+        """, fetch=False)
+        db.execute_query("DROP TABLE main.message_audit_logs", fetch=False)
+        db.execute_query("ALTER TABLE main.message_audit_logs_new RENAME TO message_audit_logs", fetch=False)
+        print("   ✅ Recreated message_audit_logs with event_type column")
 
 
 class Migration036(Migration):
@@ -1404,7 +1469,9 @@ MIGRATIONS = [
     Migration031(),  # Add status/last_error columns to scheduled_roles
     Migration032(),  # Rename command_bans.banned_at to created_at
     Migration033(),  # Add updated_at to counting_configs
-    Migration034(),  # Rename counting_penalties.penalty_end_at to expires_at
+    # 034 (rename counting_penalties.penalty_end_at -> expires_at) was
+    # dropped: it's redundant now that 036 checks both column names itself
+    # before folding and dropping the whole table anyway.
     Migration035(),  # Rename message_audit_logs.action to event_type
     Migration036(),  # Fold counting_penalties into scheduled_roles, then drop it
 ]
