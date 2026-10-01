@@ -1487,13 +1487,44 @@ def get_applied_migrations():
         # Table doesn't exist yet, return empty list
         return []
 
+def _ensure_table_ownership():
+    """Make sure the connecting role owns every table in schema main before
+    attempting any migration.
+
+    main.py's on_ready does `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA
+    main TO admin` on every bot startup, but a GRANT only covers row-level
+    operations (SELECT/INSERT/UPDATE/DELETE) -- it does not make the
+    grantee the table's *owner*, which is specifically what ALTER TABLE /
+    DROP TABLE require. Tables created under a different connection/role
+    than whichever one runs migrations (e.g. counting_configs, created
+    well before this became a concern) never got that ownership, so a
+    migration touching them fails with "must be owner of table X" even
+    though normal bot queries against them work fine. GRANT's own
+    "ON ALL TABLES IN SCHEMA" has no OWNER TO equivalent, so this walks
+    every table individually -- run every migration pass so any
+    newly-created table is covered automatically next time too, not just
+    whatever happened to exist when this was written.
+    """
+    tables = db.execute_query(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+    ) or []
+    for (table_name,) in tables:
+        try:
+            db.execute_query(f"ALTER TABLE main.{table_name} OWNER TO admin", fetch=False)
+        except Exception as e:
+            print(f"   ⚠️ Could not claim ownership of main.{table_name}: {e}")
+
+
 def apply_migrations():
     """Apply all pending migrations"""
     print("🔄 Checking for pending migrations...")
-    
+
     # Initialize database connection
     db.init_pool()
-    
+
+    print("🔑 Ensuring table ownership before migrating...")
+    _ensure_table_ownership()
+
     # Get applied migrations
     applied = get_applied_migrations()
     print(f"   Already applied: {len(applied)} migration(s)")
