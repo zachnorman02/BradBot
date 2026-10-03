@@ -1175,6 +1175,23 @@ class Database:
             ]
         return []
 
+    def get_recent_polls(self, guild_id: int, limit: int = 25) -> list:
+        """Get the most recent polls (active or closed) in a guild, for
+        poll_id autocomplete -- unlike get_active_polls, this includes
+        closed polls since results/wordcloud/stats/reopen all operate on
+        those too."""
+        query = """
+        SELECT id, question, is_active
+        FROM app.polls
+        WHERE guild_id = %s
+        ORDER BY created_at DESC
+        LIMIT %s
+        """
+        results = self.execute_query(query, (guild_id, limit))
+        if results:
+            return [{'id': row[0], 'question': row[1], 'is_active': row[2]} for row in results]
+        return []
+
     # Persistent panel methods
     def save_persistent_panel(self, message_id: int, guild_id: int, channel_id: int,
                                panel_type: str, metadata: Optional[dict] = None):
@@ -1859,93 +1876,117 @@ class Database:
         """
         roles_to_add = roles_to_add or []
         roles_to_remove = roles_to_remove or []
-        
+
         # Convert lists to comma-separated strings
         add_str = ','.join(str(rid) for rid in roles_to_add) if roles_to_add else ''
         remove_str = ','.join(str(rid) for rid in roles_to_remove) if roles_to_remove else ''
-        
+
         # Generate ID from MAX + 1
         max_id_query = "SELECT COALESCE(MAX(id), 0) FROM app.role_rules"
         max_id_result = self.execute_query(max_id_query)
         new_id = (max_id_result[0][0] if max_id_result else 0) + 1
-        
-        query = """
-        INSERT INTO app.role_rules (id, guild_id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        ON CONFLICT (guild_id, rule_name) 
-        DO UPDATE SET 
-            trigger_role_id = EXCLUDED.trigger_role_id,
-            roles_to_add = EXCLUDED.roles_to_add,
-            roles_to_remove = EXCLUDED.roles_to_remove,
-            updated_at = CURRENT_TIMESTAMP
-        """
-        self.execute_query(query, (new_id, guild_id, rule_name, trigger_role_id, add_str, remove_str), fetch=False)
+
+        # rule_name is derived from the trigger + add/remove roles (see
+        # commands/permissions/helpers.generate_role_rule_name), so any
+        # change to those roles produces a different name rather than an
+        # in-place edit of the same row. If this exact combo has been seen
+        # before for this guild (including a previously-disabled row),
+        # reuse/reenable that row. Otherwise, this is a new combo for this
+        # trigger: retire whichever row is currently active for that
+        # trigger before inserting the new one, so only one variant per
+        # trigger role is ever enabled at a time.
+        existing = self.execute_query(
+            "SELECT id FROM app.role_rules WHERE guild_id = %s AND rule_name = %s",
+            (guild_id, rule_name),
+        )
+        if existing:
+            self.execute_query(
+                """
+                UPDATE app.role_rules
+                SET trigger_role_id = %s, roles_to_add = %s, roles_to_remove = %s,
+                    enabled = TRUE, updated_at = CURRENT_TIMESTAMP
+                WHERE guild_id = %s AND rule_name = %s
+                """,
+                (trigger_role_id, add_str, remove_str, guild_id, rule_name),
+                fetch=False,
+            )
+            return
+
+        self.execute_query(
+            "UPDATE app.role_rules SET enabled = FALSE, updated_at = CURRENT_TIMESTAMP "
+            "WHERE guild_id = %s AND trigger_role_id = %s AND enabled = TRUE",
+            (guild_id, trigger_role_id),
+            fetch=False,
+        )
+        self.execute_query(
+            """
+            INSERT INTO app.role_rules
+                (id, guild_id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, enabled, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)
+            """,
+            (new_id, guild_id, rule_name, trigger_role_id, add_str, remove_str),
+            fetch=False,
+        )
     
     def remove_role_rule(self, guild_id: int, rule_name: str):
         """Remove a role rule by name."""
         query = "DELETE FROM app.role_rules WHERE guild_id = %s AND rule_name = %s"
         self.execute_query(query, (guild_id, rule_name), fetch=False)
     
-    def get_role_rules(self, guild_id: int):
-        """Get all role rules for a guild."""
+    def get_role_rules(self, guild_id: int, enabled_only: bool = True):
+        """Get role rules for a guild. By default, only the currently-active
+        (enabled) variant per trigger role -- disabled rows are past combos
+        kept around so configure can silently reenable them later."""
         query = """
-        SELECT id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, created_at, updated_at
+        SELECT id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, created_at, updated_at, enabled
         FROM app.role_rules
         WHERE guild_id = %s
+        """ + (" AND enabled = TRUE" if enabled_only else "") + """
         ORDER BY rule_name
         """
         results = self.execute_query(query, (guild_id,))
-        
+
         if results:
-            rules = []
-            for row in results:
-                # Parse comma-separated strings back to lists of ints
-                add_str = row[3] or ''
-                remove_str = row[4] or ''
-                
-                add_ids = [int(rid) for rid in add_str.split(',') if rid] if add_str else []
-                remove_ids = [int(rid) for rid in remove_str.split(',') if rid] if remove_str else []
-                
-                rules.append({
-                    'id': row[0],
-                    'rule_name': row[1],
-                    'trigger_role_id': row[2],
-                    'roles_to_add': add_ids,
-                    'roles_to_remove': remove_ids,
-                    'created_at': row[5],
-                    'updated_at': row[6]
-                })
-            return rules
+            return [self._row_to_role_rule(row) for row in results]
         return []
-    
+
     def get_role_rule(self, guild_id: int, rule_name: str):
-        """Get a specific role rule."""
+        """Get a specific role rule by its (derived) name, regardless of enabled state."""
         query = """
-        SELECT id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, created_at, updated_at
+        SELECT id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, created_at, updated_at, enabled
         FROM app.role_rules
         WHERE guild_id = %s AND rule_name = %s
         """
         result = self.execute_query(query, (guild_id, rule_name))
-        
-        if result:
-            row = result[0]
-            # Parse comma-separated strings back to lists of ints
-            add_str = row[3] or ''
-            remove_str = row[4] or ''
-            
-            add_ids = [int(rid) for rid in add_str.split(',') if rid] if add_str else []
-            remove_ids = [int(rid) for rid in remove_str.split(',') if rid] if remove_str else []
-            
-            return {
-                'id': row[0],
-                'rule_name': row[1],
-                'trigger_role_id': row[2],
-                'roles_to_add': add_ids,
-                'roles_to_remove': remove_ids,
-                'created_at': row[5],
-                'updated_at': row[6]
-            }
-        return None
+        return self._row_to_role_rule(result[0]) if result else None
+
+    def get_active_role_rule_for_trigger(self, guild_id: int, trigger_role_id: int):
+        """Get the currently-enabled rule for a trigger role, if any -- used
+        to prefill the configure modal with what's already set up."""
+        query = """
+        SELECT id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, created_at, updated_at, enabled
+        FROM app.role_rules
+        WHERE guild_id = %s AND trigger_role_id = %s AND enabled = TRUE
+        """
+        result = self.execute_query(query, (guild_id, trigger_role_id))
+        return self._row_to_role_rule(result[0]) if result else None
+
+    @staticmethod
+    def _row_to_role_rule(row):
+        add_str = row[3] or ''
+        remove_str = row[4] or ''
+        add_ids = [int(rid) for rid in add_str.split(',') if rid] if add_str else []
+        remove_ids = [int(rid) for rid in remove_str.split(',') if rid] if remove_str else []
+        return {
+            'id': row[0],
+            'rule_name': row[1],
+            'trigger_role_id': row[2],
+            'roles_to_add': add_ids,
+            'roles_to_remove': remove_ids,
+            'created_at': row[5],
+            'updated_at': row[6],
+            'enabled': row[7] if len(row) > 7 else True,
+        }
 
     # ========================================================================
     # CONDITIONAL ROLE ASSIGNMENTS

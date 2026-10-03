@@ -1436,6 +1436,35 @@ class Migration036(Migration):
         print("   ✅ Dropped counting_penalties table")
 
 
+class Migration037(Migration):
+    """Add enabled column to role_rules.
+
+    /permissions automation configure now names a rule after its trigger +
+    add/remove roles, so changing those roles produces a different name --
+    rather than overwrite the old row, configure disables it and inserts a
+    new one (reenabling instead of duplicating if that exact combo already
+    exists). The trigger-matching logic in core/tasks.py only acts on
+    enabled rows. Bare ADD COLUMN + backfill, same as Migration033 -- some
+    Aurora DSQL configs reject a DEFAULT in ALTER TABLE ADD COLUMN.
+    """
+
+    def __init__(self):
+        super().__init__("037", "Add enabled column to role_rules")
+
+    def up(self):
+        print("   📋 Adding enabled to role_rules...")
+        db.execute_query("""
+            ALTER TABLE app.role_rules
+            ADD COLUMN IF NOT EXISTS enabled BOOLEAN
+        """, fetch=False)
+        db.execute_query("""
+            UPDATE app.role_rules
+            SET enabled = TRUE
+            WHERE enabled IS NULL
+        """, fetch=False)
+        print("   ✅ Added and backfilled enabled column on role_rules")
+
+
 # List of all migrations in order
 MIGRATIONS = [
     Migration001(),
@@ -1479,6 +1508,7 @@ MIGRATIONS = [
     # the bot to run (nothing reads/writes counting_penalties anymore
     # either way); re-enable once that table's ownership is sorted out.
     # Migration036(),
+    Migration037(),  # Add enabled column to role_rules
 ]
 
 def get_applied_migrations():

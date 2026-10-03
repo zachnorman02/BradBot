@@ -526,37 +526,18 @@ class AdminToolsGroup(GuildOnlyGroup):
 
     @app_commands.command(name="delete_role", description="Delete a single role (admin only)")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(role="Role mention/ID/name to delete", confirm="Type YES to confirm deletion")
-    async def delete_role(self, interaction: discord.Interaction, role: str, confirm: str):
-        """Delete exactly one role. Requires explicit YES confirmation."""
-        if confirm.strip().upper() != "YES":
-            await send_error(interaction, "You must confirm deletion by typing YES.")
-            return
-
-        part = role.strip()
-        role_obj = None
-        if part.startswith("<@&") and part.endswith(">"):
-            try:
-                role_obj = interaction.guild.get_role(int(part[3:-1]))
-            except Exception:
-                pass
-        elif part.isdigit():
-            role_obj = interaction.guild.get_role(int(part))
-        else:
-            role_obj = discord.utils.get(interaction.guild.roles, name=part)
-
-        if not role_obj:
-            await send_error(interaction, "No valid role found to delete.")
-            return
-
-        error = check_role_hierarchy(interaction.user, interaction.guild.me, role_obj)
+    @app_commands.describe(role="Role to delete")
+    async def delete_role(self, interaction: discord.Interaction, role: discord.Role):
+        """Delete exactly one role. Requires an explicit button confirm."""
+        error = check_role_hierarchy(interaction.user, interaction.guild.me, role)
         if error:
             await send_error(interaction, error)
             return
 
-        await interaction.response.defer(ephemeral=True)
-        try:
-            await role_obj.delete(reason=f"Deleted by {interaction.user}")
-            await send_success(interaction, f"Deleted role: {role_obj.name}")
-        except Exception as e:
-            await error_response(interaction, e, context="delete_role")
+        from commands.admin.views import DeleteRoleConfirmView
+
+        await interaction.response.send_message(
+            f"⚠️ Delete {role.mention}? This cannot be undone.",
+            view=DeleteRoleConfirmView(role, interaction.user.id),
+            ephemeral=True,
+        )

@@ -13,7 +13,7 @@ from commands.alarm import AlarmGroup
 from commands.birthday import BirthdayGroup
 from commands.convert import ConversionGroup
 from commands.link import LINK_CONTEXT_MENUS
-from commands.verification import RulesAgreementGroup
+from commands.verification import RulesAgreementGroup, VERIFICATION_CONTEXT_MENUS
 from commands.reaction import REACTION_CONTEXT_MENUS
 from commands.settings import SettingsGroup
 from commands.starboard import StarboardGroup, STARBOARD_CONTEXT_MENUS
@@ -48,6 +48,7 @@ ALL_CONTEXT_MENUS = [
     *LINK_CONTEXT_MENUS,
     *REACTION_CONTEXT_MENUS,
     *STARBOARD_CONTEXT_MENUS,
+    *VERIFICATION_CONTEXT_MENUS,
 ]
 
 # Top-level slash commands not part of any group.

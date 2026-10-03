@@ -11,6 +11,28 @@ from commands.alarm.helpers import ALARM_TASKS
 from commands.alarm.modals import AlarmSetModal
 
 
+async def alarm_id_autocomplete(interaction: discord.Interaction, current: str):
+    """Suggests this guild's scheduled alarms by message instead of making
+    you run /alarm list and type an id back in. Always offers 'all' first."""
+    if not interaction.guild:
+        return []
+    try:
+        rows = db.get_alarms_for_guild(interaction.guild.id)
+    except Exception:
+        rows = []
+    current_lower = (current or "").lower()
+    choices = []
+    if not current_lower or current_lower in "all":
+        choices.append(app_commands.Choice(name="all (cancel every alarm)", value="all"))
+    for r in rows:
+        aid, msg = r[0], r[4]
+        label = f"{aid}: {msg or '(no message)'}"[:100]
+        if current_lower and current_lower not in label.lower() and current_lower not in str(aid):
+            continue
+        choices.append(app_commands.Choice(name=label, value=str(aid)))
+    return choices[:25]
+
+
 class AlarmGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name='alarm', description='Set simple alarms (message or TTS)')
@@ -76,6 +98,7 @@ class AlarmGroup(app_commands.Group):
 
     @app_commands.command(name='cancel', description='Cancel a scheduled alarm by id')
     @app_commands.describe(id='Alarm id to cancel (use /alarm list to see ids). Use `all` to cancel all alarms for this guild')
+    @app_commands.autocomplete(id=alarm_id_autocomplete)
     async def cancel(self, interaction: discord.Interaction, id: str):
         if not await require_guild(interaction):
             return

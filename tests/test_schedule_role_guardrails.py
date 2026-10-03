@@ -1,11 +1,14 @@
-"""Integration-ish unit tests for /permissions role schedule's hierarchy and
-role-deny guardrails -- the fix that made it match /permissions role set
-and /permissions role temp instead of silently bypassing both checks.
+"""Integration-ish unit tests for ScheduleRoleModal's hierarchy and
+role-deny guardrails -- the fix that made /permissions role schedule match
+/permissions role set and /permissions role temp instead of silently
+bypassing both checks. The guardrail logic lives in the modal's on_submit
+now (schedule itself just opens the modal), so these tests build the modal
+directly and simulate a submission.
 
-Calls the command's underlying callback directly (bypassing the Discord
-dispatch/permission-check layer, which isn't what's under test here) with
-lightweight fakes, same pattern as the other mocked-db/mocked-object tests
-in this suite. No pytest-asyncio dependency: asyncio.run() per test.
+Calls on_submit directly (bypassing the Discord dispatch/permission-check
+layer, which isn't what's under test here) with lightweight fakes, same
+pattern as the other mocked-db/mocked-object tests in this suite. No
+pytest-asyncio dependency: asyncio.run() per test.
 """
 import asyncio
 import os
@@ -15,8 +18,8 @@ from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import commands.permissions.role_commands as role_commands
-from commands.permissions.role_commands import PermissionsRoleGroup
+import commands.permissions.modals as modals
+from commands.permissions.modals import ScheduleRoleModal
 
 
 class FakeRole:
@@ -66,7 +69,7 @@ def _interaction(guild, actor_top_role, is_admin=False):
     return SimpleNamespace(
         guild=guild,
         user=actor,
-        response=SimpleNamespace(defer=AsyncMock()),
+        response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
         followup=SimpleNamespace(send=AsyncMock()),
     )
 
@@ -75,10 +78,14 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _call_schedule(interaction, user, date, add_roles="", remove_roles=""):
-    group = PermissionsRoleGroup()
-    cmd = group.get_command("schedule")
-    return cmd.callback(group, interaction, user, date, add_roles=add_roles, remove_roles=remove_roles)
+def _submit_schedule(interaction, user, date, add_roles=None, remove_roles=None):
+    modal = ScheduleRoleModal(target_user=user)
+    modal.roles_to_add.component._values = add_roles or []
+    modal.roles_to_remove.component._values = remove_roles or []
+    modal.date.component._value = date
+    modal.time.component._value = ""
+    modal.timezone_offset.component._value = ""
+    return modal.on_submit(interaction)
 
 
 def test_schedule_rejects_role_above_bots_hierarchy():
@@ -86,13 +93,13 @@ def test_schedule_rejects_role_above_bots_hierarchy():
     guild = _guild([too_high_role])
     actor_top = FakeRole(500, 500, "actor_top")
     interaction = _interaction(guild, actor_top)
-    target_user = SimpleNamespace(id=60, mention="<@60>")
+    target_user = SimpleNamespace(id=60, mention="<@60>", display_name="Target")
 
-    with patch.object(role_commands.db, "init_pool"), \
-         patch.object(role_commands.db, "connection_pool", True), \
-         patch.object(role_commands.db, "create_scheduled_role_change") as create_mock, \
-         patch.object(role_commands, "send_error") as send_error_mock:
-        _run(_call_schedule(interaction, target_user, "2027-01-01", add_roles="1"))
+    with patch.object(modals.db, "init_pool"), \
+         patch.object(modals.db, "connection_pool", True), \
+         patch.object(modals.db, "create_scheduled_role_change") as create_mock, \
+         patch.object(modals, "send_error") as send_error_mock:
+        _run(_submit_schedule(interaction, target_user, "2027-01-01", add_roles=[too_high_role]))
 
     create_mock.assert_not_called()
     send_error_mock.assert_awaited_once()
@@ -104,15 +111,15 @@ def test_schedule_rejects_denied_role_for_add():
     guild = _guild([role])
     actor_top = FakeRole(500, 500, "actor_top")
     interaction = _interaction(guild, actor_top)
-    target_user = SimpleNamespace(id=60, mention="<@60>")
+    target_user = SimpleNamespace(id=60, mention="<@60>", display_name="Target")
 
-    with patch.object(role_commands.db, "init_pool"), \
-         patch.object(role_commands.db, "connection_pool", True), \
-         patch.object(role_commands.db, "is_role_denied", return_value=True), \
-         patch.object(role_commands.db, "create_scheduled_role_change") as create_mock, \
-         patch.object(role_commands, "send_error") as send_error_mock, \
-         patch.object(role_commands, "record_role_deny_attempt", new=AsyncMock()) as deny_log:
-        _run(_call_schedule(interaction, target_user, "2027-01-01", add_roles="1"))
+    with patch.object(modals.db, "init_pool"), \
+         patch.object(modals.db, "connection_pool", True), \
+         patch.object(modals.db, "is_role_denied", return_value=True), \
+         patch.object(modals.db, "create_scheduled_role_change") as create_mock, \
+         patch.object(modals, "send_error") as send_error_mock, \
+         patch.object(modals, "record_role_deny_attempt", new=AsyncMock()) as deny_log:
+        _run(_submit_schedule(interaction, target_user, "2027-01-01", add_roles=[role]))
 
     create_mock.assert_not_called()
     deny_log.assert_awaited_once()
@@ -126,14 +133,14 @@ def test_schedule_does_not_deny_check_removal_only_roles():
     guild = _guild([role])
     actor_top = FakeRole(500, 500, "actor_top")
     interaction = _interaction(guild, actor_top)
-    target_user = SimpleNamespace(id=60, mention="<@60>")
+    target_user = SimpleNamespace(id=60, mention="<@60>", display_name="Target")
 
-    with patch.object(role_commands.db, "init_pool"), \
-         patch.object(role_commands.db, "connection_pool", True), \
-         patch.object(role_commands.db, "is_role_denied", return_value=True) as deny_check, \
-         patch.object(role_commands.db, "create_scheduled_role_change", return_value=123) as create_mock, \
-         patch.object(role_commands, "send_error") as send_error_mock:
-        _run(_call_schedule(interaction, target_user, "2027-01-01", remove_roles="1"))
+    with patch.object(modals.db, "init_pool"), \
+         patch.object(modals.db, "connection_pool", True), \
+         patch.object(modals.db, "is_role_denied", return_value=True) as deny_check, \
+         patch.object(modals.db, "create_scheduled_role_change", return_value=123) as create_mock, \
+         patch.object(modals, "send_error") as send_error_mock:
+        _run(_submit_schedule(interaction, target_user, "2027-01-01", remove_roles=[role]))
 
     # is_role_denied should never even be consulted for a removal-only role.
     deny_check.assert_not_called()
@@ -146,14 +153,14 @@ def test_schedule_succeeds_when_checks_pass():
     guild = _guild([role])
     actor_top = FakeRole(500, 500, "actor_top")
     interaction = _interaction(guild, actor_top)
-    target_user = SimpleNamespace(id=60, mention="<@60>")
+    target_user = SimpleNamespace(id=60, mention="<@60>", display_name="Target")
 
-    with patch.object(role_commands.db, "init_pool"), \
-         patch.object(role_commands.db, "connection_pool", True), \
-         patch.object(role_commands.db, "is_role_denied", return_value=False), \
-         patch.object(role_commands.db, "create_scheduled_role_change", return_value=123) as create_mock, \
-         patch.object(role_commands, "send_error") as send_error_mock:
-        _run(_call_schedule(interaction, target_user, "2027-01-01", add_roles="1"))
+    with patch.object(modals.db, "init_pool"), \
+         patch.object(modals.db, "connection_pool", True), \
+         patch.object(modals.db, "is_role_denied", return_value=False), \
+         patch.object(modals.db, "create_scheduled_role_change", return_value=123) as create_mock, \
+         patch.object(modals, "send_error") as send_error_mock:
+        _run(_submit_schedule(interaction, target_user, "2027-01-01", add_roles=[role]))
 
     send_error_mock.assert_not_awaited()
     create_mock.assert_called_once()

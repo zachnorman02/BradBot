@@ -8,6 +8,36 @@ from database import db
 from utils.interaction_helpers import has_permission_or_owner
 
 
+class DeleteRoleConfirmView(ui.View):
+    """Confirm/cancel buttons for /admin tools delete_role -- replaces typing
+    the literal word YES with an explicit click, same destructive-action
+    friction but without a magic string to remember."""
+
+    def __init__(self, role: discord.Role, actor_id: int):
+        super().__init__(timeout=60)
+        self.role = role
+        self.actor_id = actor_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.actor_id:
+            await interaction.response.send_message("Only the person who ran this command can confirm it.", ephemeral=True)
+            return False
+        return True
+
+    @ui.button(label="Delete Role", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: ui.Button):
+        try:
+            name = self.role.name
+            await self.role.delete(reason=f"Deleted by {interaction.user}")
+            await interaction.response.edit_message(content=f"✅ Deleted role: {name}", view=None)
+        except Exception as e:
+            await interaction.response.edit_message(content=f"❌ Failed to delete role: {e}", view=None)
+
+    @ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.edit_message(content="Cancelled -- role not deleted.", view=None)
+
+
 class AdminSettingsView(ui.View):
     """Interactive admin settings view with toggle buttons"""
 

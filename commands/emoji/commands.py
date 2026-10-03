@@ -11,6 +11,31 @@ from utils.interaction_helpers import send_error, send_success, error_response, 
 from commands.emoji.helpers import check_emoji_permissions, create_emoji_or_sticker_with_overwrite
 
 
+async def saved_emoji_autocomplete(interaction: discord.Interaction, current: str):
+    """For /emoji db delete -- suggests saved emojis/stickers by name
+    instead of making you look an ID up in /emoji db list first."""
+    if not db.connection_pool:
+        db.init_pool()
+    results = db.search_saved_emojis(current or "", limit=25)
+    return [
+        app_commands.Choice(name=f"{r['name']} (ID {r['id']})"[:100], value=r["id"])
+        for r in results
+    ]
+
+
+async def guild_emoji_or_sticker_autocomplete(interaction: discord.Interaction, current: str):
+    """For /emoji rename and /emoji remove -- suggests this server's actual
+    emojis/stickers by name. Reads the in-progress is_sticker value (if
+    already filled in) to search the right collection."""
+    if not interaction.guild:
+        return []
+    is_sticker = bool(getattr(interaction.namespace, "is_sticker", False))
+    collection = interaction.guild.stickers if is_sticker else interaction.guild.emojis
+    current_lower = current.lower()
+    matches = [item for item in collection if current_lower in item.name.lower()]
+    return [app_commands.Choice(name=item.name, value=item.name) for item in matches[:25]]
+
+
 class SavedEmojiGroup(app_commands.Group):
     """Commands for managing saved emojis in the database."""
 
@@ -125,6 +150,7 @@ class SavedEmojiGroup(app_commands.Group):
 
     @app_commands.command(name="delete", description="Delete a saved emoji from database (bot owner only)")
     @app_commands.describe(emoji_id="ID of the emoji to delete")
+    @app_commands.autocomplete(emoji_id=saved_emoji_autocomplete)
     async def delete(self, interaction: discord.Interaction, emoji_id: int):
         if not await require_bot_owner(interaction):
             return
@@ -173,6 +199,7 @@ class EmojiGroup(app_commands.Group):
 
     @app_commands.command(name="rename", description="Rename an existing emoji or sticker")
     @app_commands.describe(current_name="Current name", new_name="New name", is_sticker="Whether this is a sticker instead of emoji")
+    @app_commands.autocomplete(current_name=guild_emoji_or_sticker_autocomplete)
     async def rename(self, interaction: discord.Interaction, current_name: str, new_name: str, is_sticker: bool = False):
         err = await check_emoji_permissions(interaction)
         if err:
@@ -198,6 +225,7 @@ class EmojiGroup(app_commands.Group):
 
     @app_commands.command(name="remove", description="Remove an emoji or sticker from this server")
     @app_commands.describe(name="Name of the emoji/sticker to remove", is_sticker="Whether this is a sticker instead of emoji")
+    @app_commands.autocomplete(name=guild_emoji_or_sticker_autocomplete)
     async def remove(self, interaction: discord.Interaction, name: str, is_sticker: bool = False):
         err = await check_emoji_permissions(interaction)
         if err:

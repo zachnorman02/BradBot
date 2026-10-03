@@ -10,6 +10,101 @@ from utils.interaction_helpers import require_bot_owner, require_guild, has_perm
 from commands.admin.helpers import parse_audit_query, ban_user_for_command
 
 
+class CountingConfigModal(discord.ui.Modal, title="Configure Counting"):
+    idiot_role = discord.ui.Label(
+        text="Penalty Role (optional)",
+        description="Given to a user for 24h when they break the count. Leave empty for no penalty.",
+        component=discord.ui.RoleSelect(min_values=0, max_values=1, required=False),
+    )
+    start_number = discord.ui.Label(
+        text="Next Expected Number (optional)",
+        description="Leave blank to keep the current counter position.",
+        component=discord.ui.TextInput(style=discord.TextStyle.short, required=False, max_length=10),
+    )
+
+    def __init__(self, channel: discord.TextChannel, existing: dict = None):
+        super().__init__()
+        self.channel = channel
+        self.existing = existing or {}
+        self.title = f"Configure Counting: #{channel.name}"[:45]
+        if self.existing.get("idiot_role_id"):
+            role = channel.guild.get_role(self.existing["idiot_role_id"])
+            if role:
+                self.idiot_role.component.default_values = [role]
+
+    async def on_submit(self, interaction: discord.Interaction):
+        roles = list(self.idiot_role.component.values)
+        idiot_role_id = roles[0].id if roles else None
+
+        raw_number = self.start_number.component.value
+        if raw_number:
+            try:
+                start_number = max(1, int(raw_number))
+            except ValueError:
+                await interaction.response.send_message(f"Next expected number must be a whole number, got `{raw_number}`.", ephemeral=True)
+                return
+        else:
+            start_number = self.existing.get("next_number") or 1
+
+        db.set_counting_config(interaction.guild.id, self.channel.id, idiot_role_id, start_number)
+        role_text = roles[0].mention if roles else "None (penalties skipped)"
+        await interaction.response.send_message(
+            f"✅ Counting configured.\n• Channel: {self.channel.mention}\n• Penalty role: {role_text}\n• Next number: {start_number}",
+            ephemeral=True,
+        )
+
+
+class LevelSettingsModal(discord.ui.Modal, title="Configure Level Roles"):
+    level_prefix = discord.ui.Label(
+        text="Level Role Prefix (optional)",
+        description="Leave blank to keep the current prefix.",
+        component=discord.ui.TextInput(style=discord.TextStyle.short, required=False, max_length=20),
+    )
+    verified_role = discord.ui.Label(
+        text="Verified Role (optional)",
+        description="Leave empty to keep the current setting.",
+        component=discord.ui.RoleSelect(min_values=0, max_values=1, required=False),
+    )
+    unverified_role = discord.ui.Label(
+        text="Unverified Role (optional)",
+        description="Leave empty to keep the current setting.",
+        component=discord.ui.RoleSelect(min_values=0, max_values=1, required=False),
+    )
+
+    def __init__(self, guild: discord.Guild, current_prefix: str, current_verified: str, current_unverified: str):
+        super().__init__()
+        self.level_prefix.component.placeholder = current_prefix
+        verified_role_obj = discord.utils.get(guild.roles, name=current_verified)
+        if verified_role_obj:
+            self.verified_role.component.default_values = [verified_role_obj]
+        unverified_role_obj = discord.utils.get(guild.roles, name=current_unverified)
+        if unverified_role_obj:
+            self.unverified_role.component.default_values = [unverified_role_obj]
+
+    async def on_submit(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id
+        prefix = self.level_prefix.component.value
+        if prefix:
+            db.set_guild_setting(guild_id, "level_role_prefix", prefix)
+
+        verified = list(self.verified_role.component.values)
+        if verified:
+            db.set_guild_setting(guild_id, "verified_role_name", verified[0].name)
+
+        unverified = list(self.unverified_role.component.values)
+        if unverified:
+            db.set_guild_setting(guild_id, "unverified_role_name", unverified[0].name)
+
+        current_prefix = db.get_guild_setting(guild_id, "level_role_prefix", "lvl ")
+        current_verified = db.get_guild_setting(guild_id, "verified_role_name", "verified")
+        current_unverified = db.get_guild_setting(guild_id, "unverified_role_name", "unverified")
+        await interaction.response.send_message(
+            f"✅ Updated level settings:\n• level_role_prefix: `{current_prefix}`\n"
+            f"• verified_role_name: `{current_verified}`\n• unverified_role_name: `{current_unverified}`",
+            ephemeral=True,
+        )
+
+
 class BanAuthorModal(discord.ui.Modal, title="Ban Author From Command"):
     command = discord.ui.Label(
         text="Command",

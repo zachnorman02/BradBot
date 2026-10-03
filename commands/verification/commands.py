@@ -1,6 +1,8 @@
-"""Rules-agreement tracking commands. `setup`'s free-text multiline
-message_urls param moves into a Modal (it was already effectively
-modal-shaped)."""
+"""Rules-agreement tracking commands. The old setup/remove_on_verify/
+remove_on_leave/set_verified_role commands are merged into one `settings`
+command backed by VerifySettingsModal (see commands/verification/modals.py)
+-- same things /verify status already displays together, one modal instead
+of four near-identical commands."""
 import discord
 from discord import app_commands
 
@@ -9,7 +11,7 @@ from utils.logger import logger
 from utils.interaction_helpers import require_guild, send_error, send_success, send_info
 from commands.common import owner_or_permissions
 from commands.verification.helpers import run_rules_reaction_cleanup
-from commands.verification.modals import SetupRulesMessagesModal
+from commands.verification.modals import VerifySettingsModal
 
 
 class RulesAgreementGroup(app_commands.Group):
@@ -18,39 +20,24 @@ class RulesAgreementGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="verify", description="Manage rules agreement tracking")
 
-    @app_commands.command(name="remove_on_verify", description="Toggle auto-removal of tracked rules reactions when a member gets verified (Admin only)")
-    @app_commands.describe(enabled="Enable or disable automatic cleanup")
+    @app_commands.command(name="settings", description="Configure the verified role, cleanup behavior, and which messages to track (Admin only)")
     @owner_or_permissions(administrator=True)
-    async def toggle_remove_on_verify(self, interaction: discord.Interaction, enabled: bool):
+    async def settings(self, interaction: discord.Interaction):
+        """Replaces the old setup/remove_on_verify/remove_on_leave/
+        set_verified_role commands -- the same things /verify status
+        already displays together, now configured in one modal (prefilled
+        with the current values) instead of four near-identical commands."""
         if not await require_guild(interaction):
             return
-        db.set_guild_setting(interaction.guild.id, 'rules_reaction_cleanup_on_verify_enabled', 'true' if enabled else 'false')
-        await send_success(interaction, f"Rules reaction cleanup on verify is now **{'enabled' if enabled else 'disabled'}**.")
 
-    @app_commands.command(name="remove_on_leave", description="Toggle auto-removal of tracked rules reactions when a member leaves (Admin only)")
-    @app_commands.describe(enabled="Enable or disable automatic cleanup")
-    @owner_or_permissions(administrator=True)
-    async def toggle_remove_on_leave(self, interaction: discord.Interaction, enabled: bool):
-        if not await require_guild(interaction):
-            return
-        db.set_guild_setting(interaction.guild.id, 'rules_reaction_cleanup_on_leave_enabled', 'true' if enabled else 'false')
-        await send_success(interaction, f"Rules reaction cleanup on leave is now **{'enabled' if enabled else 'disabled'}**.")
+        current_verified_role_name = db.get_guild_setting(interaction.guild.id, 'verified_role_name', 'verified')
+        current_remove_on_verify = db.get_guild_setting(interaction.guild.id, 'rules_reaction_cleanup_on_verify_enabled', 'false').lower() == 'true'
+        current_remove_on_leave = db.get_guild_setting(interaction.guild.id, 'rules_reaction_cleanup_on_leave_enabled', 'false').lower() == 'true'
+        current_message_urls = [m['jump_url'] for m in db.get_rules_agreement_messages(interaction.guild.id) if m.get('jump_url')]
 
-    @app_commands.command(name="setup", description="Set up rules messages to track (Admin only)")
-    @owner_or_permissions(administrator=True)
-    async def setup(self, interaction: discord.Interaction):
-        if not await require_guild(interaction):
-            return
-        await interaction.response.send_modal(SetupRulesMessagesModal())
-
-    @app_commands.command(name="set_verified_role", description="Set which role is treated as verified for rules cleanup (Admin only)")
-    @app_commands.describe(role="The role that should be treated as verified")
-    @owner_or_permissions(administrator=True)
-    async def set_verified_role(self, interaction: discord.Interaction, role: discord.Role):
-        if not await require_guild(interaction):
-            return
-        db.set_guild_setting(interaction.guild.id, 'verified_role_name', role.name)
-        await send_success(interaction, f"Verified role set to {role.mention}.")
+        await interaction.response.send_modal(VerifySettingsModal(
+            interaction.guild, current_verified_role_name, current_remove_on_verify, current_remove_on_leave, current_message_urls,
+        ))
 
     @app_commands.command(name="check", description="Check which rules messages a user has reacted to")
     @app_commands.describe(user="The user to check")
@@ -60,7 +47,7 @@ class RulesAgreementGroup(app_commands.Group):
 
         rules_messages = db.get_rules_agreement_messages(interaction.guild.id)
         if not rules_messages:
-            await send_error(interaction, "Rules agreement tracking is not set up. Use `/verify setup` first.")
+            await send_error(interaction, "Rules agreement tracking is not set up. Use `/verify settings` first.")
             return
 
         await interaction.response.defer()
@@ -116,7 +103,7 @@ class RulesAgreementGroup(app_commands.Group):
 
         rules_messages = db.get_rules_agreement_messages(interaction.guild.id)
         if not rules_messages:
-            await send_info(interaction, "Rules agreement tracking is not set up.\nAdministrators can use `/verify setup` to configure it.")
+            await send_info(interaction, "Rules agreement tracking is not set up.\nAdministrators can use `/verify settings` to configure it.")
             return
 
         embed = discord.Embed(

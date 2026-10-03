@@ -26,7 +26,8 @@ class PermissionsConditionalGroup(GuildOnlyGroup):
     async def configure(self, interaction: discord.Interaction, role: discord.Role):
         if not db.connection_pool:
             db.init_pool()
-        await interaction.response.send_modal(ConditionalRoleConfigModal(role=role))
+        existing = db.get_conditional_role_config(interaction.guild.id, role.id)
+        await interaction.response.send_modal(ConditionalRoleConfigModal(role=role, existing=existing))
 
     @app_commands.command(name="remove_config", description="Remove a conditional role's configuration")
     @app_commands.default_permissions(administrator=True)
@@ -79,21 +80,16 @@ class PermissionsConditionalGroup(GuildOnlyGroup):
             embed.set_footer(text=f"Showing 25 of {len(eligible_users)} eligible users")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="set_eligibility", description="Mark or unmark a user as eligible for a conditional role")
+    @app_commands.command(name="revoke", description="Remove a user's eligibility for a conditional role")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(user="Target user", role="Configured role", eligible="True to mark eligible, False to remove eligibility")
-    async def set_eligibility(self, interaction: discord.Interaction, user: discord.Member, role: discord.Role, eligible: bool):
+    @app_commands.describe(user="Target user", role="Configured role")
+    async def revoke(self, interaction: discord.Interaction, user: discord.Member, role: discord.Role):
         await interaction.response.defer(ephemeral=True)
         if not db.get_conditional_role_config(interaction.guild.id, role.id):
             await send_error(interaction, f"{role.mention} is not configured as a conditional role.\nUse `/permissions conditional configure` first.")
             return
-
-        if eligible:
-            db.mark_conditional_role_eligible(interaction.guild.id, user.id, role.id, interaction.user.id)
-            await send_success(interaction, f"Marked {user.mention} as eligible for {role.mention}.")
-        else:
-            db.unmark_conditional_role_eligible(interaction.guild.id, user.id, role.id)
-            await send_success(interaction, f"Removed eligibility for {user.mention} to receive {role.mention}.")
+        db.unmark_conditional_role_eligible(interaction.guild.id, user.id, role.id)
+        await send_success(interaction, f"Removed eligibility for {user.mention} to receive {role.mention}. (Does not remove the role if they already have it.)")
 
     @app_commands.command(name="check", description="Check a user's eligibility and override status for a conditional role")
     @app_commands.default_permissions(administrator=True)
@@ -161,10 +157,10 @@ class PermissionsConditionalGroup(GuildOnlyGroup):
             embed.set_footer(text=f"Showing 25 of {len(overrides)} overrides")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="assign", description="Assign a conditional role to a user if they're eligible (or overridden)")
+    @app_commands.command(name="grant", description="Mark a user eligible for a conditional role and grant it immediately if the rules allow")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(user="Target user", role="Configured role")
-    async def assign(self, interaction: discord.Interaction, user: discord.Member, role: discord.Role):
+    async def grant(self, interaction: discord.Interaction, user: discord.Member, role: discord.Role):
         await interaction.response.defer(ephemeral=True)
         config = db.get_conditional_role_config(interaction.guild.id, role.id)
         if not config:
@@ -180,12 +176,13 @@ class PermissionsConditionalGroup(GuildOnlyGroup):
             except discord.Forbidden:
                 await send_error(interaction, f"I don't have permission to assign roles.\nMake sure my role is higher than {role.mention}.")
             except Exception as e:
-                await error_response(interaction, e, context="conditional_assign")
+                await error_response(interaction, e, context="conditional_grant")
             return
 
-        if not db.is_conditional_role_eligible(interaction.guild.id, user.id, role.id):
-            await send_error(interaction, f"{user.mention} has not been marked as eligible for {role.mention}.\nUse `/permissions conditional set_eligibility` first.")
-            return
+        # Mark eligible up front -- grant combines the old set_eligibility(True)
+        # + assign into one step, so there's no separate "mark eligible first"
+        # command to run before this one works.
+        db.mark_conditional_role_eligible(interaction.guild.id, user.id, role.id, interaction.user.id)
 
         blocking_role_ids = config['blocking_role_ids']
         user_role_ids = {r.id for r in user.roles}
@@ -222,7 +219,7 @@ class PermissionsConditionalGroup(GuildOnlyGroup):
         except discord.Forbidden:
             await send_error(interaction, f"I don't have permission to assign roles.\nMake sure my role is higher than {role.mention}.")
         except Exception as e:
-            await error_response(interaction, e, context="conditional_assign")
+            await error_response(interaction, e, context="conditional_grant")
 
     @app_commands.command(name="bulk_check", description="Scan all members against all conditional role configs and apply/report changes")
     @app_commands.default_permissions(administrator=True)

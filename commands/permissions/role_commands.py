@@ -2,16 +2,15 @@
 import datetime as dt
 
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 
 from commands.common import GuildOnlyGroup, owner_or_permissions
 from commands.permissions.helpers import record_role_deny_attempt
+from commands.permissions.modals import ScheduleRoleModal
 from database import db
 from utils.logger import logger
 from utils.interaction_helpers import send_error, send_success, error_response
 from utils.role_permissions import check_role_hierarchy
-from utils.role_parsing import parse_role_list
-from utils.timestamp_helpers import create_discord_timestamp
 
 
 def _parse_duration_seconds(duration: str) -> int | None:
@@ -25,6 +24,42 @@ def _parse_duration_seconds(duration: str) -> int | None:
         return None
     multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400}
     return int(match.group(1)) * multipliers.get(match.group(2), 0)
+
+
+class ScheduleDeleteSelect(ui.Select):
+    """Dropdown of a guild's pending scheduled role changes; picking one
+    deletes it immediately -- no need to look up and retype a numeric ID."""
+
+    def __init__(self, guild: discord.Guild, entries: list[dict]):
+        options = []
+        for e in entries[:25]:
+            member = guild.get_member(e["user_id"])
+            user_label = member.display_name if member else f"User {e['user_id']}"
+            add_names = [guild.get_role(rid).name for rid in e["add_ids"] if guild.get_role(rid)]
+            rem_names = [guild.get_role(rid).name for rid in e["remove_ids"] if guild.get_role(rid)]
+            parts = []
+            if add_names:
+                parts.append("+" + ",".join(add_names))
+            if rem_names:
+                parts.append("-" + ",".join(rem_names))
+            when = e["run_at"].strftime("%Y-%m-%d %H:%M UTC")
+            options.append(discord.SelectOption(
+                label=f"{user_label} • {' '.join(parts)}"[:100],
+                value=str(e["id"]),
+                description=f"Runs {when}"[:100],
+            ))
+        super().__init__(placeholder="Select a scheduled change to delete...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        sched_id = int(self.values[0])
+        db.delete_scheduled_role_change(sched_id, interaction.guild.id)
+        await interaction.response.edit_message(content=f"🗑️ Deleted scheduled role change `{sched_id}`", view=None)
+
+
+class ScheduleDeleteView(ui.View):
+    def __init__(self, guild: discord.Guild, entries: list[dict]):
+        super().__init__(timeout=300)
+        self.add_item(ScheduleDeleteSelect(guild, entries))
 
 
 class PermissionsRoleGroup(GuildOnlyGroup):
@@ -120,70 +155,12 @@ class PermissionsRoleGroup(GuildOnlyGroup):
             await error_response(interaction, e, context="permissions_role_temp")
 
     @app_commands.command(name="schedule", description="Schedule role add/remove for a member at a specific date/time")
-    @app_commands.describe(
-        user="User to modify",
-        date="Date to apply the change (YYYY-MM-DD)",
-        add_roles="Roles to add at the scheduled time (mentions, names, or IDs, comma-separated)",
-        remove_roles="Roles to remove at the scheduled time (mentions, names, or IDs, comma-separated)",
-        time="Time to apply the change, 24hr or 12hr (default: 12:00 AM)",
-        timezone_offset="Hours behind UTC for date/time (e.g. -5 for EST, -8 for PST; default: 0 / UTC)",
-    )
+    @app_commands.describe(user="User to modify")
     @owner_or_permissions(manage_roles=True)
-    async def schedule(
-        self, interaction: discord.Interaction, user: discord.Member, date: str,
-        add_roles: str = "", remove_roles: str = "", time: str = None, timezone_offset: int = 0,
-    ):
-        await interaction.response.defer(ephemeral=True)
+    async def schedule(self, interaction: discord.Interaction, user: discord.Member):
         if not db.connection_pool:
             db.init_pool()
-
-        add_list, unresolved_a = parse_role_list(interaction.guild, add_roles)
-        rem_list, unresolved_r = parse_role_list(interaction.guild, remove_roles)
-
-        # Same guardrails as /permissions role set and temp -- scheduling a
-        # change is still granting/revoking a role, so it shouldn't be a way
-        # to route around the hierarchy check or the deny list.
-        for role in add_list + rem_list:
-            error = check_role_hierarchy(interaction.user, interaction.guild.me, role)
-            if error:
-                await send_error(interaction, f"{role.mention}: {error}")
-                return
-        for role in add_list:
-            if db.is_role_denied(interaction.guild.id, user.id, role.id):
-                logger.warning(f"[ROLE DENY] Blocked /permissions role schedule by {interaction.user.id} for user {user.id} role {role.id}")
-                await record_role_deny_attempt(
-                    interaction.guild, user, role, source="permissions_role_schedule",
-                    actor_user_id=interaction.user.id, notes="Blocked by role deny policy during role schedule",
-                )
-                await send_error(interaction, f"Cannot schedule adding {role.mention} to {user.mention}: role is denied for this user.")
-                return
-
-        # Default the time of day to midnight rather than create_discord_timestamp's
-        # own "now" default -- scheduling a date with no time means "that whole day
-        # starts", not "whatever moment happens to run this command".
-        unix_ts, _, run_dt_utc = create_discord_timestamp(date, time or "00:00", timezone_offset)
-        if unix_ts is None:
-            await send_error(interaction, run_dt_utc)  # error message, on failure
-            return
-        run_dt = run_dt_utc.replace(tzinfo=dt.timezone.utc)
-
-        sched_id = db.create_scheduled_role_change(
-            interaction.guild.id, user.id, [r.id for r in add_list], [r.id for r in rem_list], run_dt, interaction.user.id
-        )
-        add_text = ", ".join(r.mention for r in add_list) if add_list else "None"
-        rem_text = ", ".join(r.mention for r in rem_list) if rem_list else "None"
-
-        lines = [
-            f"✅ Scheduled role change `{sched_id}` for {user.mention}",
-            f"• Add: {add_text}",
-            f"• Remove: {rem_text}",
-            f"• At: <t:{int(run_dt.timestamp())}:F>",
-        ]
-        unresolved = unresolved_a + unresolved_r
-        if unresolved:
-            lines.append(f"⚠️ Could not resolve: {', '.join(unresolved)}")
-
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await interaction.response.send_modal(ScheduleRoleModal(target_user=user))
 
     @app_commands.command(name="schedule_list", description="List scheduled role changes")
     @owner_or_permissions(manage_roles=True)
@@ -211,11 +188,19 @@ class PermissionsRoleGroup(GuildOnlyGroup):
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
     @app_commands.command(name="schedule_delete", description="Delete a scheduled role change")
-    @app_commands.describe(schedule_id="ID of the scheduled change to delete (from schedule_list)")
     @owner_or_permissions(manage_roles=True)
-    async def schedule_delete(self, interaction: discord.Interaction, schedule_id: int):
-        await interaction.response.defer(ephemeral=True)
+    async def schedule_delete(self, interaction: discord.Interaction):
         if not db.connection_pool:
             db.init_pool()
-        db.delete_scheduled_role_change(schedule_id, interaction.guild.id)
-        await send_success(interaction, f"Deleted scheduled role change `{schedule_id}`.")
+        entries = [e for e in db.list_scheduled_role_changes(interaction.guild.id) if e["status"] == "pending"]
+        if not entries:
+            await interaction.response.send_message("📋 No pending scheduled role changes.", ephemeral=True)
+            return
+        if len(entries) > 25:
+            await interaction.response.send_message(
+                "⚠️ Too many pending schedules to list in one dropdown (25 max) -- delete a few, then try again.", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            "Pick a scheduled change to delete:", view=ScheduleDeleteView(interaction.guild, entries), ephemeral=True
+        )

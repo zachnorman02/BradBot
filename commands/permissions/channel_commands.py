@@ -9,6 +9,7 @@ from discord import app_commands
 
 from commands.common import GuildOnlyGroup
 from commands.permissions.helpers import build_channel_restrictions_embed, compute_channel_visibility
+from commands.permissions.modals import ChannelRestrictionModal
 from commands.permissions.views import ChannelRestrictionListView
 from database import db
 from utils.logger import logger
@@ -60,58 +61,13 @@ class PermissionsChannelGroup(GuildOnlyGroup):
         except Exception as e:
             await error_response(interaction, e, context="channel_access")
 
-    @app_commands.command(name="restriction_set", description="Restrict a channel based on whether a member has a role")
+    @app_commands.command(name="restriction", description="Add, change, or remove a role-based channel restriction")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(
-        channel="Channel to restrict (text/voice/forum/stage/category)",
-        blocking_role="Role to check",
-        mode="Block members WITH the role, or require it (block members WITHOUT it)",
-    )
-    @app_commands.choices(mode=[
-        app_commands.Choice(name="Block (users WITH the role are blocked)", value="block"),
-        app_commands.Choice(name="Require (users WITHOUT the role are blocked)", value="require"),
-    ])
-    async def restriction_set(
-        self, interaction: discord.Interaction, channel: discord.abc.GuildChannel,
-        blocking_role: discord.Role, mode: app_commands.Choice[str] = None,
-    ):
-        await interaction.response.defer(ephemeral=True)
+    @app_commands.describe(channel="Channel to restrict (text/voice/forum/stage/category)")
+    async def restriction(self, interaction: discord.Interaction, channel: discord.abc.GuildChannel):
         if not db.connection_pool:
             db.init_pool()
-
-        mode_value = mode.value if mode else "block"
-        db.add_channel_restriction(interaction.guild.id, channel.id, blocking_role.id, mode_value)
-        await send_success(
-            interaction,
-            f"Added channel restriction\n• Channel: {channel.mention}\n• Role: {blocking_role.mention}\n• Mode: {mode_value}\n\n"
-            f"{'Members with' if mode_value == 'block' else 'Members without'} {blocking_role.mention} will be blocked from viewing {channel.mention}.\n"
-            f"Use `restriction_apply` to apply this to existing members.",
-        )
-
-    @app_commands.command(name="restriction_remove", description="Remove a role-based channel restriction")
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(channel="Restricted channel", blocking_role="Role the restriction is on", mode="Leave blank to remove both block and require modes")
-    @app_commands.choices(mode=[
-        app_commands.Choice(name="Block", value="block"),
-        app_commands.Choice(name="Require", value="require"),
-    ])
-    async def restriction_remove(
-        self, interaction: discord.Interaction, channel: discord.abc.GuildChannel,
-        blocking_role: discord.Role, mode: app_commands.Choice[str] = None,
-    ):
-        await interaction.response.defer(ephemeral=True)
-        if not db.connection_pool:
-            db.init_pool()
-
-        if mode:
-            db.remove_channel_restriction(interaction.guild.id, channel.id, blocking_role.id, mode.value)
-            mode_text = mode.value
-        else:
-            db.remove_channel_restriction(interaction.guild.id, channel.id, blocking_role.id, "block")
-            db.remove_channel_restriction(interaction.guild.id, channel.id, blocking_role.id, "require")
-            mode_text = "block & require"
-
-        await send_success(interaction, f"Removed channel restriction\n• Channel: {channel.mention}\n• Role: {blocking_role.mention}\n• Mode: {mode_text}")
+        await interaction.response.send_modal(ChannelRestrictionModal(channel=channel))
 
     @app_commands.command(name="restriction_list", description="List all role-based channel restrictions")
     @app_commands.default_permissions(administrator=True)

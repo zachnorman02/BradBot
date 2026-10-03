@@ -20,6 +20,26 @@ from commands.poll.modals import PollCreateModal
 from commands.poll.helpers import update_poll_embed, can_view_poll_results
 
 
+async def poll_id_autocomplete(interaction: discord.Interaction, current: str):
+    """Shared across every command that takes a poll_id -- suggests this
+    guild's recent polls by question instead of making you look an ID up
+    in /poll list and type it back in."""
+    if not interaction.guild:
+        return []
+    if not db.connection_pool:
+        db.init_pool()
+    polls = db.get_recent_polls(interaction.guild.id, limit=25)
+    current_lower = current.lower()
+    choices = []
+    for p in polls:
+        status = "" if p.get("is_active") else " (closed)"
+        label = f"#{p['id']} • {p['question']}{status}"[:100]
+        if current_lower and current_lower not in label.lower() and current_lower not in str(p["id"]):
+            continue
+        choices.append(app_commands.Choice(name=label, value=p["id"]))
+    return choices[:25]
+
+
 class PollGroup(app_commands.Group):
     """Commands for creating and managing text-response polls."""
 
@@ -51,6 +71,7 @@ class PollGroup(app_commands.Group):
 
     @app_commands.command(name="results", description="View responses to a poll")
     @app_commands.describe(poll_id="The ID of the poll (shown in the poll's footer)")
+    @app_commands.autocomplete(poll_id=poll_id_autocomplete)
     async def results(self, interaction: discord.Interaction, poll_id: int):
         """View all responses to a poll."""
         try:
@@ -89,6 +110,7 @@ class PollGroup(app_commands.Group):
 
     @app_commands.command(name="toggle_show_responses", description="Toggle whether a poll shows responses in its message")
     @app_commands.describe(poll_id="The ID of the poll to update", show_responses="Enable or disable showing responses in the poll embed")
+    @app_commands.autocomplete(poll_id=poll_id_autocomplete)
     @owner_or_permissions(manage_messages=True)
     async def toggle_show_responses(self, interaction: discord.Interaction, poll_id: int, show_responses: bool):
         """Allow creators/admins to toggle response visibility on the poll embed."""
@@ -124,6 +146,7 @@ class PollGroup(app_commands.Group):
 
     @app_commands.command(name="close", description="Close a poll and prevent new responses")
     @app_commands.describe(poll_id="The ID of the poll to close")
+    @app_commands.autocomplete(poll_id=poll_id_autocomplete)
     @owner_or_permissions(manage_messages=True)
     async def close(self, interaction: discord.Interaction, poll_id: int):
         """Close a poll and prevent further responses."""
@@ -162,6 +185,7 @@ class PollGroup(app_commands.Group):
 
     @app_commands.command(name="reopen", description="Reopen a closed poll to allow new responses")
     @app_commands.describe(poll_id="The ID of the poll to reopen")
+    @app_commands.autocomplete(poll_id=poll_id_autocomplete)
     @owner_or_permissions(manage_messages=True)
     async def reopen(self, interaction: discord.Interaction, poll_id: int):
         """Reopen a closed poll to allow further responses."""
@@ -204,6 +228,7 @@ class PollGroup(app_commands.Group):
 
     @app_commands.command(name="refresh", description="Refresh a poll's button to fix interaction issues")
     @app_commands.describe(poll_id="The ID of the poll to refresh")
+    @app_commands.autocomplete(poll_id=poll_id_autocomplete)
     async def refresh(self, interaction: discord.Interaction, poll_id: int):
         """Refresh a poll's button view to fix issues with old polls."""
         try:
@@ -277,6 +302,7 @@ class PollGroup(app_commands.Group):
 
     @app_commands.command(name="wordcloud", description="Generate a word cloud from poll responses")
     @app_commands.describe(poll_id="The ID of the poll")
+    @app_commands.autocomplete(poll_id=poll_id_autocomplete)
     async def wordcloud(self, interaction: discord.Interaction, poll_id: int):
         """Generate a word cloud visualization from all poll responses."""
         await interaction.response.defer()
@@ -331,6 +357,7 @@ class PollGroup(app_commands.Group):
 
     @app_commands.command(name="stats", description="Generate statistics and visualizations from poll responses")
     @app_commands.describe(poll_id="The ID of the poll")
+    @app_commands.autocomplete(poll_id=poll_id_autocomplete)
     async def stats(self, interaction: discord.Interaction, poll_id: int):
         """Generate bar chart statistics showing response distribution and counts."""
         await interaction.response.defer()

@@ -85,6 +85,23 @@ def build_conditional_role_configs_embed(guild: discord.Guild) -> discord.Embed:
     return embed
 
 
+def generate_role_rule_name(trigger_role: discord.Role, add_roles: list[discord.Role], remove_roles: list[discord.Role]) -> str:
+    """Derive a role_rule's name from its trigger + add/remove roles, so the
+    name is just a display label and never has to be typed. This is also
+    the row's real identity (see database.add_role_rule) -- any change to
+    the roles produces a different name, which intentionally creates a new
+    row and retires the old one rather than editing it in place.
+    Truncated to fit the rule_name column (VARCHAR(100)).
+    """
+    parts = [trigger_role.name]
+    if add_roles:
+        parts.append("+" + ",".join(r.name for r in add_roles))
+    if remove_roles:
+        parts.append("-" + ",".join(r.name for r in remove_roles))
+    name = " ".join(parts)
+    return name if len(name) <= 100 else name[:97] + "..."
+
+
 def should_defer_assignment(member: discord.Member, config: dict) -> bool:
     """True if the member has any of config's deferral roles."""
     deferral_role_ids = config.get('deferral_role_ids', [])

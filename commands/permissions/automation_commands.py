@@ -3,12 +3,40 @@ remove other roles. Replaces admin_commands.py's `autorole` (5-way action
 dispatch) with plain subcommands; the free-text role lists move into
 AutomationRuleModal."""
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 
 from commands.common import GuildOnlyGroup
 from commands.permissions.modals import AutomationRuleModal
 from database import db
-from utils.interaction_helpers import send_error, send_success, error_response
+from utils.interaction_helpers import send_error
+
+
+class RuleRemoveSelect(ui.Select):
+    """Dropdown of a guild's active auto-role rules; picking one deletes it
+    immediately -- no modal needed since there's nothing to type, just one
+    thing to pick."""
+
+    def __init__(self, guild: discord.Guild, rules: list[dict]):
+        options = []
+        for rule in rules[:25]:
+            trigger = guild.get_role(rule['trigger_role_id'])
+            options.append(discord.SelectOption(
+                label=rule['rule_name'][:100],
+                value=rule['rule_name'],
+                description=f"Trigger: {trigger.name if trigger else 'deleted role'}"[:100],
+            ))
+        super().__init__(placeholder="Select a rule to delete...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        rule_name = self.values[0]
+        db.remove_role_rule(interaction.guild.id, rule_name)
+        await interaction.response.edit_message(content=f"🗑️ Removed role rule `{rule_name}`", view=None)
+
+
+class RuleRemoveView(ui.View):
+    def __init__(self, guild: discord.Guild, rules: list[dict]):
+        super().__init__(timeout=300)
+        self.add_item(RuleRemoveSelect(guild, rules))
 
 
 class PermissionsAutomationGroup(GuildOnlyGroup):
@@ -19,22 +47,28 @@ class PermissionsAutomationGroup(GuildOnlyGroup):
 
     @app_commands.command(name="configure", description="Create or update an auto-role rule")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(rule_name="Unique name for this rule (e.g. 'verified_roles')", trigger_role="Role that triggers this rule when added to a member")
-    async def configure(self, interaction: discord.Interaction, rule_name: str, trigger_role: discord.Role):
+    @app_commands.describe(trigger_role="Role that triggers this rule when added to a member")
+    async def configure(self, interaction: discord.Interaction, trigger_role: discord.Role):
         if not db.connection_pool:
             db.init_pool()
-        await interaction.response.send_modal(AutomationRuleModal(rule_name=rule_name, trigger_role=trigger_role))
+        existing = db.get_active_role_rule_for_trigger(interaction.guild.id, trigger_role.id)
+        await interaction.response.send_modal(AutomationRuleModal(trigger_role=trigger_role, existing=existing))
 
     @app_commands.command(name="remove", description="Delete an auto-role rule")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(rule_name="Name of the rule to remove")
-    async def remove(self, interaction: discord.Interaction, rule_name: str):
-        await interaction.response.defer(ephemeral=True)
-        if not db.get_role_rule(interaction.guild.id, rule_name):
-            await send_error(interaction, f"No rule named `{rule_name}` found.")
+    async def remove(self, interaction: discord.Interaction):
+        rules = db.get_role_rules(interaction.guild.id)
+        if not rules:
+            await interaction.response.send_message("📋 No role rules configured for this server.", ephemeral=True)
             return
-        db.remove_role_rule(interaction.guild.id, rule_name)
-        await send_success(interaction, f"Removed role rule `{rule_name}`")
+        if len(rules) > 25:
+            await interaction.response.send_message(
+                "⚠️ Too many rules to list in one dropdown (25 max) -- delete a few, then try again.", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            "Pick a rule to delete:", view=RuleRemoveView(interaction.guild, rules), ephemeral=True
+        )
 
     @app_commands.command(name="list", description="Show all auto-role rules")
     @app_commands.default_permissions(administrator=True)
