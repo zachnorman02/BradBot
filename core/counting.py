@@ -9,6 +9,7 @@ from typing import Optional
 import discord
 
 from database import db
+from core.tasks import apply_scheduled_role_job
 
 
 ALLOWED_BIN_OPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Pow)
@@ -287,8 +288,20 @@ def _contains_non_ascii_digits(expr: str) -> bool:
     return False
 
 
+def _find_counting_penalty_job(guild_id: int, user_id: int, role_id: int) -> Optional[dict]:
+    """Find this member's pending scheduled-role job removing the counting
+    penalty role, if any. Counting penalties are just scheduled_roles rows
+    like any other -- /permissions role temp does the same "add now, let
+    the scheduler remove it later" thing -- so there's no counting-specific
+    table to query, just a filter over this member's pending jobs."""
+    for job in db.get_pending_scheduled_role_changes_for_user(guild_id, user_id):
+        if role_id in job["remove_ids"]:
+            return job
+    return None
+
+
 async def _apply_penalty(message: discord.Message, config: dict):
-    """Assign the 'counting idiot' role and store expiry."""
+    """Assign the 'counting idiot' role and schedule its removal."""
     if not config.get("idiot_role_id"):
         return
     role = message.guild.get_role(config["idiot_role_id"])
@@ -296,7 +309,9 @@ async def _apply_penalty(message: discord.Message, config: dict):
         return
 
     expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=24)
-    db.record_counting_penalty(message.guild.id, message.author.id, expires_at)
+    db.create_scheduled_role_change(
+        message.guild.id, message.author.id, [], [role.id], expires_at, message.guild.me.id,
+    )
 
     if role not in message.author.roles:
         try:
@@ -305,37 +320,31 @@ async def _apply_penalty(message: discord.Message, config: dict):
             print(f"[COUNTING] Failed to add penalty role: {e}")
 
 
-async def clear_counting_penalty_if_expired(guild: discord.Guild, member: discord.Member, expiry=None) -> bool:
-    """Remove penalty role if expired. Returns True if cleared."""
-    expiry = expiry or db.get_counting_penalty(guild.id, member.id)
-    if not expiry:
+async def clear_counting_penalty_if_expired(guild: discord.Guild, member: discord.Member) -> bool:
+    """If this member's counting-penalty role removal is already due,
+    apply it now instead of waiting for the next scheduled_role_check
+    sweep (up to 30s away). Returns True if cleared."""
+    config = db.get_counting_config(guild.id)
+    role_id = config.get("idiot_role_id") if config else None
+    if not role_id:
         return False
 
-    # Normalize expiry to aware datetime
-    if isinstance(expiry, str):
+    job = _find_counting_penalty_job(guild.id, member.id, role_id)
+    if not job:
+        return False
+
+    run_at = job["run_at"]
+    if isinstance(run_at, str):
         try:
-            expiry = dt.datetime.fromisoformat(expiry)
+            run_at = dt.datetime.fromisoformat(run_at)
         except Exception:
             return False
-    now = dt.datetime.now(dt.timezone.utc)
-    if expiry.tzinfo is None:
-        expiry = expiry.replace(tzinfo=dt.timezone.utc)
-    if expiry > now:
-        return False
+    if run_at.tzinfo is None:
+        run_at = run_at.replace(tzinfo=dt.timezone.utc)
+    if run_at > dt.datetime.now(dt.timezone.utc):
+        return False  # not due yet
 
-    config = db.get_counting_config(guild.id)
-    if not config:
-        return False
-
-    role_id = config.get("idiot_role_id")
-    if role_id:
-        role = guild.get_role(role_id)
-        if role and role in member.roles:
-            try:
-                await member.remove_roles(role, reason="Counting penalty expired")
-            except (discord.Forbidden, discord.HTTPException) as e:
-                print(f"[COUNTING] Failed to remove expired penalty role: {e}")
-    db.clear_counting_penalty(guild.id, member.id)
+    await apply_scheduled_role_job(guild, job)
     return True
 
 
@@ -361,15 +370,15 @@ async def handle_counting_message(message: discord.Message):
 
     # Enforce penalty expiry cleanup for the author (regardless of channel)
     await clear_counting_penalty_if_expired(message.guild, message.author)
-    # If author still has penalty role but no DB record, remove it as stale
+    # If author still has penalty role but no pending scheduled removal, remove it as stale
     try:
         role_id = config.get("idiot_role_id")
         if role_id:
             role = message.guild.get_role(role_id)
             if role and role in message.author.roles:
-                if not db.get_counting_penalty(message.guild.id, message.author.id):
+                if not _find_counting_penalty_job(message.guild.id, message.author.id, role_id):
                     try:
-                        await message.author.remove_roles(role, reason="Counting penalty stale (no DB record)")
+                        await message.author.remove_roles(role, reason="Counting penalty stale (no scheduled removal)")
                     except (discord.Forbidden, discord.HTTPException) as e:
                         print(f"[COUNTING] Failed to remove stale penalty role in on_message: {e}")
     except (discord.Forbidden, discord.HTTPException):

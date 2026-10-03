@@ -88,13 +88,13 @@ More info at https://help.com""", "https://help.com", False, "URL outside any co
     
     print("=" * 60)
     print(f"Results: {passed}/{total} tests passed")
-    
+
     if passed == total:
         print("🎉 All tests passed!")
     else:
         print(f"❌ {total - passed} tests failed")
-    
-    return passed == total
+
+    assert passed == total, f"{total - passed} of {total} code block detection case(s) failed"
 
 def interactive_test():
     """Interactive testing mode"""
@@ -125,8 +125,13 @@ def interactive_test():
 
 if __name__ == "__main__":
     # Run automated tests
-    all_passed = test_function()
-    
+    try:
+        test_function()
+        all_passed = True
+    except AssertionError as e:
+        print(f"\n{e}")
+        all_passed = False
+
     # Offer interactive testing
     if all_passed:
         choice = input("\nWould you like to run interactive tests? (y/n): ").strip().lower()

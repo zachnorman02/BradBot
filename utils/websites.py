@@ -152,23 +152,7 @@ class InstagramLink(SimpleWebsiteLink):
         r"https?://(?:www\.)?(instagram\.com|oginstagram\.com)/(p|reels?|tv|share)/([\w-]+)",
         r"https?://(?:www\.)?(instagram\.com|oginstagram\.com)/([\w-]+)/(p|reels?|tv|share)/([\w-]+)"
     ]
-    replacement = "instagram.com"  # Keep Instagram domain, just remove trackers
-
-    def get_embed_url(self) -> Optional[str]:
-        """Get the embed URL using oginstagram for better embeds."""
-        if not self.is_valid():
-            return None
-        # Replace domain with oginstagram for embed
-        for route in self.routes:
-            if re.match(route, self.url, re.IGNORECASE):
-                embed_url = re.sub(
-                    r'https?://[^/]+',
-                    'https://oginstagram.com',
-                    self.url,
-                    flags=re.IGNORECASE
-                )
-                return self._clean_tracking_params(embed_url)
-        return None
+    replacement = "oginstagram.com"  # Embed-friendly domain, same pattern as other sites
 
 
 class TikTokLink(SimpleWebsiteLink):

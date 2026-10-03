@@ -3,11 +3,14 @@
 - exclude/include/list: which roles are eligible to be auto-detected as
   someone's personal booster role (see commands/booster/helpers.py's
   find_personal_roles "exactly one member" heuristic).
-- exclude_user/include_user/list_users: which users the bot should skip
-  auto-creating/restoring a role for when they start boosting (see
-  core/tasks.py's handle_booster_started). Manual /booster customize or
-  /booster restore still work for an excluded user -- this only blocks the
-  automatic on-boost creation.
+- list_users: which users the bot should skip auto-creating/restoring a role
+  for when they start boosting (see core/tasks.py's handle_booster_started).
+  Manual /booster customize or /booster restore still work for an excluded
+  user -- this only blocks the automatic on-boost creation. The
+  exclude/include-a-user actions themselves are the "Exclude From Booster"/
+  "Include In Booster" user context menus (commands/admin/context_menus.py)
+  -- listing needs no target, so it stays a plain command, but toggling one
+  specific user is exactly the "right-click them" shape.
 """
 import discord
 from discord import app_commands
@@ -61,31 +64,6 @@ class AdminBoosterGroup(GuildOnlyGroup):
             role = interaction.guild.get_role(role_id)
             lines.append(f"• {role.mention if role else f'`{role_id}` (deleted role)'}")
         await interaction.response.send_message("**Excluded from booster-role detection:**\n" + "\n".join(lines), ephemeral=True)
-
-    @app_commands.command(name="exclude_user", description="Stop the bot from auto-creating a booster role for this user when they boost")
-    @app_commands.describe(user="User to exclude from automatic booster-role creation")
-    @owner_or_permissions(manage_roles=True)
-    async def exclude_user(self, interaction: discord.Interaction, user: discord.User):
-        from commands.booster.helpers import add_excluded_user
-
-        purged = add_excluded_user(interaction.guild.id, user.id)
-        note = f" ({purged} saved DB record also cleared.)" if purged else ""
-        await send_success(
-            interaction,
-            f"{user.mention} won't get a role auto-created/restored when they boost.{note}\n"
-            f"They can still get one via `/booster customize` or `/booster restore` if run manually.",
-        )
-
-    @app_commands.command(name="include_user", description="Allow a previously-excluded user to get an auto-created booster role again")
-    @app_commands.describe(user="User to remove from the exclude list")
-    @owner_or_permissions(manage_roles=True)
-    async def include_user(self, interaction: discord.Interaction, user: discord.User):
-        from commands.booster.helpers import remove_excluded_user
-
-        if remove_excluded_user(interaction.guild.id, user.id):
-            await send_success(interaction, f"{user.mention} will get an auto-created booster role again when they boost.")
-        else:
-            await send_error(interaction, f"{user.mention} wasn't on the exclude list.")
 
     @app_commands.command(name="list_users", description="List users excluded from automatic booster-role creation")
     @owner_or_permissions(manage_roles=True)

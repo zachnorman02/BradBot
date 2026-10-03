@@ -73,7 +73,7 @@ def test_code_block_detection():
             failed += 1
     
     print(f"\n📊 Results: {passed} passed, {failed} failed")
-    return failed == 0
+    assert failed == 0, f"{failed} of {len(test_cases)} code block detection case(s) failed"
 
 async def check_amp_links():
     """Test the AMP link fixing function"""
@@ -233,7 +233,12 @@ async def main():
     print("=" * 50)
     
     # Test code block detection
-    test1_passed = test_code_block_detection()
+    try:
+        test_code_block_detection()
+        test1_passed = True
+    except AssertionError as e:
+        print(f"⚠️  {e}")
+        test1_passed = False
     
     # Test AMP link fixing
     test2_passed = await check_amp_links()

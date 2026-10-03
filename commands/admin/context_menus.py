@@ -133,3 +133,44 @@ async def test_booster_role_ctx(interaction: discord.Interaction, member: discor
 
     await interaction.response.defer(ephemeral=True)
     await run_booster_role_test(interaction, member, cleanup=True)
+
+
+@app_commands.context_menu(name="Exclude From Booster")
+async def exclude_booster_user_ctx(interaction: discord.Interaction, member: discord.Member):
+    """Stop the bot from auto-creating/restoring a booster role for this
+    member when they boost. Same effect as the old /admin booster
+    exclude_user, just reachable by right-clicking the member -- listing
+    who's excluded (/admin booster list_users) has no single target, so
+    that one stays a plain command."""
+    if not await require_guild(interaction):
+        return
+    if not await has_permission_or_owner(interaction, manage_roles=True):
+        await send_error(interaction, "You need Manage Roles permission to use this.")
+        return
+
+    from commands.booster.helpers import add_excluded_user
+
+    purged = add_excluded_user(interaction.guild.id, member.id)
+    note = f" ({purged} saved DB record also cleared.)" if purged else ""
+    await send_success(
+        interaction,
+        f"{member.mention} won't get a role auto-created/restored when they boost.{note}\n"
+        f"They can still get one via `/booster customize` or `/booster restore` if run manually.",
+    )
+
+
+@app_commands.context_menu(name="Include In Booster")
+async def include_booster_user_ctx(interaction: discord.Interaction, member: discord.Member):
+    """Undo Exclude From Booster for this member."""
+    if not await require_guild(interaction):
+        return
+    if not await has_permission_or_owner(interaction, manage_roles=True):
+        await send_error(interaction, "You need Manage Roles permission to use this.")
+        return
+
+    from commands.booster.helpers import remove_excluded_user
+
+    if remove_excluded_user(interaction.guild.id, member.id):
+        await send_success(interaction, f"{member.mention} will get an auto-created booster role again when they boost.")
+    else:
+        await send_error(interaction, f"{member.mention} wasn't on the exclude list.")

@@ -174,7 +174,7 @@ class Database:
         guild_id=None checks global setting.
         """
         query = """
-        SELECT setting_value FROM main.user_settings 
+        SELECT setting_value FROM app.user_settings 
         WHERE entity_type = 'user' 
         AND entity_id = %s 
         AND guild_id IS NOT DISTINCT FROM %s 
@@ -191,7 +191,7 @@ class Database:
         """Set user's reply notification preference. guild_id=None sets global setting."""
         # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
         delete_query = """
-        DELETE FROM main.user_settings 
+        DELETE FROM app.user_settings 
         WHERE entity_type = 'user' 
         AND entity_id = %s 
         AND guild_id IS NOT DISTINCT FROM %s 
@@ -201,7 +201,7 @@ class Database:
         
         # Then insert the new value
         insert_query = """
-        INSERT INTO main.user_settings (entity_type, entity_id, guild_id, setting_name, setting_value, created_at, updated_at)
+        INSERT INTO app.user_settings (entity_type, entity_id, guild_id, setting_name, setting_value, created_at, updated_at)
         VALUES ('user', %s, %s, 'reply_notifications', %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (user_id, guild_id, 'true' if enabled else 'false'), fetch=False)
@@ -211,7 +211,7 @@ class Database:
         guild_id=None checks global setting.
         """
         query = """
-        SELECT setting_value FROM main.user_settings 
+        SELECT setting_value FROM app.user_settings 
         WHERE entity_type = 'user' 
         AND entity_id = %s 
         AND guild_id IS NOT DISTINCT FROM %s 
@@ -228,7 +228,7 @@ class Database:
         """Set a user setting. guild_id=None sets global setting."""
         # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
         delete_query = """
-        DELETE FROM main.user_settings 
+        DELETE FROM app.user_settings 
         WHERE entity_type = 'user' 
         AND entity_id = %s 
         AND guild_id IS NOT DISTINCT FROM %s 
@@ -238,7 +238,7 @@ class Database:
         
         # Then insert the new value
         insert_query = """
-        INSERT INTO main.user_settings (entity_type, entity_id, guild_id, setting_name, setting_value, created_at, updated_at)
+        INSERT INTO app.user_settings (entity_type, entity_id, guild_id, setting_name, setting_value, created_at, updated_at)
         VALUES ('user', %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (user_id, guild_id, setting_name, 'true' if enabled else 'false'), fetch=False)
@@ -247,7 +247,7 @@ class Database:
     def get_guild_link_replacement_enabled(self, guild_id: int) -> bool:
         """Get whether link replacement is enabled for a guild. Defaults to True."""
         query = """
-        SELECT setting_value FROM main.guild_settings 
+        SELECT setting_value FROM app.guild_settings 
         WHERE guild_id = %s 
         AND setting_name = 'link_replacement_enabled'
         ORDER BY updated_at DESC
@@ -262,7 +262,7 @@ class Database:
         """Set guild's link replacement preference"""
         # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
         delete_query = """
-        DELETE FROM main.guild_settings 
+        DELETE FROM app.guild_settings 
         WHERE guild_id = %s 
         AND setting_name = 'link_replacement_enabled'
         """
@@ -270,7 +270,7 @@ class Database:
         
         # Then insert the new value
         insert_query = """
-        INSERT INTO main.guild_settings (guild_id, setting_name, setting_value, created_at, updated_at)
+        INSERT INTO app.guild_settings (guild_id, setting_name, setting_value, created_at, updated_at)
         VALUES (%s, 'link_replacement_enabled', %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (guild_id, 'true' if enabled else 'false'), fetch=False)
@@ -284,7 +284,7 @@ class Database:
     def get_guild_setting(self, guild_id: int, setting_name: str, default_value: str = 'true') -> str:
         """Get a guild setting value. Returns default_value if not set."""
         query = """
-        SELECT setting_value FROM main.guild_settings 
+        SELECT setting_value FROM app.guild_settings 
         WHERE guild_id = %s 
         AND setting_name = %s
         ORDER BY updated_at DESC
@@ -299,7 +299,7 @@ class Database:
         """Set a guild setting"""
         # Aurora DSQL doesn't support ON CONFLICT, so delete old entries first
         delete_query = """
-        DELETE FROM main.guild_settings 
+        DELETE FROM app.guild_settings 
         WHERE guild_id = %s 
         AND setting_name = %s
         """
@@ -307,7 +307,7 @@ class Database:
         
         # Then insert the new value
         insert_query = """
-        INSERT INTO main.guild_settings (guild_id, setting_name, setting_value, created_at, updated_at)
+        INSERT INTO app.guild_settings (guild_id, setting_name, setting_value, created_at, updated_at)
         VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (guild_id, setting_name, setting_value), fetch=False)
@@ -316,7 +316,7 @@ class Database:
         """Get all guild settings for a given setting name."""
         query = """
         SELECT guild_id, setting_value
-        FROM main.guild_settings
+        FROM app.guild_settings
         WHERE setting_name = %s
         ORDER BY guild_id
         """
@@ -339,12 +339,12 @@ class Database:
     ):
         """Set or update a user's birthday for a guild."""
         delete_query = """
-        DELETE FROM main.birthdays
+        DELETE FROM app.birthdays
         WHERE guild_id = %s AND user_id = %s
         """
         self.execute_query(delete_query, (guild_id, user_id), fetch=False)
         insert_query = """
-        INSERT INTO main.birthdays (guild_id, user_id, year, month, day, last_announced, created_at, updated_at)
+        INSERT INTO app.birthdays (guild_id, user_id, year, month, day, last_announced, created_at, updated_at)
         VALUES (%s, %s, %s, %s, %s, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (guild_id, user_id, year, month, day), fetch=False)
@@ -352,7 +352,7 @@ class Database:
     def clear_birthday(self, guild_id: int, user_id: int):
         """Remove a user's birthday for a guild."""
         query = """
-        DELETE FROM main.birthdays
+        DELETE FROM app.birthdays
         WHERE guild_id = %s AND user_id = %s
         """
         self.execute_query(query, (guild_id, user_id), fetch=False)
@@ -361,7 +361,7 @@ class Database:
         """Get a user's birthday for a guild."""
         query = """
         SELECT guild_id, user_id, year, month, day, last_announced
-        FROM main.birthdays
+        FROM app.birthdays
         WHERE guild_id = %s AND user_id = %s
         """
         rows = self.execute_query(query, (guild_id, user_id))
@@ -381,7 +381,7 @@ class Database:
         """Get all birthdays for a guild on a specific month/day."""
         query = """
         SELECT guild_id, user_id, year, month, day, last_announced
-        FROM main.birthdays
+        FROM app.birthdays
         WHERE guild_id = %s AND month = %s AND day = %s
         ORDER BY user_id
         """
@@ -401,7 +401,7 @@ class Database:
         """Get all birthdays for a guild in a specific month."""
         query = """
         SELECT guild_id, user_id, year, month, day, last_announced
-        FROM main.birthdays
+        FROM app.birthdays
         WHERE guild_id = %s AND month = %s
         ORDER BY day NULLS LAST, user_id
         """
@@ -421,7 +421,7 @@ class Database:
         """Get all birthdays for a guild."""
         query = """
         SELECT guild_id, user_id, year, month, day, last_announced
-        FROM main.birthdays
+        FROM app.birthdays
         WHERE guild_id = %s
         ORDER BY month ASC, day NULLS LAST, user_id
         """
@@ -441,7 +441,7 @@ class Database:
         """Get birthdays with full date (year/month/day) for a guild."""
         query = """
         SELECT guild_id, user_id, year, month, day, last_announced
-        FROM main.birthdays
+        FROM app.birthdays
         WHERE guild_id = %s AND year IS NOT NULL AND day IS NOT NULL
         ORDER BY user_id
         """
@@ -460,7 +460,7 @@ class Database:
     def mark_birthday_announced(self, guild_id: int, user_id: int, announced_date):
         """Update last_announced for a user's birthday."""
         query = """
-        UPDATE main.birthdays
+        UPDATE app.birthdays
         SET last_announced = %s, updated_at = CURRENT_TIMESTAMP
         WHERE guild_id = %s AND user_id = %s
         """
@@ -471,19 +471,19 @@ class Database:
                                original_url: str, fixed_url: str):
         """Store tracking information for a bot's replacement message"""
         # Aurora DSQL doesn't support ON CONFLICT, so check if exists first
-        check_query = "SELECT 1 FROM main.message_tracking WHERE message_id = %s"
+        check_query = "SELECT 1 FROM app.message_tracking WHERE message_id = %s"
         exists = self.execute_query(check_query, (bot_message_id,))
         
         if not exists:
             query = """
-            INSERT INTO main.message_tracking (message_id, user_id, guild_id, original_url, fixed_url)
+            INSERT INTO app.message_tracking (message_id, user_id, guild_id, original_url, fixed_url)
             VALUES (%s, %s, %s, %s, %s)
             """
             self.execute_query(query, (bot_message_id, user_id, guild_id, original_url, fixed_url), fetch=False)
     
     def get_message_original_user(self, bot_message_id: int) -> Optional[tuple]:
         """Get original user info for a bot message. Returns (user_id, guild_id) or None"""
-        query = "SELECT user_id, guild_id FROM main.message_tracking WHERE message_id = %s"
+        query = "SELECT user_id, guild_id FROM app.message_tracking WHERE message_id = %s"
         result = self.execute_query(query, (bot_message_id,))
         if result:
             return result[0]
@@ -496,7 +496,7 @@ class Database:
                           secondary_color_hex: str = None, tertiary_color_hex: str = None):
         """Store or update booster role configuration in database"""
         # Aurora DSQL doesn't support ON CONFLICT, so check if exists first
-        check_query = "SELECT created_at FROM main.booster_roles WHERE user_id = %s AND guild_id = %s"
+        check_query = "SELECT created_at FROM app.booster_roles WHERE user_id = %s AND guild_id = %s"
         existing = self.execute_query(check_query, (user_id, guild_id))
         
         if existing:
@@ -504,12 +504,12 @@ class Database:
             original_created_at = existing[0][0]
             
             # Delete existing record
-            delete_query = "DELETE FROM main.booster_roles WHERE user_id = %s AND guild_id = %s"
+            delete_query = "DELETE FROM app.booster_roles WHERE user_id = %s AND guild_id = %s"
             self.execute_query(delete_query, (user_id, guild_id), fetch=False)
             
             # Insert with preserved created_at
             query = """
-            INSERT INTO main.booster_roles 
+            INSERT INTO app.booster_roles 
             (user_id, guild_id, role_id, role_name, color_hex, color_type, icon_hash, icon_data, 
              secondary_color_hex, tertiary_color_hex, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
@@ -520,7 +520,7 @@ class Database:
         else:
             # Insert new record with current timestamp
             query = """
-            INSERT INTO main.booster_roles 
+            INSERT INTO app.booster_roles 
             (user_id, guild_id, role_id, role_name, color_hex, color_type, icon_hash, icon_data, 
              secondary_color_hex, tertiary_color_hex, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -534,7 +534,7 @@ class Database:
         query = """
         SELECT role_id, role_name, color_hex, color_type, icon_hash, icon_data, 
                secondary_color_hex, tertiary_color_hex, created_at, updated_at
-        FROM main.booster_roles 
+        FROM app.booster_roles 
         WHERE user_id = %s AND guild_id = %s
         """
         result = self.execute_query(query, (user_id, guild_id))
@@ -556,7 +556,7 @@ class Database:
     
     def delete_booster_role(self, user_id: int, guild_id: int):
         """Delete booster role configuration from database"""
-        query = "DELETE FROM main.booster_roles WHERE user_id = %s AND guild_id = %s"
+        query = "DELETE FROM app.booster_roles WHERE user_id = %s AND guild_id = %s"
         self.execute_query(query, (user_id, guild_id), fetch=False)
     
     def get_all_booster_roles(self, guild_id: int) -> list:
@@ -564,7 +564,7 @@ class Database:
         query = """
         SELECT user_id, role_id, role_name, color_hex, color_type, icon_hash, icon_data, 
                secondary_color_hex, tertiary_color_hex, created_at, updated_at
-        FROM main.booster_roles 
+        FROM app.booster_roles 
         WHERE guild_id = %s
         """
         result = self.execute_query(query, (guild_id,))
@@ -587,7 +587,7 @@ class Database:
     def update_booster_role_id(self, user_id: int, guild_id: int, new_role_id: int):
         """Update the role_id for a booster role (when role is recreated)"""
         query = """
-        UPDATE main.booster_roles 
+        UPDATE app.booster_roles 
         SET role_id = %s, updated_at = CURRENT_TIMESTAMP
         WHERE user_id = %s AND guild_id = %s
         """
@@ -598,12 +598,12 @@ class Database:
                     public_results: bool = True, allow_multiple_responses: bool = True) -> int:
         """Create a new poll and return its ID"""
         # Get next ID (Aurora DSQL doesn't support sequences)
-        max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM main.polls"
+        max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM app.polls"
         next_id = self.execute_query(max_id_query)[0][0]
         
         # Insert with explicit ID
         query = """
-        INSERT INTO main.polls (id, guild_id, channel_id, creator_id, question, is_active, 
+        INSERT INTO app.polls (id, guild_id, channel_id, creator_id, question, is_active, 
                                max_responses, close_at, show_responses, public_results, 
                                allow_multiple_responses, created_at)
         VALUES (%s, %s, %s, %s, %s, TRUE, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
@@ -615,7 +615,7 @@ class Database:
     
     def update_poll_message_id(self, poll_id: int, message_id: int):
         """Update the message ID for a poll"""
-        query = "UPDATE main.polls SET message_id = %s WHERE id = %s"
+        query = "UPDATE app.polls SET message_id = %s WHERE id = %s"
         self.execute_query(query, (message_id, poll_id), fetch=False)
     
     def get_poll(self, poll_id: int) -> Optional[dict]:
@@ -624,7 +624,7 @@ class Database:
         SELECT id, guild_id, channel_id, creator_id, question, message_id, is_active, 
                created_at, max_responses, close_at, show_responses, public_results,
                allow_multiple_responses
-        FROM main.polls WHERE id = %s
+        FROM app.polls WHERE id = %s
         """
         result = self.execute_query(query, (poll_id,))
         if result:
@@ -653,7 +653,7 @@ class Database:
             raise Exception("This poll is closed or does not exist")
         
         # Check if user already responded
-        check_query = "SELECT id FROM main.poll_responses WHERE poll_id = %s AND user_id = %s"
+        check_query = "SELECT id FROM app.poll_responses WHERE poll_id = %s AND user_id = %s"
         existing = self.execute_query(check_query, (poll_id, user_id))
         
         if existing:
@@ -663,19 +663,19 @@ class Database:
             
             # Update existing response
             query = """
-            UPDATE main.poll_responses 
+            UPDATE app.poll_responses 
             SET response_text = %s, username = %s, submitted_at = CURRENT_TIMESTAMP
             WHERE poll_id = %s AND user_id = %s
             """
             self.execute_query(query, (response_text, username, poll_id, user_id), fetch=False)
         else:
             # Get next ID (Aurora DSQL doesn't support sequences)
-            max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM main.poll_responses"
+            max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM app.poll_responses"
             next_id = self.execute_query(max_id_query)[0][0]
             
             # Insert new response with explicit ID
             query = """
-            INSERT INTO main.poll_responses (id, poll_id, user_id, username, response_text, submitted_at)
+            INSERT INTO app.poll_responses (id, poll_id, user_id, username, response_text, submitted_at)
             VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             """
             self.execute_query(query, (next_id, poll_id, user_id, username, response_text), fetch=False)
@@ -690,21 +690,21 @@ class Database:
     def upsert_starboard_board(self, guild_id: int, channel_id: int, emoji: str, threshold: int, allow_nsfw: bool) -> int:
         """Create or update a starboard for a guild/channel."""
         existing = self.execute_query(
-            "SELECT id FROM main.starboard_boards WHERE guild_id = %s AND channel_id = %s",
+            "SELECT id FROM app.starboard_boards WHERE guild_id = %s AND channel_id = %s",
             (guild_id, channel_id)
         )
         if existing:
             board_id = existing[0][0]
             update_query = """
-            UPDATE main.starboard_boards
+            UPDATE app.starboard_boards
             SET emoji = %s, threshold = %s, allow_nsfw = %s, created_at = created_at
             WHERE id = %s
             """
             self.execute_query(update_query, (emoji, threshold, allow_nsfw, board_id), fetch=False)
             return board_id
-        next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.starboard_boards")[0][0]
+        next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM app.starboard_boards")[0][0]
         insert_query = """
-        INSERT INTO main.starboard_boards (id, guild_id, channel_id, emoji, threshold, allow_nsfw)
+        INSERT INTO app.starboard_boards (id, guild_id, channel_id, emoji, threshold, allow_nsfw)
         VALUES (%s, %s, %s, %s, %s, %s)
         """
         self.execute_query(insert_query, (next_id, guild_id, channel_id, emoji, threshold, allow_nsfw), fetch=False)
@@ -712,7 +712,7 @@ class Database:
 
     def delete_starboard_board(self, guild_id: int, channel_id: int):
         self.execute_query(
-            "DELETE FROM main.starboard_boards WHERE guild_id = %s AND channel_id = %s",
+            "DELETE FROM app.starboard_boards WHERE guild_id = %s AND channel_id = %s",
             (guild_id, channel_id),
             fetch=False
         )
@@ -720,7 +720,7 @@ class Database:
     def get_starboard_boards(self, guild_id: int) -> list[dict]:
         query = """
         SELECT id, channel_id, emoji, threshold, allow_nsfw
-        FROM main.starboard_boards
+        FROM app.starboard_boards
         WHERE guild_id = %s
         ORDER BY channel_id
         """
@@ -738,7 +738,7 @@ class Database:
     def get_starboard_board(self, guild_id: int, channel_id: int) -> Optional[dict]:
         query = """
         SELECT id, channel_id, emoji, threshold, allow_nsfw
-        FROM main.starboard_boards
+        FROM app.starboard_boards
         WHERE guild_id = %s AND channel_id = %s
         """
         rows = self.execute_query(query, (guild_id, channel_id))
@@ -756,7 +756,7 @@ class Database:
     def get_starboard_boards_by_emoji(self, guild_id: int, emoji: str) -> list[dict]:
         query = """
         SELECT id, channel_id, emoji, threshold, allow_nsfw
-        FROM main.starboard_boards
+        FROM app.starboard_boards
         WHERE guild_id = %s AND emoji = %s
         """
         rows = self.execute_query(query, (guild_id, emoji))
@@ -774,7 +774,7 @@ class Database:
         query = """
         SELECT message_id, board_id, star_message_id, guild_id, channel_id, author_id,
                current_count, forced, blocked
-        FROM main.starboard_posts
+        FROM app.starboard_posts
         WHERE message_id = %s AND board_id = %s
         """
         rows = self.execute_query(query, (message_id, board_id))
@@ -808,7 +808,7 @@ class Database:
         existing = self.get_starboard_post(message_id, board_id)
         if existing:
             update_query = """
-            UPDATE main.starboard_posts
+            UPDATE app.starboard_posts
             SET star_message_id = %s,
                 current_count = %s,
                 forced = %s,
@@ -823,7 +823,7 @@ class Database:
             )
         else:
             insert_query = """
-            INSERT INTO main.starboard_posts
+            INSERT INTO app.starboard_posts
             (message_id, board_id, star_message_id, guild_id, channel_id, author_id, current_count, forced, blocked)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
@@ -844,7 +844,7 @@ class Database:
         updates.append("updated_at = CURRENT_TIMESTAMP")
         params.extend([message_id, board_id])
         query = f"""
-        UPDATE main.starboard_posts
+        UPDATE app.starboard_posts
         SET {', '.join(updates)}
         WHERE message_id = %s AND board_id = %s
         """
@@ -852,7 +852,7 @@ class Database:
 
     def delete_starboard_post(self, message_id: int, board_id: int):
         self.execute_query(
-            "DELETE FROM main.starboard_posts WHERE message_id = %s AND board_id = %s",
+            "DELETE FROM app.starboard_posts WHERE message_id = %s AND board_id = %s",
             (message_id, board_id),
             fetch=False
         )
@@ -860,7 +860,7 @@ class Database:
     def list_top_starboard_posts(self, board_id: int, limit: int = 10) -> list[dict]:
         query = """
         SELECT message_id, star_message_id, channel_id, author_id, current_count, forced, blocked
-        FROM main.starboard_posts
+        FROM app.starboard_posts
         WHERE board_id = %s
         ORDER BY current_count DESC, created_at ASC
         LIMIT %s
@@ -889,9 +889,9 @@ class Database:
         message_id: int | None = None
     ):
         """Store a record of an /echo command."""
-        next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.echo_logs")[0][0]
+        next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM app.echo_logs")[0][0]
         query = """
-        INSERT INTO main.echo_logs (id, guild_id, user_id, username, channel_id, message_id, message)
+        INSERT INTO app.echo_logs (id, guild_id, user_id, username, channel_id, message_id, message)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         self.execute_query(
@@ -913,13 +913,13 @@ class Database:
         command_key = command.lower()
         # Aurora DSQL lacks ON CONFLICT; delete then insert.
         self.execute_query(
-            "DELETE FROM main.command_bans WHERE guild_id = %s AND user_id = %s AND command = %s",
+            "DELETE FROM app.command_bans WHERE guild_id = %s AND user_id = %s AND command = %s",
             (guild_id, user_id, command_key),
             fetch=False
         )
         self.execute_query(
             """
-            INSERT INTO main.command_bans (guild_id, user_id, command, reason, banned_by, created_at)
+            INSERT INTO app.command_bans (guild_id, user_id, command, reason, banned_by, created_at)
             VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             """,
             (guild_id, user_id, command_key, reason or '', banned_by),
@@ -929,7 +929,7 @@ class Database:
     def unban_user_for_command(self, guild_id: int, user_id: int, command: str):
         """Remove a user's ban for a specific command."""
         self.execute_query(
-            "DELETE FROM main.command_bans WHERE guild_id = %s AND user_id = %s AND command = %s",
+            "DELETE FROM app.command_bans WHERE guild_id = %s AND user_id = %s AND command = %s",
             (guild_id, user_id, command.lower()),
             fetch=False
         )
@@ -938,7 +938,7 @@ class Database:
         """Return whether a user is banned for a command and the stored reason."""
         result = self.execute_query(
             """
-            SELECT reason FROM main.command_bans
+            SELECT reason FROM app.command_bans
             WHERE guild_id = %s AND user_id = %s AND command = %s
             LIMIT 1
             """,
@@ -955,13 +955,13 @@ class Database:
         command_key = command.lower()
         # Aurora DSQL lacks ON CONFLICT; delete then insert.
         self.execute_query(
-            "DELETE FROM main.command_toggles WHERE guild_id = %s AND command = %s",
+            "DELETE FROM app.command_toggles WHERE guild_id = %s AND command = %s",
             (guild_id, command_key),
             fetch=False
         )
         self.execute_query(
             """
-            INSERT INTO main.command_toggles (guild_id, command, enabled, updated_at)
+            INSERT INTO app.command_toggles (guild_id, command, enabled, updated_at)
             VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
             """,
             (guild_id, command_key, enabled),
@@ -972,7 +972,7 @@ class Database:
         """Return True if the command is disabled in the guild."""
         result = self.execute_query(
             """
-            SELECT enabled FROM main.command_toggles
+            SELECT enabled FROM app.command_toggles
             WHERE guild_id = %s AND command = %s
             LIMIT 1
             """,
@@ -986,13 +986,13 @@ class Database:
     def set_counting_config(self, guild_id: int, channel_id: int, idiot_role_id: int | None, next_number: int = 1):
         """Upsert counting configuration for a guild."""
         self.execute_query(
-            "DELETE FROM main.counting_configs WHERE guild_id = %s",
+            "DELETE FROM app.counting_configs WHERE guild_id = %s",
             (guild_id,),
             fetch=False
         )
         self.execute_query(
             """
-            INSERT INTO main.counting_configs (guild_id, channel_id, idiot_role_id, next_number)
+            INSERT INTO app.counting_configs (guild_id, channel_id, idiot_role_id, next_number)
             VALUES (%s, %s, %s, %s)
             """,
             (guild_id, channel_id, idiot_role_id, next_number),
@@ -1000,16 +1000,17 @@ class Database:
         )
 
     def clear_counting_config(self, guild_id: int):
-        """Remove counting config and penalties for a guild."""
-        self.execute_query("DELETE FROM main.counting_configs WHERE guild_id = %s", (guild_id,), fetch=False)
-        self.execute_query("DELETE FROM main.counting_penalties WHERE guild_id = %s", (guild_id,), fetch=False)
+        """Remove counting config for a guild. Any already-scheduled penalty
+        role removals (app.scheduled_roles) are left alone -- they're not
+        counting-specific rows, just generic scheduled changes."""
+        self.execute_query("DELETE FROM app.counting_configs WHERE guild_id = %s", (guild_id,), fetch=False)
 
     def get_counting_config(self, guild_id: int) -> dict | None:
         """Fetch counting config for a guild."""
         result = self.execute_query(
             """
             SELECT guild_id, channel_id, idiot_role_id, next_number, last_user_id
-            FROM main.counting_configs
+            FROM app.counting_configs
             WHERE guild_id = %s
             LIMIT 1
             """,
@@ -1030,7 +1031,7 @@ class Database:
         """Persist next expected number and last user."""
         self.execute_query(
             """
-            UPDATE main.counting_configs
+            UPDATE app.counting_configs
             SET next_number = %s, last_user_id = %s, updated_at = CURRENT_TIMESTAMP
             WHERE guild_id = %s
             """,
@@ -1042,7 +1043,7 @@ class Database:
         """Set the next expected counting number."""
         self.execute_query(
             """
-            UPDATE main.counting_configs
+            UPDATE app.counting_configs
             SET next_number = %s, updated_at = CURRENT_TIMESTAMP
             WHERE guild_id = %s
             """,
@@ -1050,65 +1051,6 @@ class Database:
             fetch=False
         )
 
-    def record_counting_penalty(self, guild_id: int, user_id: int, expires_at):
-        """Create or update a penalty entry for a user."""
-        self.execute_query(
-            "DELETE FROM main.counting_penalties WHERE guild_id = %s AND user_id = %s",
-            (guild_id, user_id),
-            fetch=False
-        )
-        self.execute_query(
-            """
-            INSERT INTO main.counting_penalties (guild_id, user_id, expires_at)
-            VALUES (%s, %s, %s)
-            """,
-            (guild_id, user_id, expires_at),
-            fetch=False
-        )
-
-    def get_counting_penalty(self, guild_id: int, user_id: int):
-        """Return the penalty expiry for a user if it exists."""
-        result = self.execute_query(
-            """
-            SELECT expires_at FROM main.counting_penalties
-            WHERE guild_id = %s AND user_id = %s
-            LIMIT 1
-            """,
-            (guild_id, user_id)
-        )
-        if result:
-            return result[0][0]
-        return None
-
-    def clear_counting_penalty(self, guild_id: int, user_id: int):
-        """Remove a user's penalty record."""
-        self.execute_query(
-            "DELETE FROM main.counting_penalties WHERE guild_id = %s AND user_id = %s",
-            (guild_id, user_id),
-            fetch=False
-        )
-
-    def get_expired_counting_penalties(self, now):
-        """Return list of expired penalties."""
-        results = self.execute_query(
-            """
-            SELECT guild_id, user_id, expires_at
-            FROM main.counting_penalties
-            WHERE expires_at <= %s
-            """,
-            (now,)
-        )
-        return [{"guild_id": r[0], "user_id": r[1], "expires_at": r[2]} for r in results]
-
-    def get_all_counting_penalties(self):
-        """Return all counting penalties (for robust expiry checks)."""
-        results = self.execute_query(
-            """
-            SELECT guild_id, user_id, expires_at
-            FROM main.counting_penalties
-            """
-        )
-        return [{"guild_id": r[0], "user_id": r[1], "expires_at": r[2]} for r in results]
 
     def log_tts_message(
         self,
@@ -1128,9 +1070,9 @@ class Database:
     ):
         """Store a record of a /voice tts command."""
         provider_to_store = provider or 'polly'
-        next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.tts_logs")[0][0]
+        next_id = self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM app.tts_logs")[0][0]
         query = """
-        INSERT INTO main.tts_logs (
+        INSERT INTO app.tts_logs (
             id,
             guild_id,
             user_id,
@@ -1173,7 +1115,7 @@ class Database:
         """Get all responses for a poll"""
         query = """
         SELECT user_id, username, response_text, submitted_at
-        FROM main.poll_responses
+        FROM app.poll_responses
         WHERE poll_id = %s
         ORDER BY submitted_at ASC
         """
@@ -1192,30 +1134,30 @@ class Database:
     
     def get_poll_response_count(self, poll_id: int) -> int:
         """Get the number of responses for a poll"""
-        query = "SELECT COUNT(*) FROM main.poll_responses WHERE poll_id = %s"
+        query = "SELECT COUNT(*) FROM app.poll_responses WHERE poll_id = %s"
         result = self.execute_query(query, (poll_id,))
         return result[0][0] if result else 0
     
     def close_poll(self, poll_id: int):
         """Close a poll to prevent new responses"""
-        query = "UPDATE main.polls SET is_active = FALSE WHERE id = %s"
+        query = "UPDATE app.polls SET is_active = FALSE WHERE id = %s"
         self.execute_query(query, (poll_id,), fetch=False)
     
     def reopen_poll(self, poll_id: int):
         """Reopen a poll to allow new responses"""
-        query = "UPDATE main.polls SET is_active = TRUE WHERE id = %s"
+        query = "UPDATE app.polls SET is_active = TRUE WHERE id = %s"
         self.execute_query(query, (poll_id,), fetch=False)
 
     def set_poll_show_responses(self, poll_id: int, show_responses: bool):
         """Update whether a poll shows responses on its message"""
-        query = "UPDATE main.polls SET show_responses = %s WHERE id = %s"
+        query = "UPDATE app.polls SET show_responses = %s WHERE id = %s"
         self.execute_query(query, ('true' if show_responses else 'false', poll_id), fetch=False)
 
     def get_active_polls(self, guild_id: int) -> list:
         """Get all active polls in a guild"""
         query = """
         SELECT id, channel_id, creator_id, question, created_at
-        FROM main.polls
+        FROM app.polls
         WHERE guild_id = %s AND is_active = TRUE
         ORDER BY created_at DESC
         """
@@ -1238,7 +1180,7 @@ class Database:
                                panel_type: str, metadata: Optional[dict] = None):
         """Insert or update a persistent panel record."""
         query = """
-        INSERT INTO main.persistent_panels (message_id, guild_id, channel_id, panel_type, metadata, updated_at)
+        INSERT INTO app.persistent_panels (message_id, guild_id, channel_id, panel_type, metadata, updated_at)
         VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT (message_id)
         DO UPDATE SET
@@ -1254,7 +1196,7 @@ class Database:
 
     def delete_persistent_panel(self, message_id: int):
         """Remove a persistent panel record."""
-        query = "DELETE FROM main.persistent_panels WHERE message_id = %s"
+        query = "DELETE FROM app.persistent_panels WHERE message_id = %s"
         self.execute_query(query, (message_id,), fetch=False)
         self.persistent_panel_ids.discard(message_id)
 
@@ -1263,7 +1205,7 @@ class Database:
         if panel_type:
             query = """
             SELECT message_id, guild_id, channel_id, panel_type, metadata
-            FROM main.persistent_panels
+            FROM app.persistent_panels
             WHERE panel_type = %s
             ORDER BY created_at ASC
             """
@@ -1271,7 +1213,7 @@ class Database:
         else:
             query = """
             SELECT message_id, guild_id, channel_id, panel_type, metadata
-            FROM main.persistent_panels
+            FROM app.persistent_panels
             ORDER BY created_at ASC
             """
             params = None
@@ -1295,12 +1237,12 @@ class Database:
     def create_reminder(self, user_id: int, message: str, remind_at, guild_id: int = None, channel_id: int = None) -> int:
         """Create a new reminder and return its ID"""
         # Get next ID
-        max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM main.reminders"
+        max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM app.reminders"
         next_id = self.execute_query(max_id_query)[0][0]
         
         # Insert reminder
         query = """
-        INSERT INTO main.reminders (id, user_id, guild_id, channel_id, message, remind_at, created_at, is_sent)
+        INSERT INTO app.reminders (id, user_id, guild_id, channel_id, message, remind_at, created_at, is_sent)
         VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, FALSE)
         """
         self.execute_query(query, (next_id, user_id, guild_id, channel_id, message, remind_at), fetch=False)
@@ -1310,7 +1252,7 @@ class Database:
         """Get all reminders that are due and haven't been sent"""
         query = """
         SELECT id, user_id, guild_id, channel_id, message, remind_at
-        FROM main.reminders
+        FROM app.reminders
         WHERE is_sent = FALSE AND remind_at <= CURRENT_TIMESTAMP
         ORDER BY remind_at ASC
         """
@@ -1331,24 +1273,24 @@ class Database:
     
     def mark_reminder_sent(self, reminder_id: int):
         """Mark a reminder as sent"""
-        query = "UPDATE main.reminders SET is_sent = TRUE WHERE id = %s"
+        query = "UPDATE app.reminders SET is_sent = TRUE WHERE id = %s"
         self.execute_query(query, (reminder_id,), fetch=False)
     
     def delete_reminder(self, reminder_id: int):
         """Delete a reminder"""
-        query = "DELETE FROM main.reminders WHERE id = %s"
+        query = "DELETE FROM app.reminders WHERE id = %s"
         self.execute_query(query, (reminder_id,), fetch=False)
     
     # Timer methods
     def create_timer(self, user_id: int, guild_id: int, channel_id: int, label: str, end_time) -> int:
         """Create a new timer and return its ID"""
         # Get next ID
-        max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM main.timers"
+        max_id_query = "SELECT COALESCE(MAX(id), 0) + 1 FROM app.timers"
         next_id = self.execute_query(max_id_query)[0][0]
         
         # Insert timer
         query = """
-        INSERT INTO main.timers (id, user_id, guild_id, channel_id, label, end_time, created_at, is_complete)
+        INSERT INTO app.timers (id, user_id, guild_id, channel_id, label, end_time, created_at, is_complete)
         VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, FALSE)
         """
         self.execute_query(query, (next_id, user_id, guild_id, channel_id, label, end_time), fetch=False)
@@ -1356,14 +1298,14 @@ class Database:
     
     def update_timer_message_id(self, timer_id: int, message_id: int):
         """Update the message ID for a timer"""
-        query = "UPDATE main.timers SET message_id = %s WHERE id = %s"
+        query = "UPDATE app.timers SET message_id = %s WHERE id = %s"
         self.execute_query(query, (message_id, timer_id), fetch=False)
     
     def get_active_timers(self):
         """Get all active timers"""
         query = """
         SELECT id, user_id, guild_id, channel_id, message_id, label, end_time
-        FROM main.timers
+        FROM app.timers
         WHERE is_complete = FALSE
         ORDER BY end_time ASC
         """
@@ -1385,7 +1327,7 @@ class Database:
     
     def mark_timer_complete(self, timer_id: int):
         """Mark a timer as complete"""
-        query = "UPDATE main.timers SET is_complete = TRUE WHERE id = %s"
+        query = "UPDATE app.timers SET is_complete = TRUE WHERE id = %s"
         self.execute_query(query, (timer_id,), fetch=False)
     
     # Task logging methods
@@ -1395,7 +1337,7 @@ class Database:
         log_id = int(time.time() * 1_000_000)
         
         query = """
-        INSERT INTO main.task_logs (id, task_name, guild_id, started_at, status, details)
+        INSERT INTO app.task_logs (id, task_name, guild_id, started_at, status, details)
         VALUES (%s, %s, %s, CURRENT_TIMESTAMP, 'running', %s)
         """
         self.execute_query(query, (log_id, task_name, guild_id, json.dumps(details) if details else None), fetch=False)
@@ -1404,7 +1346,7 @@ class Database:
     def log_task_complete(self, log_id: int, status: str = 'success', details: Optional[dict] = None, error_message: Optional[str] = None):
         """Log the completion of an automated task."""
         query = """
-        UPDATE main.task_logs 
+        UPDATE app.task_logs 
         SET completed_at = CURRENT_TIMESTAMP, status = %s, details = %s, error_message = %s
         WHERE id = %s
         """
@@ -1415,7 +1357,7 @@ class Database:
         if task_name:
             query = """
             SELECT id, task_name, guild_id, started_at, completed_at, status, details, error_message
-            FROM main.task_logs
+            FROM app.task_logs
             WHERE task_name = %s
             ORDER BY started_at DESC
             LIMIT %s
@@ -1424,7 +1366,7 @@ class Database:
         else:
             query = """
             SELECT id, task_name, guild_id, started_at, completed_at, status, details, error_message
-            FROM main.task_logs
+            FROM app.task_logs
             ORDER BY started_at DESC
             LIMIT %s
             """
@@ -1448,14 +1390,14 @@ class Database:
 
     # Message audit logs (edits/deletions)
     def _next_message_audit_id(self):
-        return self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.message_audit_logs")[0][0]
+        return self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM app.message_audit_logs")[0][0]
 
     def log_message_edit(self, guild_id: int | None, channel_id: int | None, message_id: int | None, user_id: int | None, old_content: str | None, new_content: str | None):
         """Log a message edit event."""
         next_id = self._next_message_audit_id()
         self.execute_query(
             """
-            INSERT INTO main.message_audit_logs
+            INSERT INTO app.message_audit_logs
             (id, guild_id, channel_id, message_id, user_id, event_type, old_content, new_content)
             VALUES (%s, %s, %s, %s, %s, 'edit', %s, %s)
             """,
@@ -1468,7 +1410,7 @@ class Database:
         next_id = self._next_message_audit_id()
         self.execute_query(
             """
-            INSERT INTO main.message_audit_logs
+            INSERT INTO app.message_audit_logs
             (id, guild_id, channel_id, message_id, user_id, event_type, old_content, new_content)
             VALUES (%s, %s, %s, %s, %s, 'delete', %s, NULL)
             """,
@@ -1485,7 +1427,7 @@ class Database:
         emoji_id = int(time.time() * 1_000_000)
         
         query = """
-        INSERT INTO main.saved_emojis (id, name, image_data, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, notes)
+        INSERT INTO app.saved_emojis (id, name, image_data, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, notes)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         self.execute_query(query, (emoji_id, name, image_data, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, notes), fetch=False)
@@ -1495,7 +1437,7 @@ class Database:
         """Get a saved emoji or sticker by ID."""
         query = """
         SELECT id, name, image_data, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, created_at, notes
-        FROM main.saved_emojis
+        FROM app.saved_emojis
         WHERE id = %s
         """
         results = self.execute_query(query, (emoji_id,))
@@ -1528,14 +1470,14 @@ class Database:
         """
         # Aurora DSQL doesn't support ON CONFLICT, so delete old entry first
         delete_query = """
-        DELETE FROM main.channel_restrictions
+        DELETE FROM app.channel_restrictions
         WHERE guild_id = %s AND channel_id = %s AND blocking_role_id = %s AND mode = %s
         """
         self.execute_query(delete_query, (guild_id, channel_id, blocking_role_id, mode), fetch=False)
         
         # Insert new restriction
         insert_query = """
-        INSERT INTO main.channel_restrictions (guild_id, channel_id, blocking_role_id, mode, created_at)
+        INSERT INTO app.channel_restrictions (guild_id, channel_id, blocking_role_id, mode, created_at)
         VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (guild_id, channel_id, blocking_role_id, mode), fetch=False)
@@ -1544,7 +1486,7 @@ class Database:
     def remove_channel_restriction(self, guild_id: int, channel_id: int, blocking_role_id: int, mode: str = "block"):
         """Remove a channel restriction."""
         query = """
-        DELETE FROM main.channel_restrictions
+        DELETE FROM app.channel_restrictions
         WHERE guild_id = %s AND channel_id = %s AND blocking_role_id = %s AND mode = %s
         """
         self.execute_query(query, (guild_id, channel_id, blocking_role_id, mode), fetch=False)
@@ -1554,7 +1496,7 @@ class Database:
         """Get all channel restrictions for a guild."""
         query = """
         SELECT channel_id, blocking_role_id, mode, created_at
-        FROM main.channel_restrictions
+        FROM app.channel_restrictions
         WHERE guild_id = %s
         ORDER BY created_at DESC
         """
@@ -1584,13 +1526,13 @@ class Database:
         """Persist a new alarm. `fire_at` should be a timestamp string accepted by the DB (ISO)."""
         # Delete any existing row with same id just in case
         try:
-            delete_q = "DELETE FROM main.alarms WHERE id = %s"
+            delete_q = "DELETE FROM app.alarms WHERE id = %s"
             self.execute_query(delete_q, (alarm_id,), fetch=False)
         except Exception:
             pass
 
         insert_q = """
-        INSERT INTO main.alarms (id, guild_id, creator_id, channel_id, message, tts, tone, alternate, repeat, interval_seconds, fire_at, created_at, fired)
+        INSERT INTO app.alarms (id, guild_id, creator_id, channel_id, message, tts, tone, alternate, repeat, interval_seconds, fire_at, created_at, fired)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, FALSE)
         """
         # store booleans as 'true'/'false' strings for Aurora DSQL compatibility
@@ -1611,33 +1553,33 @@ class Database:
     def get_all_pending_alarms(self):
         """Return all non-fired alarms as list of rows."""
         # include repeat column
-        query = "SELECT id, guild_id, creator_id, channel_id, message, tts, tone, alternate, repeat, interval_seconds, fire_at FROM main.alarms WHERE fired = FALSE"
+        query = "SELECT id, guild_id, creator_id, channel_id, message, tts, tone, alternate, repeat, interval_seconds, fire_at FROM app.alarms WHERE fired = FALSE"
         return self.execute_query(query)
 
     def get_alarms_for_guild(self, guild_id: int):
         # include repeat column
-        query = "SELECT id, guild_id, creator_id, channel_id, message, tts, tone, alternate, repeat, interval_seconds, fire_at FROM main.alarms WHERE fired = FALSE AND guild_id = %s ORDER BY fire_at"
+        query = "SELECT id, guild_id, creator_id, channel_id, message, tts, tone, alternate, repeat, interval_seconds, fire_at FROM app.alarms WHERE fired = FALSE AND guild_id = %s ORDER BY fire_at"
         return self.execute_query(query, (guild_id,))
 
     def mark_alarm_fired(self, alarm_id: str):
-        query = "UPDATE main.alarms SET fired = TRUE WHERE id = %s"
+        query = "UPDATE app.alarms SET fired = TRUE WHERE id = %s"
         self.execute_query(query, (alarm_id,), fetch=False)
 
     def delete_alarm(self, alarm_id: str):
-        query = "DELETE FROM main.alarms WHERE id = %s"
+        query = "DELETE FROM app.alarms WHERE id = %s"
         self.execute_query(query, (alarm_id,), fetch=False)
     
     def add_message_mirror(self, guild_id: int, source_channel_id: int, target_channel_id: int):
         """Add a message mirror configuration."""
         # Aurora DSQL pattern: Delete then insert
         delete_query = """
-        DELETE FROM main.message_mirrors
+        DELETE FROM app.message_mirrors
         WHERE guild_id = %s AND source_channel_id = %s AND target_channel_id = %s
         """
         self.execute_query(delete_query, (guild_id, source_channel_id, target_channel_id), fetch=False)
         
         insert_query = """
-        INSERT INTO main.message_mirrors (guild_id, source_channel_id, target_channel_id, created_at)
+        INSERT INTO app.message_mirrors (guild_id, source_channel_id, target_channel_id, created_at)
         VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
         """
         self.execute_query(insert_query, (guild_id, source_channel_id, target_channel_id), fetch=False)
@@ -1646,7 +1588,7 @@ class Database:
     def remove_message_mirror(self, guild_id: int, source_channel_id: int, target_channel_id: int):
         """Remove a message mirror configuration."""
         query = """
-        DELETE FROM main.message_mirrors
+        DELETE FROM app.message_mirrors
         WHERE guild_id = %s AND source_channel_id = %s AND target_channel_id = %s
         """
         self.execute_query(query, (guild_id, source_channel_id, target_channel_id), fetch=False)
@@ -1657,7 +1599,7 @@ class Database:
         if source_channel_id:
             query = """
             SELECT source_channel_id, target_channel_id, created_at
-            FROM main.message_mirrors
+            FROM app.message_mirrors
             WHERE guild_id = %s AND source_channel_id = %s
             ORDER BY created_at ASC
             """
@@ -1665,7 +1607,7 @@ class Database:
         else:
             query = """
             SELECT source_channel_id, target_channel_id, created_at
-            FROM main.message_mirrors
+            FROM app.message_mirrors
             WHERE guild_id = %s
             ORDER BY source_channel_id, created_at ASC
             """
@@ -1692,7 +1634,7 @@ class Database:
         add_str = ",".join(str(rid) for rid in role_ids_to_add) if role_ids_to_add else ""
         remove_str = ",".join(str(rid) for rid in role_ids_to_remove) if role_ids_to_remove else ""
         query = """
-        INSERT INTO main.scheduled_roles (id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, status)
+        INSERT INTO app.scheduled_roles (id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, status)
         VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
         """
         self.execute_query(query, (sched_id, guild_id, user_id, add_str, remove_str, run_at, created_by), fetch=False)
@@ -1702,7 +1644,7 @@ class Database:
         """List scheduled role changes for a guild."""
         query = """
         SELECT id, user_id, role_ids_to_add, role_ids_to_remove, run_at, created_by, status, last_error
-        FROM main.scheduled_roles
+        FROM app.scheduled_roles
         WHERE guild_id = %s
         ORDER BY run_at ASC
         """
@@ -1725,13 +1667,13 @@ class Database:
 
     def delete_scheduled_role_change(self, sched_id: int, guild_id: int):
         """Delete a scheduled role change."""
-        self.execute_query("DELETE FROM main.scheduled_roles WHERE id = %s AND guild_id = %s", (sched_id, guild_id), fetch=False)
+        self.execute_query("DELETE FROM app.scheduled_roles WHERE id = %s AND guild_id = %s", (sched_id, guild_id), fetch=False)
 
     def get_due_scheduled_role_changes(self, now):
         """Get scheduled role changes that are due to run."""
         query = """
         SELECT id, guild_id, user_id, role_ids_to_add, role_ids_to_remove, run_at
-        FROM main.scheduled_roles
+        FROM app.scheduled_roles
         WHERE status = 'pending' AND run_at <= %s
         ORDER BY run_at ASC
         LIMIT 50
@@ -1754,10 +1696,31 @@ class Database:
     def mark_scheduled_role_status(self, sched_id: int, status: str, error: str | None = None):
         """Update scheduled role status and optional error."""
         self.execute_query(
-            "UPDATE main.scheduled_roles SET status = %s, last_error = %s WHERE id = %s",
+            "UPDATE app.scheduled_roles SET status = %s, last_error = %s WHERE id = %s",
             (status, error, sched_id),
             fetch=False
         )
+
+    def get_pending_scheduled_role_changes_for_user(self, guild_id: int, user_id: int) -> list:
+        """All pending scheduled role changes for one member in a guild,
+        regardless of whether run_at has passed yet. Used for on-demand
+        "does this specific person have one of these active/due right now"
+        checks -- e.g. counting's penalty-role handling, which needs an
+        immediate answer on their next message rather than waiting for the
+        next scheduled_role_check sweep."""
+        query = """
+        SELECT id, role_ids_to_add, role_ids_to_remove, run_at
+        FROM app.scheduled_roles
+        WHERE guild_id = %s AND user_id = %s AND status = 'pending'
+        ORDER BY run_at ASC
+        """
+        rows = self.execute_query(query, (guild_id, user_id))
+        results = []
+        for row in rows or []:
+            add_ids = [int(x) for x in row[1].split(",") if x] if row[1] else []
+            remove_ids = [int(x) for x in row[2].split(",") if x] if row[2] else []
+            results.append({"id": row[0], "add_ids": add_ids, "remove_ids": remove_ids, "run_at": row[3]})
+        return results
 
     # ============================================================================
     # Member Activity Tracking
@@ -1765,10 +1728,10 @@ class Database:
 
     def log_member_activity(self, guild_id: int, user_id: int, timestamp):
         """Upsert member's last message timestamp."""
-        delete_query = "DELETE FROM main.member_activity WHERE guild_id = %s AND user_id = %s"
+        delete_query = "DELETE FROM app.member_activity WHERE guild_id = %s AND user_id = %s"
         self.execute_query(delete_query, (guild_id, user_id), fetch=False)
         insert_query = """
-        INSERT INTO main.member_activity (guild_id, user_id, last_message_at)
+        INSERT INTO app.member_activity (guild_id, user_id, last_message_at)
         VALUES (%s, %s, %s)
         """
         self.execute_query(insert_query, (guild_id, user_id, timestamp), fetch=False)
@@ -1776,7 +1739,7 @@ class Database:
     def get_member_last_activity(self, guild_id: int, user_id: int):
         """Get a member's last message timestamp, or None."""
         res = self.execute_query(
-            "SELECT last_message_at FROM main.member_activity WHERE guild_id = %s AND user_id = %s LIMIT 1",
+            "SELECT last_message_at FROM app.member_activity WHERE guild_id = %s AND user_id = %s LIMIT 1",
             (guild_id, user_id)
         )
         if res:
@@ -1788,13 +1751,13 @@ class Database:
         """Track a mirrored message for future updates/deletes."""
         # Aurora DSQL pattern: Delete then insert
         delete_query = """
-        DELETE FROM main.mirrored_messages
+        DELETE FROM app.mirrored_messages
         WHERE original_message_id = %s AND mirror_channel_id = %s
         """
         self.execute_query(delete_query, (original_message_id, mirror_channel_id), fetch=False)
         
         insert_query = """
-        INSERT INTO main.mirrored_messages 
+        INSERT INTO app.mirrored_messages 
         (original_message_id, original_channel_id, mirror_message_id, mirror_channel_id, guild_id, created_at)
         VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         """
@@ -1805,7 +1768,7 @@ class Database:
         """Get all mirror copies of an original message."""
         query = """
         SELECT mirror_message_id, mirror_channel_id, guild_id
-        FROM main.mirrored_messages
+        FROM app.mirrored_messages
         WHERE original_message_id = %s
         """
         result = self.execute_query(query, (original_message_id,))
@@ -1824,7 +1787,7 @@ class Database:
     def delete_mirrored_message_tracking(self, original_message_id: int):
         """Delete all tracking entries for an original message."""
         query = """
-        DELETE FROM main.mirrored_messages
+        DELETE FROM app.mirrored_messages
         WHERE original_message_id = %s
         """
         self.execute_query(query, (original_message_id,), fetch=False)
@@ -1848,7 +1811,7 @@ class Database:
         
         query = f"""
         SELECT id, name, image_data, animated, is_sticker, sticker_description, saved_by_user_id, saved_from_guild_id, created_at, notes
-        FROM main.saved_emojis
+        FROM app.saved_emojis
         {where_clause}
         ORDER BY created_at DESC
         LIMIT %s
@@ -1875,7 +1838,7 @@ class Database:
     
     def delete_saved_emoji(self, emoji_id: int):
         """Delete a saved emoji."""
-        query = "DELETE FROM main.saved_emojis WHERE id = %s"
+        query = "DELETE FROM app.saved_emojis WHERE id = %s"
         self.execute_query(query, (emoji_id,), fetch=False)
 
     # ========================================================================
@@ -1902,12 +1865,12 @@ class Database:
         remove_str = ','.join(str(rid) for rid in roles_to_remove) if roles_to_remove else ''
         
         # Generate ID from MAX + 1
-        max_id_query = "SELECT COALESCE(MAX(id), 0) FROM main.role_rules"
+        max_id_query = "SELECT COALESCE(MAX(id), 0) FROM app.role_rules"
         max_id_result = self.execute_query(max_id_query)
         new_id = (max_id_result[0][0] if max_id_result else 0) + 1
         
         query = """
-        INSERT INTO main.role_rules (id, guild_id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, updated_at)
+        INSERT INTO app.role_rules (id, guild_id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, updated_at)
         VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT (guild_id, rule_name) 
         DO UPDATE SET 
@@ -1920,14 +1883,14 @@ class Database:
     
     def remove_role_rule(self, guild_id: int, rule_name: str):
         """Remove a role rule by name."""
-        query = "DELETE FROM main.role_rules WHERE guild_id = %s AND rule_name = %s"
+        query = "DELETE FROM app.role_rules WHERE guild_id = %s AND rule_name = %s"
         self.execute_query(query, (guild_id, rule_name), fetch=False)
     
     def get_role_rules(self, guild_id: int):
         """Get all role rules for a guild."""
         query = """
         SELECT id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, created_at, updated_at
-        FROM main.role_rules
+        FROM app.role_rules
         WHERE guild_id = %s
         ORDER BY rule_name
         """
@@ -1959,7 +1922,7 @@ class Database:
         """Get a specific role rule."""
         query = """
         SELECT id, rule_name, trigger_role_id, roles_to_add, roles_to_remove, created_at, updated_at
-        FROM main.role_rules
+        FROM app.role_rules
         WHERE guild_id = %s AND rule_name = %s
         """
         result = self.execute_query(query, (guild_id, rule_name))
@@ -2007,7 +1970,7 @@ class Database:
         deferral_str = ','.join(str(rid) for rid in deferral_role_ids) if deferral_role_ids else ''
         
         query = """
-        INSERT INTO main.conditional_role_configs (guild_id, role_id, role_name, blocking_role_ids, deferral_role_ids, updated_at)
+        INSERT INTO app.conditional_role_configs (guild_id, role_id, role_name, blocking_role_ids, deferral_role_ids, updated_at)
         VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT (guild_id, role_id) 
         DO UPDATE SET 
@@ -2021,17 +1984,17 @@ class Database:
     def remove_conditional_role_config(self, guild_id: int, role_id: int):
         """Remove a conditional role configuration and all associated eligibility records."""
         # Delete eligibility records first
-        self.execute_query("DELETE FROM main.conditional_role_eligibility WHERE guild_id = %s AND role_id = %s", 
+        self.execute_query("DELETE FROM app.conditional_role_eligibility WHERE guild_id = %s AND role_id = %s", 
                           (guild_id, role_id), fetch=False)
         # Delete config
-        self.execute_query("DELETE FROM main.conditional_role_configs WHERE guild_id = %s AND role_id = %s", 
+        self.execute_query("DELETE FROM app.conditional_role_configs WHERE guild_id = %s AND role_id = %s", 
                           (guild_id, role_id), fetch=False)
     
     def get_conditional_role_config(self, guild_id: int, role_id: int):
         """Get a specific conditional role configuration."""
         query = """
         SELECT role_id, role_name, blocking_role_ids, deferral_role_ids, created_at, updated_at
-        FROM main.conditional_role_configs
+        FROM app.conditional_role_configs
         WHERE guild_id = %s AND role_id = %s
         """
         result = self.execute_query(query, (guild_id, role_id))
@@ -2059,7 +2022,7 @@ class Database:
         """Get all conditional role configurations for a guild."""
         query = """
         SELECT role_id, role_name, blocking_role_ids, deferral_role_ids, created_at, updated_at
-        FROM main.conditional_role_configs
+        FROM app.conditional_role_configs
         WHERE guild_id = %s
         ORDER BY role_name
         """
@@ -2091,7 +2054,7 @@ class Database:
                                        marked_by_user_id: int = None, notes: str = None):
         """Mark a user as deferred for a conditional role (tracks them in eligibility table)."""
         query = """
-        INSERT INTO main.conditional_role_eligibility (guild_id, user_id, role_id, marked_at, marked_by_user_id, notes)
+        INSERT INTO app.conditional_role_eligibility (guild_id, user_id, role_id, marked_at, marked_by_user_id, notes)
         VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, %s)
         ON CONFLICT (guild_id, user_id, role_id) 
         DO UPDATE SET 
@@ -2103,13 +2066,13 @@ class Database:
     
     def unmark_conditional_role_eligible(self, guild_id: int, user_id: int, role_id: int):
         """Remove conditional role eligibility for a user."""
-        query = "DELETE FROM main.conditional_role_eligibility WHERE guild_id = %s AND user_id = %s AND role_id = %s"
+        query = "DELETE FROM app.conditional_role_eligibility WHERE guild_id = %s AND user_id = %s AND role_id = %s"
         self.execute_query(query, (guild_id, user_id, role_id), fetch=False)
     
     def is_conditional_role_eligible(self, guild_id: int, user_id: int, role_id: int) -> bool:
         """Check if a user is tracked for deferred conditional role (presence in table = deferred)."""
         query = """
-        SELECT 1 FROM main.conditional_role_eligibility 
+        SELECT 1 FROM app.conditional_role_eligibility 
         WHERE guild_id = %s AND user_id = %s AND role_id = %s
         """
         result = self.execute_query(query, (guild_id, user_id, role_id))
@@ -2119,7 +2082,7 @@ class Database:
         """Get eligibility details for a user and conditional role."""
         query = """
         SELECT marked_at, marked_by_user_id, notes
-        FROM main.conditional_role_eligibility
+        FROM app.conditional_role_eligibility
         WHERE guild_id = %s AND user_id = %s AND role_id = %s
         """
         result = self.execute_query(query, (guild_id, user_id, role_id))
@@ -2135,7 +2098,7 @@ class Database:
         """Get all users eligible for a specific conditional role."""
         query = """
         SELECT user_id, marked_at, marked_by_user_id, notes
-        FROM main.conditional_role_eligibility
+        FROM app.conditional_role_eligibility
         WHERE guild_id = %s AND role_id = %s AND eligible = TRUE
         ORDER BY marked_at DESC
         """
@@ -2157,7 +2120,7 @@ class Database:
         """Get all conditional roles a user is eligible for."""
         query = """
         SELECT role_id, marked_at, marked_by_user_id, notes
-        FROM main.conditional_role_eligibility
+        FROM app.conditional_role_eligibility
         WHERE guild_id = %s AND user_id = %s AND eligible = TRUE
         ORDER BY marked_at DESC
         """
@@ -2196,7 +2159,7 @@ class Database:
         """
         query = """
         SELECT entity_id, setting_name, updated_at
-        FROM main.user_settings
+        FROM app.user_settings
         WHERE entity_type = 'user'
           AND guild_id = %s
           AND setting_name LIKE 'conditional_role_override_%'
@@ -2248,13 +2211,13 @@ class Database:
     ):
         """Deny a specific role for a specific user in a guild."""
         query = """
-        INSERT INTO main.role_denies (guild_id, user_id, role_id, created_by_user_id, notes, log_channel_id, created_at, updated_at)
+        INSERT INTO app.role_denies (guild_id, user_id, role_id, created_by_user_id, notes, log_channel_id, created_at, updated_at)
         VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (guild_id, user_id, role_id)
         DO UPDATE SET
             created_by_user_id = EXCLUDED.created_by_user_id,
             notes = EXCLUDED.notes,
-            log_channel_id = COALESCE(EXCLUDED.log_channel_id, main.role_denies.log_channel_id),
+            log_channel_id = COALESCE(EXCLUDED.log_channel_id, app.role_denies.log_channel_id),
             updated_at = CURRENT_TIMESTAMP
         """
         self.execute_query(
@@ -2266,7 +2229,7 @@ class Database:
     def remove_role_deny(self, guild_id: int, user_id: int, role_id: int):
         """Remove a role deny for a user."""
         query = """
-        DELETE FROM main.role_denies
+        DELETE FROM app.role_denies
         WHERE guild_id = %s AND user_id = %s AND role_id = %s
         """
         self.execute_query(query, (guild_id, user_id, role_id), fetch=False)
@@ -2275,7 +2238,7 @@ class Database:
         """Check whether a role is denied for a user."""
         query = """
         SELECT 1
-        FROM main.role_denies
+        FROM app.role_denies
         WHERE guild_id = %s AND user_id = %s AND role_id = %s
         """
         result = self.execute_query(query, (guild_id, user_id, role_id))
@@ -2285,7 +2248,7 @@ class Database:
         """Get all role IDs denied for a user in a guild."""
         query = """
         SELECT role_id
-        FROM main.role_denies
+        FROM app.role_denies
         WHERE guild_id = %s AND user_id = %s
         """
         rows = self.execute_query(query, (guild_id, user_id))
@@ -2295,7 +2258,7 @@ class Database:
         """Get a single role deny entry including channel logging target."""
         query = """
         SELECT user_id, role_id, created_by_user_id, notes, log_channel_id, created_at, updated_at
-        FROM main.role_denies
+        FROM app.role_denies
         WHERE guild_id = %s AND user_id = %s AND role_id = %s
         LIMIT 1
         """
@@ -2317,7 +2280,7 @@ class Database:
     def set_role_deny_log_channel(self, guild_id: int, user_id: int, role_id: int, log_channel_id: int | None):
         """Set or clear the log channel for a specific role deny entry."""
         query = """
-        UPDATE main.role_denies
+        UPDATE app.role_denies
         SET log_channel_id = %s,
             updated_at = CURRENT_TIMESTAMP
         WHERE guild_id = %s AND user_id = %s AND role_id = %s
@@ -2328,7 +2291,7 @@ class Database:
         """List role deny entries for a guild with optional user/role filters."""
         query = """
         SELECT user_id, role_id, created_by_user_id, notes, log_channel_id, created_at, updated_at
-        FROM main.role_denies
+        FROM app.role_denies
         WHERE guild_id = %s
         """
         params: list = [guild_id]
@@ -2361,7 +2324,7 @@ class Database:
 
     def _next_role_deny_attempt_id(self) -> int:
         """Get the next ID for role deny attempt logs."""
-        return self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM main.role_deny_attempt_logs")[0][0]
+        return self.execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM app.role_deny_attempt_logs")[0][0]
 
     def log_role_deny_attempt(
         self,
@@ -2375,7 +2338,7 @@ class Database:
         """Persist a denied role assignment attempt."""
         next_id = self._next_role_deny_attempt_id()
         query = """
-        INSERT INTO main.role_deny_attempt_logs
+        INSERT INTO app.role_deny_attempt_logs
         (id, guild_id, user_id, role_id, source, actor_user_id, notes, attempted_at)
         VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         """
@@ -2391,7 +2354,7 @@ class Database:
         message_data should be a list of dicts with channel_id, message_id, jump_url
         """
         query = """
-        INSERT INTO main.rules_agreement (guild_id, message_data, updated_at)
+        INSERT INTO app.rules_agreement (guild_id, message_data, updated_at)
         VALUES (%s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT (guild_id)
         DO UPDATE SET
@@ -2406,7 +2369,7 @@ class Database:
         """Get the rules agreement messages for a guild"""
         query = """
         SELECT message_data
-        FROM main.rules_agreement
+        FROM app.rules_agreement
         WHERE guild_id = %s
         """
         
@@ -2421,7 +2384,7 @@ class Database:
     def clear_rules_agreement_messages(self, guild_id: int):
         """Clear rules agreement tracking for a guild"""
         query = """
-        DELETE FROM main.rules_agreement
+        DELETE FROM app.rules_agreement
         WHERE guild_id = %s
         """
         

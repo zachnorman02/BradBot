@@ -31,12 +31,12 @@ logger.info(f"[IMPORT] AWS_ACCESS_KEY_ID={'SET' if os.getenv('AWS_ACCESS_KEY_ID'
 from commands.registry import register_all
 from commands.admin import AdminSettingsView, CommandToggleView
 from commands.issues import IssuePanelView
+from commands.link.reactions import handle_link_message_reaction
 from commands.poll import PollView
 
 # Local imports - Core functionality
 from core import (
     birthday_check,
-    counting_penalty_check,
     daily_booster_role_check,
     handle_counting_message,
     handle_message_delete,
@@ -185,7 +185,7 @@ async def on_ready():
         # Grant admin permissions on all tables
         try:
             db.execute_query("""
-                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA main TO admin
+                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA app TO admin
             """, fetch=False)
             logger.info("Granted admin privileges on all tables")
         except Exception as perm_error:
@@ -198,7 +198,7 @@ async def on_ready():
     try:
         # Get all active polls
         active_polls = db.execute_query(
-            "SELECT id, question FROM main.polls WHERE is_active = TRUE"
+            "SELECT id, question FROM app.polls WHERE is_active = TRUE"
         )
         for poll_id, question in active_polls:
             view = PollView(poll_id, question)
@@ -270,17 +270,26 @@ async def on_ready():
     except Exception as e:
         logger.error(f"Failed to sync commands: {e}")
     
-    # Start background tasks
-    logger.info("Starting background tasks...")
-    bot.loop.create_task(daily_booster_role_check(bot))
-    bot.loop.create_task(poll_auto_close_check(bot))
-    bot.loop.create_task(poll_results_refresh(bot))
-    bot.loop.create_task(reminder_check(bot))
-    bot.loop.create_task(timer_check(bot))
-    bot.loop.create_task(birthday_check(bot))
-    bot.loop.create_task(counting_penalty_check(bot))
-    bot.loop.create_task(scheduled_role_check(bot))
-    logger.info("All background tasks started")
+    # Start background tasks. on_ready isn't a one-time startup hook -- it
+    # fires again after every reconnect/resume, not just the initial
+    # connection -- so without this guard, each reconnect would spawn a
+    # whole extra set of these loops (permanently; nothing ever cancels the
+    # old ones), compounding over the bot's uptime into multiple concurrent
+    # copies of every daily/periodic check silently doing redundant (and
+    # potentially racing) work.
+    if not getattr(bot, '_background_tasks_started', False):
+        bot._background_tasks_started = True
+        logger.info("Starting background tasks...")
+        bot.loop.create_task(daily_booster_role_check(bot))
+        bot.loop.create_task(poll_auto_close_check(bot))
+        bot.loop.create_task(poll_results_refresh(bot))
+        bot.loop.create_task(reminder_check(bot))
+        bot.loop.create_task(timer_check(bot))
+        bot.loop.create_task(birthday_check(bot))
+        bot.loop.create_task(scheduled_role_check(bot))
+        logger.info("All background tasks started")
+    else:
+        logger.info("Background tasks already running; skipping re-start on reconnect")
     
 @bot.event
 async def on_message(message):
@@ -475,8 +484,10 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
 
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    """Handle reaction additions for starboard"""
+    """Handle reaction additions for starboard and the link-message
+    delete/edit/remove-embed shortcuts"""
     await starboard.handle_raw_reaction(bot, payload)
+    await handle_link_message_reaction(bot, payload)
 
 
 @bot.event

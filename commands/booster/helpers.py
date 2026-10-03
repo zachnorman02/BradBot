@@ -1,10 +1,12 @@
 """Booster-role business logic shared between the /booster commands and the
 admin domain's booster-related user context menus."""
+import asyncio
 from typing import Optional
 
 import discord
 
 from database import db
+from utils.image_processing import prepare_role_icon
 from utils.logger import logger
 
 # Guild setting storing a comma-separated list of role IDs that should never
@@ -216,7 +218,12 @@ async def _apply_icon(role: discord.Role, icon_data, guild: discord.Guild) -> bo
         logger.info(f"Guild missing ROLE_ICONS; skip icon for {role}")
         return False
     try:
-        await role.edit(display_icon=payload)
+        # Icons saved before we started normalizing uploads may still be
+        # encoded in a way that loses transparency, so re-normalize on
+        # every re-apply, not just at upload time.
+        # Decoding/quantizing/re-encoding is CPU-bound; keep it off the event loop.
+        normalized = await asyncio.to_thread(prepare_role_icon, payload)
+        await role.edit(display_icon=normalized)
         return True
     except Exception as e:
         logger.error(f"Could not apply icon for {role}: {e}")
