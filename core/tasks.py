@@ -6,7 +6,9 @@ import datetime as dt
 import asyncio
 from database import db
 from collections import defaultdict
-from commands.booster.helpers import _apply_icon, _ensure_role_position, find_personal_roles as _find_personal_roles
+from commands.booster.helpers import (
+    _apply_icon, _ensure_role_position, _degraded_colors_for_guild, find_personal_roles as _find_personal_roles,
+)
 from utils.logger import logger
 
 
@@ -459,7 +461,8 @@ async def _restore_or_create_booster_role(member: discord.Member) -> bool:
                     secondary_color = discord.Color(int(db_role_data['secondary_color_hex'].replace('#', ''), 16))
                 if db_role_data.get('tertiary_color_hex'):
                     tertiary_color = discord.Color(int(db_role_data['tertiary_color_hex'].replace('#', ''), 16))
-                
+                secondary_color, tertiary_color = _degraded_colors_for_guild(member.guild, secondary_color, tertiary_color)
+
                 # Create role with saved configuration
                 restored_role = await member.guild.create_role(
                     name=db_role_data['role_name'],
@@ -622,6 +625,61 @@ async def _check_booster_roles_for_guild(guild: discord.Guild):
             print(f"[Daily scan] Error removing booster role for {member.display_name}: {e}")
 
 
+async def _reconcile_degraded_booster_colors(guild: discord.Guild):
+    """Catch up booster roles that got stuck on just their solid primary
+    color because 'ENHANCED_ROLE_COLORS' wasn't available in guild.features
+    when they were created/restored (see commands.booster.helpers.
+    _degraded_colors_for_guild). The guild's feature list updates live as
+    Discord sends guild_update events, so once it's back (boost level
+    recovered, etc.) this reapplies the saved gradient/holographic colors
+    without anyone having to notice and run /role restore themselves.
+    """
+    if 'ENHANCED_ROLE_COLORS' not in guild.features:
+        return  # still not available -- nothing to reconcile yet
+
+    for row in db.get_all_booster_roles(guild.id):
+        if not (row.get('secondary_color_hex') or row.get('tertiary_color_hex')):
+            continue  # this one was never saved as a gradient/holographic role
+
+        role = guild.get_role(row['role_id']) if row.get('role_id') else None
+        if not role:
+            continue  # missing role entirely -- the regular restore paths handle that
+
+        try:
+            secondary_color = discord.Color(int(row['secondary_color_hex'].replace('#', ''), 16)) if row.get('secondary_color_hex') else None
+            tertiary_color = discord.Color(int(row['tertiary_color_hex'].replace('#', ''), 16)) if row.get('tertiary_color_hex') else None
+        except Exception as e:
+            print(f"[Daily scan] Invalid saved gradient color data for role {row['role_id']}: {e}")
+            continue
+
+        if role.secondary_color == secondary_color and role.tertiary_color == tertiary_color:
+            continue  # already matches -- not degraded (or already reconciled)
+
+        try:
+            await role.edit(
+                secondary_color=secondary_color, tertiary_color=tertiary_color,
+                reason="Reapplying saved gradient/holographic colors now that ENHANCED_ROLE_COLORS is available again",
+            )
+            print(f"🌈 [Daily scan] Reapplied saved gradient/holographic colors for role '{role.name}'")
+        except Exception as e:
+            print(f"[Daily scan] Could not reapply gradient colors for role {role.id}: {e}")
+        await asyncio.sleep(1)  # same gentle pacing as _check_booster_roles_for_guild
+
+
+async def on_guild_update_handler(before: discord.Guild, after: discord.Guild):
+    """Reacts to ENHANCED_ROLE_COLORS appearing in guild.features (a boost
+    level recovering, etc.) by reconciling degraded booster colors right
+    away, instead of waiting for the once-a-day maintenance sweep to get
+    to it. The sweep stays in place as a safety net for a missed gateway
+    event, same reasoning as _check_booster_roles_for_guild.
+    """
+    if 'ENHANCED_ROLE_COLORS' in after.features and 'ENHANCED_ROLE_COLORS' not in before.features:
+        booster_roles_enabled = db.get_guild_setting(after.id, 'booster_roles_enabled', 'true').lower() == 'true'
+        if booster_roles_enabled:
+            print(f"🌈 ENHANCED_ROLE_COLORS became available in {after.name}; reconciling degraded booster colors")
+            await _reconcile_degraded_booster_colors(after)
+
+
 async def _check_verified_roles_for_guild(guild: discord.Guild, verified_role, lvl0_role):
     """Assign lvl 0 to verified members who don't have a level role (configurable prefix)."""
     level_prefix = db.get_guild_setting(guild.id, "level_role_prefix", "lvl ")
@@ -737,6 +795,7 @@ async def daily_maintenance_check(bot):
                     # Run enabled checks
                     if booster_roles_enabled:
                         await _check_booster_roles_for_guild(guild)
+                        await _reconcile_degraded_booster_colors(guild)
                     
                     if verify_enabled:
                         await _check_verified_roles_for_guild(guild, verified_role, lvl0_role)

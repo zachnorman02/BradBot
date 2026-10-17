@@ -46,6 +46,7 @@ from core import (
     log_message_delete_event,
     log_message_edit_event,
     log_raw_message_delete_event,
+    on_guild_update_handler,
     on_member_remove_handler,
     on_member_update_handler,
     poll_auto_close_check,
@@ -97,6 +98,12 @@ async def on_member_update(before: discord.Member, after: discord.Member):
 async def on_member_remove(member: discord.Member):
     """Handle member leave events - delegate to core module"""
     await on_member_remove_handler(member)
+
+
+@bot.event
+async def on_guild_update(before: discord.Guild, after: discord.Guild):
+    """Handle guild feature changes (e.g. ENHANCED_ROLE_COLORS) - delegate to core module"""
+    await on_guild_update_handler(before, after)
 
 @bot.event
 async def on_member_join(member: discord.Member):

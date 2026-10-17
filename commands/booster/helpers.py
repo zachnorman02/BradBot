@@ -209,6 +209,26 @@ def _icon_bytes(icon_data):
     return icon_data
 
 
+def _degraded_colors_for_guild(guild: discord.Guild, secondary_color, tertiary_color):
+    """Gradient/holographic role colors (secondary_color/tertiary_color)
+    need 'ENHANCED_ROLE_COLORS' in guild.features -- the same kind of
+    boost-level-gated feature as 'ROLE_ICONS' (see _apply_icon). Passing
+    either color to create_role/edit when the guild lacks it 400s the
+    *entire* call, which previously meant an automatic restore-on-reboost
+    got no role at all instead of just losing the gradient.
+
+    Returns (secondary_color, tertiary_color), degraded to (None, None) if
+    the feature isn't currently available. The caller's own primary color
+    still applies either way, and the saved DB values are never touched
+    here -- see core/tasks.py's _reconcile_degraded_booster_colors, which
+    reapplies them once the feature comes back.
+    """
+    if (secondary_color is not None or tertiary_color is not None) and 'ENHANCED_ROLE_COLORS' not in guild.features:
+        logger.info(f"Guild {guild.id} missing ENHANCED_ROLE_COLORS; degrading booster role to its solid primary color")
+        return None, None
+    return secondary_color, tertiary_color
+
+
 async def _apply_icon(role: discord.Role, icon_data, guild: discord.Guild) -> bool:
     """Try to apply icon; return True if set, False if skipped/failed."""
     payload = _icon_bytes(icon_data)
@@ -245,6 +265,7 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
                 secondary_color = discord.Color(int(db_role_data['secondary_color_hex'].replace('#', ''), 16))
             if db_role_data.get('tertiary_color_hex'):
                 tertiary_color = discord.Color(int(db_role_data['tertiary_color_hex'].replace('#', ''), 16))
+            secondary_color, tertiary_color = _degraded_colors_for_guild(interaction.guild, secondary_color, tertiary_color)
 
             personal_role = await interaction.guild.create_role(
                 name=db_role_data['role_name'], color=primary_color, secondary_color=secondary_color,
@@ -268,9 +289,25 @@ async def get_or_create_booster_role(interaction: discord.Interaction, db_role_d
             return None
     else:
         await _ensure_role_position(personal_role, interaction.guild.me, interaction.user)
-        icon_payload = _icon_bytes(db_role_data.get("icon_data")) if db_role_data else None
         if db_role_data:
+            icon_payload = _icon_bytes(db_role_data.get("icon_data"))
             await _apply_icon(personal_role, icon_payload, interaction.guild)
+
+            # Reconcile a previously-degraded gradient/holographic in case
+            # ENHANCED_ROLE_COLORS has become available since this role was
+            # last touched -- so running /role restore manually always
+            # double-checks, not just the daily sweep / on_guild_update.
+            secondary_color = discord.Color(int(db_role_data['secondary_color_hex'].replace('#', ''), 16)) if db_role_data.get('secondary_color_hex') else None
+            tertiary_color = discord.Color(int(db_role_data['tertiary_color_hex'].replace('#', ''), 16)) if db_role_data.get('tertiary_color_hex') else None
+            secondary_color, tertiary_color = _degraded_colors_for_guild(interaction.guild, secondary_color, tertiary_color)
+            if personal_role.secondary_color != secondary_color or personal_role.tertiary_color != tertiary_color:
+                try:
+                    await personal_role.edit(
+                        secondary_color=secondary_color, tertiary_color=tertiary_color,
+                        reason="Reconciling saved gradient/holographic colors",
+                    )
+                except Exception as e:
+                    logger.error(f"Could not reconcile colors for {personal_role}: {e}")
 
     return personal_role
 
@@ -304,6 +341,8 @@ async def restore_member_booster_role(
         secondary_color = None
         tertiary_color = None
 
+    secondary_color, tertiary_color = _degraded_colors_for_guild(guild, secondary_color, tertiary_color)
+
     if not personal_role:
         try:
             personal_role = await guild.create_role(
@@ -334,12 +373,32 @@ async def restore_member_booster_role(
     return personal_role, icon_applied
 
 
-async def save_role_to_db(user_id: int, guild_id: int, role: discord.Role):
-    """Save role configuration to database. Auto-detects color_type."""
+_UNSET = object()
+
+
+async def save_role_to_db(
+    user_id: int, guild_id: int, role: discord.Role,
+    secondary_color=_UNSET, tertiary_color=_UNSET,
+):
+    """Save role configuration to database. Auto-detects color_type.
+
+    By default reads secondary/tertiary color straight off the live role.
+    Pass secondary_color/tertiary_color explicitly (including None, to mean
+    "none") when the live role was degraded to solid-only because the guild
+    lacked ENHANCED_ROLE_COLORS (see _degraded_colors_for_guild) -- that
+    lets the DB keep the member's actually-requested gradient/holographic
+    colors so _reconcile_degraded_booster_colors can apply them once the
+    feature's available again, instead of silently losing what they asked
+    for just because it couldn't be shown right now.
+    """
+    if secondary_color is _UNSET:
+        secondary_color = role.secondary_color
+    if tertiary_color is _UNSET:
+        tertiary_color = role.tertiary_color
     try:
         color_hex = f"#{role.color.value:06x}"
-        secondary_color_hex = f"#{role.secondary_color.value:06x}" if role.secondary_color else None
-        tertiary_color_hex = f"#{role.tertiary_color.value:06x}" if role.tertiary_color else None
+        secondary_color_hex = f"#{secondary_color.value:06x}" if secondary_color else None
+        tertiary_color_hex = f"#{tertiary_color.value:06x}" if tertiary_color else None
         icon_hash = role.icon.key if role.icon else None
         icon_data = None
 

@@ -163,12 +163,22 @@ class BoosterCustomizeModal(discord.ui.Modal, title="Customize Booster Role"):
             await interaction.followup.send(f"❌ {e}", ephemeral=True)
             return
 
+        from commands.booster.helpers import _degraded_colors_for_guild
+
+        # secondary_color/tertiary_color above are the member's actual
+        # request -- degrade only what we hand to Discord's API if this
+        # guild currently lacks ENHANCED_ROLE_COLORS, but keep the originals
+        # to save below so the full request survives in the DB and gets
+        # applied automatically later (see _reconcile_degraded_booster_colors).
+        edit_secondary, edit_tertiary = _degraded_colors_for_guild(self.role.guild, secondary_color, tertiary_color)
+        degraded = (edit_secondary, edit_tertiary) != (secondary_color, tertiary_color)
+
         icon_files = self.icon.component.values
         edit_kwargs = dict(
             name=name,
             color=primary_color,
-            secondary_color=secondary_color,
-            tertiary_color=tertiary_color,
+            secondary_color=edit_secondary,
+            tertiary_color=edit_tertiary,
             reason=f"Booster role customized by {interaction.user}",
         )
         if icon_files:
@@ -191,8 +201,13 @@ class BoosterCustomizeModal(discord.ui.Modal, title="Customize Booster Role"):
             await interaction.followup.send(f"❌ Discord error: {e}", ephemeral=True)
             return
 
-        await save_role_to_db(self.member.id, self.role.guild.id, self.role)
+        await save_role_to_db(self.member.id, self.role.guild.id, self.role, secondary_color, tertiary_color)
         note = " (Colors ignored -- Holographic was On)" if want_holographic and colors_raw else ""
+        if degraded:
+            note += (
+                "\n⚠️ This server doesn't currently support gradient/holographic role colors "
+                "(needs more boosts) -- saved for later and applied automatically once it does."
+            )
         await interaction.followup.send(
             f"✅ Updated {self.member.mention}'s booster role: {self.role.mention}{note}", ephemeral=True
         )
